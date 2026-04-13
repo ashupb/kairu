@@ -633,7 +633,7 @@ async function irListaDocente() {
   window._docCursoSel = Object.keys(cursoMap)[0];
   window._docMatSel   = null;
   HORA_SEL = null;
-}
+
 
 function selCursoDocente(btn, cursoId) {
   document.querySelectorAll('.doc-curso-card[data-curso]').forEach(b => b.classList.remove('sel'));
