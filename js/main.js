@@ -110,10 +110,15 @@ function goBack() {
 
 // ── UI CONTROLS ───────────────────────────────────────
 function toggleSidebar() {
-  SB_OPEN = !SB_OPEN;
-  document.getElementById('sidebar').classList.toggle('collapsed', !SB_OPEN);
+  const sidebar = document.getElementById('sidebar');
+  const isMobile = window.innerWidth <= 768;
+  if (isMobile) {
+    toggleMobileSidebar();
+  } else {
+    SB_OPEN = !SB_OPEN;
+    sidebar.classList.toggle('collapsed', !SB_OPEN);
+  }
 }
-
 function toggleDark() {
   DARK = !DARK;
   document.body.classList.toggle('dark', DARK);
@@ -290,9 +295,9 @@ function togglePass() {
   const btn = document.getElementById('btn-ojo');
   if (inp.type === 'password') {
     inp.type = 'text';
-    btn.textContent = '🙈';
+    btn.textContent = '🙈'; // cerrado = ocultar
   } else {
     inp.type = 'password';
-    btn.textContent = '👁';
+    btn.textContent = '👁';  // abierto = mostrar
   }
 }
