@@ -9,6 +9,80 @@ const NOTA_COLOR = (n) => n >= 7 ? 'var(--verde)' : n >= 5 ? 'var(--ambar)' : 'v
 const NOTA_BG    = (n) => n >= 7 ? 'var(--verde-l)' : n >= 5 ? 'var(--amb-l)' : 'var(--rojo-l)';
 const NOTA_CLS   = (n) => n >= 7 ? 'nota-ok' : n >= 5 ? 'nota-warn' : 'nota-risk';
 
+// ─── HELPERS GLOBALES ─────────────────────────────────
+function renderSituacionCard(alumnos, getPromedio, prefijo, titulo) {
+  const criticos    = alumnos.filter(al => { const p = getPromedio(al); return p !== null && p < 4; });
+  const observacion = alumnos.filter(al => { const p = getPromedio(al); return p !== null && p >= 4 && p < 7; });
+  const aprobados   = alumnos.filter(al => { const p = getPromedio(al); return p !== null && p >= 7; });
+  const sinNotas    = alumnos.filter(al => getPromedio(al) === null);
+
+  const listaHTML = (lista, color) => lista.map(al => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--brd)">
+      <div>
+        <div style="font-size:12px;font-weight:500">${al.apellido}, ${al.nombre}</div>
+        ${al.cursoNombre ? `<div style="font-size:10px;color:var(--txt2)">${al.cursoNombre}</div>` : ''}
+      </div>
+      <span style="font-size:13px;font-weight:700;color:${color}">${(getPromedio(al) ?? 0).toFixed(1)}</span>
+    </div>`).join('');
+
+  return `
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--txt2);text-transform:uppercase;margin-bottom:10px">
+        ${titulo || 'Situación académica'}
+      </div>
+      <div class="metrics m3" style="margin-bottom:8px">
+        <div class="mc" style="background:var(--rojo-l);cursor:pointer;border:1.5px solid transparent"
+          onclick="toggleSit('${prefijo}crit')" title="Ver alumnos críticos">
+          <div class="mc-v" style="color:var(--rojo);font-size:20px">${criticos.length}</div>
+          <div class="mc-l">Críticos (&lt;4)</div>
+        </div>
+        <div class="mc" style="background:var(--amb-l);cursor:pointer;border:1.5px solid transparent"
+          onclick="toggleSit('${prefijo}obs')" title="Ver alumnos en observación">
+          <div class="mc-v" style="color:var(--ambar);font-size:20px">${observacion.length}</div>
+          <div class="mc-l">Observación (4–6)</div>
+        </div>
+        <div class="mc" style="background:var(--verde-l);cursor:pointer;border:1.5px solid transparent"
+          onclick="toggleSit('${prefijo}apr')" title="Ver aprobados">
+          <div class="mc-v" style="color:var(--verde);font-size:20px">${aprobados.length}</div>
+          <div class="mc-l">Aprobados (7+)</div>
+        </div>
+      </div>
+      ${criticos.length ? `
+      <div id="${prefijo}crit" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--rojo);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          🔴 Situación crítica
+          <span style="font-weight:400;color:var(--txt2)">(${criticos.length} alumnos)</span>
+        </div>
+        <div class="card" style="padding:8px 14px;border-left:3px solid var(--rojo)">${listaHTML(criticos, 'var(--rojo)')}</div>
+      </div>` : ''}
+      ${observacion.length ? `
+      <div id="${prefijo}obs" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--ambar);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          🟡 En observación
+          <span style="font-weight:400;color:var(--txt2)">(${observacion.length} alumnos)</span>
+        </div>
+        <div class="card" style="padding:8px 14px;border-left:3px solid var(--ambar)">${listaHTML(observacion, 'var(--ambar)')}</div>
+      </div>` : ''}
+      ${aprobados.length ? `
+      <div id="${prefijo}apr" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--verde);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          🟢 Aprobados
+          <span style="font-weight:400;color:var(--txt2)">(${aprobados.length} alumnos)</span>
+        </div>
+        <div class="card" style="padding:8px 14px;border-left:3px solid var(--verde)">${listaHTML(aprobados, 'var(--verde)')}</div>
+      </div>` : ''}
+      ${sinNotas.length ? `
+      <div style="font-size:10px;color:var(--txt3);margin-top:4px">${sinNotas.length} alumno(s) sin notas registradas</div>` : ''}
+    </div>`;
+}
+
+function toggleSit(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const visible = el.style.display !== 'none';
+  el.style.display = visible ? 'none' : 'block';
+}
+
 // ─── RENDER PRINCIPAL ─────────────────────────────────
 async function rNotas() {
   showLoading('notas');
@@ -70,9 +144,71 @@ async function rNotasDocente() {
           </div>
           <span style="font-size:22px;color:var(--verde)">→</span>
         </div>`).join('')
-    ).join('')}`;
+    ).join('')}
+    <div class="sec-lb" style="margin-top:14px">Situación de mis alumnos</div>
+    <div id="sit-docente-global" style="text-align:center;padding:20px;color:var(--txt3);font-size:11px">
+      <div class="spinner" style="margin:0 auto 8px"></div>Calculando situación...
+    </div>`;
 
   window._notasCursoMap = cursoMap;
+  // Cargar situación global de forma diferida
+  _cargarSituacionDocenteGlobal(cursoMap);
+}
+
+async function _cargarSituacionDocenteGlobal(cursoMap) {
+  const contenedor = document.getElementById('sit-docente-global');
+  if (!contenedor) return;
+
+  const instId = USUARIO_ACTUAL.institucion_id;
+  // Periodo activo actual o primero disponible
+  const hoy = new Date();
+  const periodoActivo = PERIODOS.find(p => new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin));
+  const periodoId = periodoActivo?.id;
+
+  const cursoIds = Object.keys(cursoMap);
+  if (!cursoIds.length) { contenedor.innerHTML = '<div class="empty-state">Sin cursos asignados.</div>'; return; }
+
+  // Fetch alumnos de sus cursos
+  const { data: alumnos } = await sb.from('alumnos')
+    .select('id,nombre,apellido,curso_id').in('curso_id', cursoIds).eq('activo', true);
+
+  if (!alumnos?.length) { contenedor.innerHTML = '<div class="empty-state">Sin alumnos.</div>'; return; }
+
+  // Fetch calificaciones del período activo
+  let query = sb.from('calificaciones')
+    .select('alumno_id,nota,ausente,materia_id,instancias_evaluativas(es_recuperatorio)')
+    .in('curso_id', cursoIds);
+  if (periodoId) query = query.eq('periodo_id', periodoId);
+  const { data: califs } = await query;
+
+  // Calcular promedio global por alumno (promedio de promedios por materia)
+  const notasPorAlumnoMateria = {};
+  (califs || []).forEach(c => {
+    if (c.ausente || c.nota === null || c.instancias_evaluativas?.es_recuperatorio) return;
+    const k = `${c.alumno_id}_${c.materia_id}`;
+    if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
+    notasPorAlumnoMateria[k].push(c.nota);
+  });
+
+  const getPromedio = (al) => {
+    const keys = Object.keys(notasPorAlumnoMateria).filter(k => k.startsWith(al.id + '_'));
+    if (!keys.length) return null;
+    const proms = keys.map(k => {
+      const ns = notasPorAlumnoMateria[k];
+      return ns.reduce((a, b) => a + b, 0) / ns.length;
+    });
+    return proms.reduce((a, b) => a + b, 0) / proms.length;
+  };
+
+  // Agregar nombre del curso al alumno para el listado
+  const alumnosConCurso = alumnos.map(al => ({
+    ...al,
+    cursoNombre: cursoMap[al.curso_id]
+      ? `${cursoMap[al.curso_id].nombre}${cursoMap[al.curso_id].division}`
+      : '',
+  }));
+
+  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'docg-', periodoActivo ? `Período: ${periodoActivo.nombre}` : 'Año en curso');
 }
 
 async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nombreMateria) {
@@ -147,21 +283,8 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
             </button>`).join('')}
         </div>
 
-      <!-- Stats -->
-      <div class="metrics m3" style="margin-bottom:12px">
-        <div class="mc">
-          <div class="mc-v" style="color:var(--verde)">${alumnos.filter(al => (promedios[al.id] ?? -1) >= notaMin).length}</div>
-          <div class="mc-l">Aprobados</div>
-        </div>
-        <div class="mc">
-          <div class="mc-v" style="color:var(--rojo)">${alumnos.filter(al => promedios[al.id] !== null && promedios[al.id] < notaMin).length}</div>
-          <div class="mc-l">En riesgo</div>
-        </div>
-        <div class="mc">
-          <div class="mc-v" style="color:var(--txt3)">${alumnos.filter(al => promedios[al.id] === null).length}</div>
-          <div class="mc-l">Sin notas</div>
-        </div>
-      </div>
+      <!-- Situación académica -->
+      ${renderSituacionCard(alumnos, al => promedios[al.id], `doc-${PERIODO_SEL.slice(-4)}-`, 'Situación en esta materia')}
 
       <!-- Botones acción -->
       ${(() => {
@@ -181,6 +304,9 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
           <div class="acc" style="margin-bottom:12px">
             <button class="btn-p" onclick="abrirCargaBulk('${cursoId}','${materiaId}','${PERIODO_SEL}')">
               📝 Cargar notas
+            </button>
+            <button class="btn-s" onclick="abrirEditarBulk('${cursoId}','${materiaId}','${PERIODO_SEL}')">
+              ✏️ Editar notas
             </button>
             <button class="btn-s" onclick="crearInstancia('${cursoId}','${materiaId}','${PERIODO_SEL}','${nivel}')">
               + Nueva instancia
@@ -329,18 +455,35 @@ async function guardarNotaModal(alumnoId, instanciaId, cursoId, materiaId, perio
 
 // ─── CARGA EN BULK (todos los alumnos de una instancia) ─
 async function abrirCargaBulk(cursoId, materiaId, periodoId) {
-  const { data: instancias } = await sb.from('instancias_evaluativas')
-    .select('*, tipos_evaluacion(nombre)')
-    .eq('curso_id', cursoId).eq('materia_id', materiaId)
-    .eq('periodo_id', periodoId).order('fecha');
+  const [{ data: todasInstancias }, { data: alumnos }] = await Promise.all([
+    sb.from('instancias_evaluativas')
+      .select('*, tipos_evaluacion(nombre)')
+      .eq('curso_id', cursoId).eq('materia_id', materiaId)
+      .eq('periodo_id', periodoId).order('fecha'),
+    sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
+  ]);
 
-  if (!instancias?.length) {
+  if (!todasInstancias?.length) {
     alert('Primero creá una instancia evaluativa con el botón "+ Nueva instancia".');
     return;
   }
 
-  const { data: alumnos } = await sb.from('alumnos')
-    .select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido');
+  // Filtrar solo instancias sin notas completas
+  const instIds = todasInstancias.map(i => i.id);
+  const { data: califExist } = await sb.from('calificaciones')
+    .select('alumno_id,instancia_id').in('instancia_id', instIds);
+
+  const gradedPerInst = {};
+  (califExist || []).forEach(c => {
+    gradedPerInst[c.instancia_id] = (gradedPerInst[c.instancia_id] || 0) + 1;
+  });
+  const alumnoCount = (alumnos || []).length;
+  const instancias = todasInstancias.filter(i => (gradedPerInst[i.id] || 0) < alumnoCount);
+
+  if (!instancias.length) {
+    alert('Todas las instancias ya tienen notas cargadas. Usá "Editar notas" para modificarlas.');
+    return;
+  }
 
   document.getElementById('modal-bulk')?.remove();
   const modal = document.createElement('div');
@@ -428,6 +571,92 @@ async function guardarBulk(cursoId, materiaId, periodoId) {
 
   document.getElementById('modal-bulk')?.remove();
   window.cambioPeriodoDoc?.(periodoId);
+}
+
+// ─── EDITAR NOTAS EN BULK ────────────────────────────
+async function abrirEditarBulk(cursoId, materiaId, periodoId) {
+  const [{ data: instancias }, { data: alumnos }] = await Promise.all([
+    sb.from('instancias_evaluativas')
+      .select('*, tipos_evaluacion(nombre)')
+      .eq('curso_id', cursoId).eq('materia_id', materiaId)
+      .eq('periodo_id', periodoId).order('fecha'),
+    sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
+  ]);
+
+  if (!instancias?.length) {
+    alert('No hay instancias evaluativas en este período.');
+    return;
+  }
+
+  // Cargar todas las calificaciones existentes
+  const instIds = instancias.map(i => i.id);
+  const { data: califs } = await sb.from('calificaciones')
+    .select('*').in('instancia_id', instIds);
+
+  // Índice: alumno_instancia → calificacion
+  const califIdx = {};
+  (califs || []).forEach(c => { califIdx[`${c.alumno_id}_${c.instancia_id}`] = c; });
+
+  // Guardar en window para acceso dinámico
+  window._editCalifIdx  = califIdx;
+  window._editAlumnos   = alumnos || [];
+  window._editInstancias = instancias;
+
+  document.getElementById('modal-bulk')?.remove();
+  const modal = document.createElement('div');
+  modal.id    = 'modal-bulk';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px`;
+  modal.innerHTML = `
+    <div style="background:var(--surf);border-radius:var(--rad-lg);padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
+      <div style="font-size:14px;font-weight:700;margin-bottom:12px">✏️ Editar notas</div>
+
+      <div class="sec-lb">Instancia evaluativa</div>
+      <select id="bulk-inst-sel" style="margin-bottom:14px" onchange="recargarFormEdit()">
+        ${instancias.map(i => `
+          <option value="${i.id}">${i.tipos_evaluacion?.nombre} · ${formatFechaLatam(i.fecha)}</option>
+        `).join('')}
+      </select>
+
+      <div id="edit-form-alumnos" class="card" style="padding:0;margin-bottom:14px"></div>
+
+      <div class="acc">
+        <button class="btn-p" style="flex:1" onclick="guardarBulk('${cursoId}','${materiaId}','${periodoId}')">
+          💾 Guardar cambios
+        </button>
+        <button class="btn-s" onclick="document.getElementById('modal-bulk').remove()">Cancelar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  recargarFormEdit(); // Inicializar con la primera instancia
+}
+
+function recargarFormEdit() {
+  const instId    = document.getElementById('bulk-inst-sel')?.value;
+  const alumnos   = window._editAlumnos || [];
+  const califIdx  = window._editCalifIdx || {};
+  const contenedor = document.getElementById('edit-form-alumnos');
+  if (!contenedor) return;
+
+  contenedor.innerHTML = alumnos.map((al, idx) => {
+    const calif = califIdx[`${al.id}_${instId}`];
+    const nota  = calif?.nota ?? '';
+    const aus   = calif?.ausente ?? false;
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+        border-bottom:${idx < alumnos.length - 1 ? '1px solid var(--brd)' : 'none'}">
+        <div class="asist-av">${al.apellido[0]}${al.nombre[0]}</div>
+        <div style="flex:1;font-size:12px;font-weight:500">${al.apellido}, ${al.nombre}</div>
+        ${calif ? '<span style="font-size:9px;color:var(--verde);margin-right:4px">●</span>' : '<span style="font-size:9px;color:var(--txt3);margin-right:4px">○</span>'}
+        <input type="number" min="1" max="10" step="0.5" placeholder="—"
+          value="${nota}"
+          data-alumno="${al.id}"
+          style="width:58px;text-align:center;border:1.5px solid var(--brd);border-radius:var(--rad);
+            padding:6px;font-size:14px;font-weight:700;background:var(--surf)">
+        <label style="font-size:10px;display:flex;align-items:center;gap:4px;color:var(--txt2)">
+          <input type="checkbox" data-aus="${al.id}" ${aus ? 'checked' : ''}> Aus.
+        </label>
+      </div>`;
+  }).join('');
 }
 
 // ─── CREAR INSTANCIA EVALUATIVA ───────────────────────
@@ -712,7 +941,60 @@ async function rNotasDirectivo() {
             </div>
             <span style="font-size:22px;color:${colores[n]}">→</span>
           </div>`).join('')}`;
-    }).join('')}`;
+    }).join('')}
+    <div class="sec-lb" style="margin-top:14px">Situación de alumnos</div>
+    <div id="sit-dir-global" style="text-align:center;padding:20px;color:var(--txt3);font-size:11px">
+      <div class="spinner" style="margin:0 auto 8px"></div>Calculando situación...
+    </div>`;
+
+  _cargarSituacionDirectivoGlobal(filtrados);
+}
+
+async function _cargarSituacionDirectivoGlobal(cursos) {
+  const contenedor = document.getElementById('sit-dir-global');
+  if (!contenedor || !cursos?.length) return;
+
+  const hoy = new Date();
+  const periodoActivo = PERIODOS.find(p => new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin));
+  const periodoId = periodoActivo?.id;
+  const cursoIds  = cursos.map(c => c.id);
+
+  const { data: alumnos } = await sb.from('alumnos')
+    .select('id,nombre,apellido,curso_id,cursos(nombre,division)')
+    .in('curso_id', cursoIds).eq('activo', true);
+
+  if (!alumnos?.length) { contenedor.innerHTML = '<div class="empty-state">Sin alumnos.</div>'; return; }
+
+  let query = sb.from('calificaciones')
+    .select('alumno_id,nota,ausente,materia_id,instancias_evaluativas(es_recuperatorio)')
+    .in('curso_id', cursoIds);
+  if (periodoId) query = query.eq('periodo_id', periodoId);
+  const { data: califs } = await query;
+
+  const notasPorAlumnoMateria = {};
+  (califs || []).forEach(c => {
+    if (c.ausente || c.nota === null || c.instancias_evaluativas?.es_recuperatorio) return;
+    const k = `${c.alumno_id}_${c.materia_id}`;
+    if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
+    notasPorAlumnoMateria[k].push(c.nota);
+  });
+
+  const getPromedio = (al) => {
+    const keys = Object.keys(notasPorAlumnoMateria).filter(k => k.startsWith(al.id + '_'));
+    if (!keys.length) return null;
+    const proms = keys.map(k => {
+      const ns = notasPorAlumnoMateria[k];
+      return ns.reduce((a, b) => a + b, 0) / ns.length;
+    });
+    return proms.reduce((a, b) => a + b, 0) / proms.length;
+  };
+
+  const alumnosConCurso = alumnos.map(al => ({
+    ...al,
+    cursoNombre: al.cursos ? `${al.cursos.nombre}${al.cursos.division}` : '',
+  }));
+
+  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'dirg-', periodoActivo ? `Período: ${periodoActivo.nombre}` : 'Año en curso');
 }
 
 async function verCalifCurso(cursoId, nivel) {
@@ -772,13 +1054,39 @@ async function verCalifCurso(cursoId, nivel) {
       });
     }
 
+    // Promedio global por alumno (media de todas las materias)
+    const promedioGlobal = {};
+    alumnos.forEach(al => {
+      const vals = materias
+        .map(m => promediosMap[al.id]?.[m.id])
+        .filter(v => v !== null && v !== undefined);
+      promedioGlobal[al.id] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    });
+    const getProm = al => promedioGlobal[al.id] ?? null;
+
     return `
-        <div class="periodo-tabs">
-            ${periodosCurso.map(p => `
-            <button class="periodo-tab ${PERIODO_SEL === p.id ? 'on' : ''}"
-            onclick="cambioPeriodoDir('${p.id}')">
-            ${p.nombre}
-            </button>`).join('')}
+      ${renderSituacionCard(alumnos, getProm, `dir-${cursoId.slice(-4)}-${PERIODO_SEL.slice(-4)}-`, 'Situación del curso')}
+        <div class="periodo-tabs" style="align-items:center">
+            ${periodosCurso.map(p => {
+              const esSel = PERIODO_SEL === p.id;
+              const estado = p.validado_at ? '🔒' : p.cerrado ? '⏳' : '';
+              return `
+                <button class="periodo-tab ${esSel ? 'on' : ''}"
+                  onclick="cambioPeriodoDir('${p.id}')">
+                  ${estado} ${p.nombre}
+                </button>`;
+            }).join('')}
+            ${(() => {
+              const pSel = periodosCurso.find(p => p.id === PERIODO_SEL);
+              if (!pSel?.validado_at) return '';
+              const esDir = USUARIO_ACTUAL.rol === 'director_general' || USUARIO_ACTUAL.rol === 'directivo_nivel';
+              if (!esDir) return '';
+              return `
+                <button class="btn-d" style="font-size:10px;padding:5px 12px;margin-left:8px"
+                  onclick="reabrirPeriodo('${PERIODO_SEL}','${pSel.nombre}')">
+                  🔓 Reabrir para edición
+                </button>`;
+            })()}
         </div>
       ${validacionPendHTML}
       ${!materias.length ? '<div class="empty-state">Sin materias configuradas</div>' : `
