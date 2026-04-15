@@ -112,7 +112,11 @@ async function rAgenda() {
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
       ${buildCalGrid(eventosFiltrados, primerDia, ultimoDia)}
     </div>
-    <div id="detalle-evento"></div>`;
+    <div id="detalle-evento"></div>
+    <div class="sec-lb" style="margin-top:14px">📚 Calendario por curso</div>
+    <button class="btn-s" style="width:100%;font-size:11px" onclick="verAgendaCursos()">
+      Ver calendario de cursos →
+    </button>`;
 
   inyectarEstilosAgenda();
 }
@@ -654,4 +658,165 @@ function inyectarEstilosAgenda() {
     }
   `;
   document.head.appendChild(st);
+}
+
+async function verAgendaCursos() {
+  const c      = document.getElementById('page-agenda');
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const rol    = USUARIO_ACTUAL.rol;
+  const miId   = USUARIO_ACTUAL.id;
+  const hoy    = new Date().toISOString().split('T')[0];
+
+  // Filtrar cursos según rol
+  let cursos = [];
+  if (rol === 'director_general' || rol === 'directivo_nivel') {
+    const { data } = await sb.from('cursos').select('*')
+      .eq('institucion_id', instId).order('nivel').order('nombre');
+    cursos = data || [];
+    if (rol === 'directivo_nivel') cursos = cursos.filter(cu => cu.nivel === USUARIO_ACTUAL.nivel);
+  } else if (rol === 'docente') {
+    const { data } = await sb.from('docente_cursos')
+      .select('cursos(id,nombre,division,nivel)').eq('usuario_id', miId).eq('activo', true);
+    cursos = [...new Map((data||[]).map(a => [a.cursos.id, a.cursos])).values()];
+  } else if (rol === 'preceptor') {
+    const nivel = USUARIO_ACTUAL.nivel || 'secundario';
+    const { data } = await sb.from('cursos').select('*')
+      .eq('institucion_id', instId).eq('nivel', nivel).order('nombre');
+    cursos = data || [];
+  }
+
+  // Obtener próximos eventos de todos los cursos
+  const cursoIds = cursos.map(cu => cu.id);
+  let eventos = [];
+  if (cursoIds.length) {
+    const { data } = await sb.from('calendario_curso').select('*, cursos(nombre,division,nivel), materias(nombre)')
+      .in('curso_id', cursoIds)
+      .gte('fecha', hoy)
+      .order('fecha').order('hora', { nullsFirst: false })
+      .limit(50);
+    eventos = data || [];
+  }
+
+  const colores = { inicial:'#1a7a4a', primario:'#1a5276', secundario:'#6c3483' };
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button onclick="rAgenda()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+      <div>
+        <div class="pg-t">Calendario por curso</div>
+        <div class="pg-s">Próximas actividades y evaluaciones</div>
+      </div>
+    </div>
+
+    ${!eventos.length ? '<div class="empty-state">Sin actividades programadas en los próximos días</div>' :
+      eventos.map(e => {
+        const cu     = e.cursos;
+        const color  = colores[cu?.nivel] || 'var(--verde)';
+        const tipos  = { evaluacion:'📝', tp:'📋', salida:'🚌', acto:'🎭', otro:'📌' };
+        return `
+          <div class="card" style="padding:12px 14px;margin-bottom:8px;border-left:3px solid ${color}">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div>
+                <div style="font-size:12px;font-weight:600">${tipos[e.tipo]||'📌'} ${e.titulo}</div>
+                <div style="font-size:10px;color:var(--txt2);margin-top:2px">
+                  ${cu?.nombre}${cu?.division} ${e.materias ? '· '+e.materias.nombre : ''}
+                </div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:12px;font-weight:600;color:${color}">${formatFechaLatam(e.fecha)}</div>
+                ${e.hora ? `<div style="font-size:10px;color:var(--txt2)">${e.hora}</div>` : ''}
+              </div>
+            </div>
+            ${e.descripcion ? `<div style="font-size:10px;color:var(--txt2);margin-top:6px;border-top:1px solid var(--brd);padding-top:6px">${e.descripcion}</div>` : ''}
+          </div>`;
+      }).join('')}
+
+    ${(rol === 'docente' || rol === 'preceptor') ? `
+    <button class="btn-p" style="width:100%;margin-top:10px" onclick="agregarEventoCurso()">
+      + Agregar evento al calendario
+    </button>` : ''}`;
+}
+
+async function agregarEventoCurso() {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const miId   = USUARIO_ACTUAL.id;
+  const rol    = USUARIO_ACTUAL.rol;
+  const hoy    = new Date().toISOString().split('T')[0];
+
+  let cursos = [];
+  if (rol === 'docente') {
+    const { data } = await sb.from('docente_cursos')
+      .select('cursos(id,nombre,division,nivel)').eq('usuario_id', miId).eq('activo', true);
+    cursos = [...new Map((data||[]).map(a => [a.cursos.id, a.cursos])).values()];
+  } else {
+    const nivel = USUARIO_ACTUAL.nivel || 'secundario';
+    const { data } = await sb.from('cursos').select('*')
+      .eq('institucion_id', instId).eq('nivel', nivel).order('nombre');
+    cursos = data || [];
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-evento-curso';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px`;
+  modal.innerHTML = `
+    <div style="background:var(--surf);border-radius:var(--rad-lg);padding:20px;width:100%;max-width:420px">
+      <div style="font-size:14px;font-weight:700;margin-bottom:14px">Agregar evento al calendario</div>
+
+      <div class="sec-lb">Curso</div>
+      <select id="ev-curso-curso" class="sel-estilizado" style="margin-bottom:10px">
+        ${cursos.map(cu => `<option value="${cu.id}">${cu.nombre}${cu.division} · ${cu.nivel}</option>`).join('')}
+      </select>
+
+      <div class="sec-lb">Título</div>
+      <input type="text" id="ev-curso-titulo" placeholder="Ej: Evaluación Unidad 2" style="margin-bottom:10px">
+
+      <div class="sec-lb">Tipo</div>
+      <select id="ev-curso-tipo" class="sel-estilizado" style="margin-bottom:10px">
+        <option value="evaluacion">📝 Evaluación</option>
+        <option value="tp">📋 Trabajo Práctico</option>
+        <option value="salida">🚌 Salida</option>
+        <option value="acto">🎭 Acto</option>
+        <option value="otro">📌 Otro</option>
+      </select>
+
+      <div class="sec-lb">Fecha</div>
+      <input type="date" id="ev-curso-fecha" class="input-fecha" value="${hoy}" style="margin-bottom:10px">
+
+      <div class="sec-lb">Hora (opcional)</div>
+      <select id="ev-curso-hora" class="sel-estilizado" style="margin-bottom:10px">
+        <option value="">— Sin hora —</option>
+        ${HORAS_OPTS.map(h => `<option value="${h}">${h}</option>`).join('')}
+      </select>
+
+      <div class="sec-lb">Descripción (opcional)</div>
+      <textarea id="ev-curso-desc" rows="2" style="margin-bottom:14px"></textarea>
+
+      <div class="acc">
+        <button class="btn-p" onclick="guardarEventoCurso()">Guardar</button>
+        <button class="btn-s" onclick="document.getElementById('modal-evento-curso').remove()">Cancelar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function guardarEventoCurso() {
+  const cursoId = document.getElementById('ev-curso-curso')?.value;
+  const titulo  = document.getElementById('ev-curso-titulo')?.value?.trim();
+  const tipo    = document.getElementById('ev-curso-tipo')?.value;
+  const fecha   = document.getElementById('ev-curso-fecha')?.value;
+  const hora    = document.getElementById('ev-curso-hora')?.value || null;
+  const desc    = document.getElementById('ev-curso-desc')?.value || null;
+
+  if (!titulo) { alert('El título es obligatorio.'); return; }
+  if (!fecha)  { alert('La fecha es obligatoria.'); return; }
+
+  await sb.from('calendario_curso').insert({
+    institucion_id: USUARIO_ACTUAL.institucion_id,
+    curso_id:       cursoId,
+    creado_por:     USUARIO_ACTUAL.id,
+    titulo, tipo, fecha, hora, descripcion: desc,
+  });
+
+  document.getElementById('modal-evento-curso')?.remove();
+  verAgendaCursos();
 }

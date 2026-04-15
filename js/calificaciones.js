@@ -56,23 +56,21 @@ async function rNotasDocente() {
   });
 
   c.innerHTML = `
-    <div class="pg-t">Calificaciones</div>
-    <div class="pg-s">Seleccioná curso y materia</div>
-
-    <div class="card" style="margin-bottom:14px">
-      <div class="sec-lb" style="margin-top:0">Mis clases</div>
-      <div class="docente-cursos-list">
-        ${Object.values(cursoMap).map(cu =>
-          cu.materias.map(m => `
-            <div class="doc-curso-card"
-              onclick="verNotasCursoDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division}','${m.nombre}')">
-              <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
-              <div style="font-size:11px;color:var(--txt2)">${m.nombre}</div>
-              <div style="font-size:10px;color:var(--verde);margin-top:4px">Ver calificaciones →</div>
-            </div>`).join('')
-        ).join('')}
-      </div>
-    </div>`;
+  <div class="pg-t">Calificaciones</div>
+  <div class="pg-s">Seleccioná curso y materia</div>
+  <div class="sec-lb">Mis clases</div>
+  ${Object.values(cursoMap).map(cu =>
+    cu.materias.map(m => `
+      <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--verde)"
+        onclick="verNotasCursoDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division}','${m.nombre}')">
+        <div>
+          <div style="font-size:14px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
+          <div style="font-size:12px;color:var(--txt2)">${m.nombre}</div>
+        </div>
+        <div style="font-size:20px;color:var(--verde)">→</div>
+      </div>`).join('')
+    ).join('')}`;
+    
 
   window._notasCursoMap = cursoMap;
 }
@@ -212,12 +210,13 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
                     const nota  = calif?.nota;
                     const aus   = calif?.ausente;
                     if (aus) return `<td><span class="nota-cell nota-nd">A</span></td>`;
-                    if (nota === null || nota === undefined) return `<td><span class="nota-cell nota-nd">—</span></td>`;
-                    return `<td><span class="nota-cell ${NOTA_CLS(nota)}" 
-                      onclick="editarNota('${al.id}','${inst.id}','${cursoId}','${materiaId}','${PERIODO_SEL}',${nota})"
-                      style="cursor:pointer" title="Click para editar">
-                      ${nota % 1 === 0 ? nota : nota.toFixed(1)}
-                    </span></td>`;
+                    if (nota === null || nota === undefined) return `
+                        <td>
+                            <span class="nota-cell nota-nd" style="cursor:pointer"
+                            onclick="editarNota('${al.id}','${inst.id}','${cursoId}','${materiaId}','${PERIODO_SEL}',null)">
+                            —
+                            </span>
+                        </td>`;
                   }).join('')}
                   <td>
                     ${prom !== null
@@ -389,7 +388,7 @@ async function editarNota(alumnoId, instanciaId, cursoId, materiaId, periodoId, 
     <div style="background:var(--surf);border-radius:var(--rad-lg);padding:20px;width:100%;max-width:300px">
       <div style="font-size:13px;font-weight:700;margin-bottom:14px">Editar nota</div>
       <div class="sec-lb">Nota (1-10)</div>
-      <input type="number" id="nota-val" min="1" max="10" step="0.5" value="${notaActual}" style="margin-bottom:10px;font-size:20px;font-weight:700;text-align:center">
+      <input type="number" id="nota-val" min="1" max="10" step="0.5" value="${notaActual || ''}" style="margin-bottom:10px;font-size:20px;font-weight:700;text-align:center">
       <label style="display:flex;align-items:center;gap:8px;font-size:11px;margin-bottom:14px;cursor:pointer">
         <input type="checkbox" id="nota-ausente"> Ausente en la evaluación
       </label>
@@ -475,7 +474,7 @@ async function cargarNotasInstancia(cursoId, materiaId, periodoId) {
       </div>
 
       <div class="acc">
-        <button class="btn-p" onclick="guardarNotasBulk('${cursoId}','${materiaId}','${periodoId}')">Guardar todas</button>
+        <button class="btn-p" onclick="guardarNotasBulk('${cursoId}','${materiaId}','${periodoId}')"> Guardar todas </button>
         <button class="btn-s" onclick="document.getElementById('modal-bulk').remove()">Cancelar</button>
       </div>
     </div>`;
@@ -894,7 +893,7 @@ function inyectarEstilosNotas() {
     .nota-warn { background:var(--amb-l);   color:var(--ambar); }
     .nota-risk { background:var(--rojo-l);  color:var(--rojo);  }
     .nota-nd   { background:var(--gris-l);  color:var(--gris);  }
-    .curso-card-asist { cursor: pointer; }
+    .curso-card-asist { cursor: pointer !important; }
 
     @media(max-width:768px){
       .grilla-notas{font-size:10px;}
