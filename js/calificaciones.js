@@ -175,10 +175,6 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
           ⚙️ Configurar
         </button>
       </div>
-        <div class="periodo-tabs">...</div>
-        ${estadoPeriodoHTML}
-        <div class="metrics m3">...</div>
-        ${botonesHTML}
       <!-- Grilla -->
       ${!instancias.length
         ? `<div class="empty-state">Sin instancias evaluativas.<br>Creá una con el botón "Nueva instancia".</div>`
@@ -674,7 +670,7 @@ async function verCalifCurso(cursoId, nivel) {
         <div class="periodo-tabs">
             ${periodosCurso.map(p => `
             <button class="periodo-tab ${PERIODO_SEL === p.id ? 'on' : ''}"
-            onclick="cambioPeriodoDoc('${p.id}')">
+            onclick="cambioPeriodoDir('${p.id}')">
             ${p.nombre}
             </button>`).join('')}
         </div>

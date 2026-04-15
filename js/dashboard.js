@@ -146,20 +146,6 @@ async function rDashDirector() {
   };
 
   const c = document.getElementById('page-dash');
-  // Alertas de alumnos en cursos del preceptor
-    const cursoIds = cursos.map(c => c.id);
-    const { data: alumnosCurso } = await sb.from('alumnos').select('id').in('curso_id', cursoIds);
-    const alumnoIds = (alumnosCurso || []).map(a => a.id);
-
-    let alertasAlumnos = [];
-    if (alumnoIds.length) {
-      const { data } = await sb.from('alertas_asistencia')
-        .select('*, alumnos(nombre, apellido, cursos(nombre,division))')
-        .in('alumno_id', alumnoIds)
-        .order('tipo_alerta', { ascending: false })
-        .limit(8);
-      alertasAlumnos = data || [];
-    }
   c.innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${fechaStr} · ${instNombre}</div>
