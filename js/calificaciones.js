@@ -139,14 +139,13 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
 
     return `
       <!-- Tabs de período -->
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-        ${periodosCurso.map(p => `
-          <button class="nivel-tab-ag ${PERIODO_SEL === p.id ? 'on' : ''}"
-            style="${PERIODO_SEL === p.id ? 'background:var(--verde);color:#fff;border-color:var(--verde)' : ''}"
+        <div class="periodo-tabs">
+            ${periodosCurso.map(p => `
+            <button class="periodo-tab ${PERIODO_SEL === p.id ? 'on' : ''}"
             onclick="cambioPeriodoDoc('${p.id}')">
             ${p.nombre}
-          </button>`).join('')}
-      </div>
+            </button>`).join('')}
+        </div>
 
       <!-- Stats -->
       <div class="metrics m3" style="margin-bottom:12px">
@@ -414,7 +413,11 @@ async function guardarBulk(cursoId, materiaId, periodoId) {
 async function crearInstancia(cursoId, materiaId, periodoId, nivel) {
   const { data: instExist } = await sb.from('instancias_evaluativas')
     .select('*, tipos_evaluacion(nombre)')
-    .eq('curso_id', cursoId).eq('periodo_id', periodoId).order('fecha');
+    .eq('curso_id', cursoId)
+    .eq('periodo_id', periodoId).order('fecha')
+    .eq('creado_por', USUARIO_ACTUAL.id) 
+    .gte('fecha', hoy)                     
+    .order('fecha');
 
   const hoy = new Date().toISOString().split('T')[0];
 
@@ -637,14 +640,13 @@ async function verCalifCurso(cursoId, nivel) {
     }
 
     return `
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-        ${periodosCurso.map(p => `
-          <button class="nivel-tab-ag ${PERIODO_SEL === p.id ? 'on' : ''}"
-            style="${PERIODO_SEL === p.id ? 'background:var(--verde);color:#fff;border-color:var(--verde)' : ''}"
-            onclick="cambioPeriodoDir('${p.id}')">
+        <div class="periodo-tabs">
+            ${periodosCurso.map(p => `
+            <button class="periodo-tab ${PERIODO_SEL === p.id ? 'on' : ''}"
+            onclick="cambioPeriodoDoc('${p.id}')">
             ${p.nombre}
-          </button>`).join('')}
-      </div>
+            </button>`).join('')}
+        </div>
 
       ${!materias.length ? '<div class="empty-state">Sin materias configuradas</div>' : `
       <div style="overflow-x:auto">
@@ -884,6 +886,13 @@ function inyectarEstilosNotas() {
     .nota-nd   { background:var(--gris-l);  color:var(--gris);  }
     .fila-riesgo td { background:rgba(192,57,43,.06) !important; }
     .curso-card-asist { cursor:pointer !important; }
+    .periodo-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+    .periodo-tab {
+      padding:7px 16px; border-radius:20px; border:1.5px solid var(--brd);
+      cursor:pointer; font-size:12px; font-weight:600; background:var(--surf2);
+      color:var(--txt2); font-family:inherit; transition:all .15s;
+    }
+    .periodo-tab.on { background:var(--verde); color:#fff; border-color:var(--verde); }
     @media(max-width:768px){
       .grilla-notas { font-size:10px; }
       .grilla-notas th { font-size:9px; padding:4px 2px; }

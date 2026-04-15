@@ -110,13 +110,7 @@ async function rAgenda() {
     ${leyendaHTML}
     <div id="form-evento"></div>
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
-      ${buildCalGrid(eventosFiltrados, primerDia, ultimoDia)}
-    </div>
-    <div id="detalle-evento"></div>
-    <div class="sec-lb" style="margin-top:14px">📚 Calendario por curso</div>
-    <button class="btn-s" style="width:100%;font-size:11px" onclick="verAgendaCursos()">
-      Ver calendario de cursos →
-    </button>`;
+      ${buildCalGrid(eventosFiltrados, primerDia, ultimoDia)}`;
 
   inyectarEstilosAgenda();
 }
