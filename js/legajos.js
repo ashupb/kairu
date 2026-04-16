@@ -117,13 +117,25 @@ function _renderLegAnios(anios) {
 function _abrirAnioLeg(anio) {
   _legAnioSel = anio;
   _legVista = 'cursos';
-  _renderLegCursos();
+  _renderLegCursos(); // async, no need to await here
 }
 
 // ── VISTA 2: CURSOS DEL AÑO, AGRUPADOS POR NIVEL ─────
-function _renderLegCursos() {
+async function _renderLegCursos() {
   const c = document.getElementById('page-leg');
+  c.innerHTML = '<div class="loading-state"><div class="spinner"></div><div>Cargando cursos...</div></div>';
+
   const cursos = _legCursosAll.filter(cur => _cursoAnio(cur) === _legAnioSel);
+
+  // Contar alumnos por curso en un solo query
+  const countMap = {};
+  if (cursos.length) {
+    const { data: alData } = await sb.from('alumnos')
+      .select('curso_id')
+      .in('curso_id', cursos.map(cu => cu.id))
+      .eq('activo', true);
+    (alData || []).forEach(a => { countMap[a.curso_id] = (countMap[a.curso_id] || 0) + 1; });
+  }
 
   const porNivel = {};
   cursos.forEach(cur => {
@@ -136,11 +148,11 @@ function _renderLegCursos() {
     const nc = nivCol(nivel);
     const cards = lista.map(cur => {
       const badge = _cursoBadge(cur);
+      const cnt   = countMap[cur.id] || 0;
       return `
         <div class="leg-curso-card" onclick="abrirCursoLeg('${cur.id}')">
           <div class="leg-curso-badge" style="background:${nc.bg};color:${nc.fg}">${badge}</div>
-          <div class="leg-curso-nombre">${cur.nombre} ${cur.division || ''}</div>
-          <div class="leg-curso-arrow">›</div>
+          <div class="leg-curso-alumnos">${cnt} alumno${cnt !== 1 ? 's' : ''}</div>
         </div>`;
     }).join('');
     return `
@@ -330,34 +342,79 @@ async function _cargarTabLeg(idx) {
 async function _tabDatos(c) {
   const a = _legAlumnoSel;
   const p = legPermisos();
-  let obs_fam = '';
-  try {
-    const { data } = await sb.from('alumnos')
-      .select('observaciones_familiares')
-      .eq('id', a.id).single();
-    obs_fam = data?.observaciones_familiares || '';
-  } catch(e) {}
 
-  c.innerHTML = `
-    <div class="card" style="margin-top:12px">
-      <div class="sec-lb" style="margin-bottom:12px">Datos personales</div>
-      <div class="leg-dato-grid">
-        <div class="leg-dato"><span class="leg-dato-l">Apellido</span><span>${a.apellido}</span></div>
-        <div class="leg-dato"><span class="leg-dato-l">Nombre</span><span>${a.nombre}</span></div>
-        <div class="leg-dato"><span class="leg-dato-l">DNI</span><span>${a.dni || '—'}</span></div>
-        <div class="leg-dato"><span class="leg-dato-l">Fecha de nac.</span><span>${a.fecha_nacimiento ? formatFechaLatam(a.fecha_nacimiento) : '—'}</span></div>
+  const { data: al } = await sb.from('alumnos')
+    .select('id,nombre,apellido,dni,fecha_nacimiento,observaciones_familiares')
+    .eq('id', a.id).single();
+  const alumno = al || a;
+
+  if (p.editarDatos) {
+    c.innerHTML = `
+      <div class="card" style="margin-top:12px">
+        <div class="sec-lb" style="margin-bottom:12px">Datos personales</div>
+        <div class="leg-dato-grid">
+          <div class="leg-dato">
+            <label class="leg-dato-l">Apellido</label>
+            <input type="text" id="leg-apellido" value="${alumno.apellido || ''}">
+          </div>
+          <div class="leg-dato">
+            <label class="leg-dato-l">Nombre</label>
+            <input type="text" id="leg-nombre" value="${alumno.nombre || ''}">
+          </div>
+          <div class="leg-dato">
+            <label class="leg-dato-l">DNI</label>
+            <input type="text" id="leg-dni" value="${alumno.dni || ''}">
+          </div>
+          <div class="leg-dato">
+            <label class="leg-dato-l">Fecha de nacimiento</label>
+            <input type="date" id="leg-fnac" value="${alumno.fecha_nacimiento || ''}">
+          </div>
+        </div>
+        <button class="btn-p" style="margin-top:12px;font-size:11px" onclick="_guardarDatosAlumno('${alumno.id}')">Guardar datos</button>
       </div>
-
-      <div style="margin-top:14px;border-top:1px solid var(--brd);padding-top:12px">
+      <div class="card" style="margin-top:12px">
         <div class="sec-lb" style="margin-bottom:6px">Contexto familiar</div>
-        ${p.editarDatos ? `
-          <textarea id="leg-obs-fam" rows="3" placeholder="Información relevante del contexto familiar...">${obs_fam}</textarea>
-          <button class="btn-p" style="margin-top:8px;font-size:11px" onclick="_guardarObsFam('${a.id}')">Guardar</button>
-        ` : (obs_fam
-          ? `<div style="font-size:11px;color:var(--txt2);line-height:1.5">${obs_fam}</div>`
-          : `<div style="font-size:11px;color:var(--txt3)">Sin información registrada.</div>`)}
-      </div>
-    </div>`;
+        <textarea id="leg-obs-fam" rows="3" placeholder="Información relevante del contexto familiar...">${alumno.observaciones_familiares || ''}</textarea>
+        <button class="btn-p" style="margin-top:8px;font-size:11px" onclick="_guardarObsFam('${alumno.id}')">Guardar contexto</button>
+      </div>`;
+  } else {
+    const obs_fam = alumno.observaciones_familiares || '';
+    c.innerHTML = `
+      <div class="card" style="margin-top:12px">
+        <div class="sec-lb" style="margin-bottom:12px">Datos personales</div>
+        <div class="leg-dato-grid">
+          <div class="leg-dato"><span class="leg-dato-l">Apellido</span><span>${alumno.apellido}</span></div>
+          <div class="leg-dato"><span class="leg-dato-l">Nombre</span><span>${alumno.nombre}</span></div>
+          <div class="leg-dato"><span class="leg-dato-l">DNI</span><span>${alumno.dni || '—'}</span></div>
+          <div class="leg-dato"><span class="leg-dato-l">Fecha de nac.</span><span>${alumno.fecha_nacimiento ? formatFechaLatam(alumno.fecha_nacimiento) : '—'}</span></div>
+        </div>
+        <div style="margin-top:14px;border-top:1px solid var(--brd);padding-top:12px">
+          <div class="sec-lb" style="margin-bottom:6px">Contexto familiar</div>
+          ${obs_fam
+            ? `<div style="font-size:11px;color:var(--txt2);line-height:1.5">${obs_fam}</div>`
+            : `<div style="font-size:11px;color:var(--txt3)">Sin información registrada.</div>`}
+        </div>
+      </div>`;
+  }
+}
+
+async function _guardarDatosAlumno(alumnoId) {
+  const apellido = document.getElementById('leg-apellido')?.value.trim();
+  const nombre   = document.getElementById('leg-nombre')?.value.trim();
+  if (!apellido || !nombre) { alert('Apellido y nombre son obligatorios.'); return; }
+  const { error } = await sb.from('alumnos').update({
+    apellido,
+    nombre,
+    dni:               document.getElementById('leg-dni')?.value.trim()  || null,
+    fecha_nacimiento:  document.getElementById('leg-fnac')?.value        || null,
+  }).eq('id', alumnoId);
+  if (error) { alert('Error: ' + error.message); return; }
+  // Actualizar cache local
+  const idx = _legAlumnosCache.findIndex(a => a.id === alumnoId);
+  if (idx >= 0) { _legAlumnosCache[idx].apellido = apellido; _legAlumnosCache[idx].nombre = nombre; }
+  _legAlumnoSel.apellido = apellido;
+  _legAlumnoSel.nombre   = nombre;
+  alert('Datos guardados.');
 }
 
 async function _guardarObsFam(alumnoId) {
@@ -444,7 +501,7 @@ function _mostrarFormContacto() {
         </select>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <input type="tel" id="ct-tel" placeholder="Teléfono">
+        <input type="text" id="ct-tel" placeholder="Teléfono">
         <input type="email" id="ct-email" placeholder="Email">
       </div>
       <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txt2);margin-bottom:10px">
@@ -474,18 +531,18 @@ async function _guardarContacto(alumnoId) {
 
 // ── TAB 2: ACADÉMICO ──────────────────────────────────
 async function _tabAcademico(c) {
-  // La tabla calificaciones puede no existir aún — manejar gracefulmente
   try {
     const { data, error } = await sb.from('calificaciones')
-      .select('nota,periodo,materia_texto')
+      .select('nota, ausente, materia_id, periodo_id, materias(nombre), instancias_evaluativas(nombre,fecha)')
       .eq('alumno_id', _legAlumnoSel.id)
-      .order('periodo');
+      .order('materias(nombre)');
+
     if (error) {
-      // tabla no existe o no hay datos
       c.innerHTML = `<div class="card" style="margin-top:12px"><div class="empty-state">≡<br>Sin calificaciones registradas.</div></div>`;
       return;
     }
-    const lista = data || [];
+
+    const lista = (data || []).filter(n => !n.ausente && n.nota !== null);
     if (!lista.length) {
       c.innerHTML = `<div class="card" style="margin-top:12px"><div class="empty-state">≡<br>Sin calificaciones registradas.</div></div>`;
       return;
@@ -493,19 +550,20 @@ async function _tabAcademico(c) {
 
     const porMateria = {};
     lista.forEach(n => {
-      const m = n.materia_texto || '—';
+      const m = n.materias?.nombre || '—';
       if (!porMateria[m]) porMateria[m] = [];
       porMateria[m].push(n);
     });
 
     const rows = Object.entries(porMateria).map(([mat, ns]) => {
-      const prom = promedio(ns.map(n => n.nota));
+      const vals = ns.map(n => n.nota).filter(v => v !== null);
+      const prom = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
       return `
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--brd)">
           <div style="font-size:11px;font-weight:500;flex:1">${mat}</div>
           <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-            ${ns.map(n => `<span class="nota-chip ${NC(n.nota)}">${n.nota ?? '—'}</span>`).join('')}
-            ${prom !== null ? `<span class="nota-chip ${NC(prom)}" style="font-weight:700">${prom.toFixed(1)}</span>` : ''}
+            ${ns.map(n => `<span class="nota-chip ${NC(n.nota)}" title="${n.instancias_evaluativas?.nombre || ''}">${n.nota}</span>`).join('')}
+            ${prom !== null ? `<span class="nota-chip ${NC(prom)}" style="font-weight:700;margin-left:4px">${prom.toFixed(1)}</span>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -514,6 +572,7 @@ async function _tabAcademico(c) {
       <div class="card" style="margin-top:12px">
         <div class="sec-lb" style="margin-bottom:10px">Calificaciones por materia</div>
         ${rows}
+        <div style="font-size:10px;color:var(--txt3);margin-top:8px">El número en negrita es el promedio por materia.</div>
       </div>`;
   } catch(e) {
     c.innerHTML = `<div class="card" style="margin-top:12px"><div class="empty-state">≡<br>Sin calificaciones registradas.</div></div>`;
@@ -523,8 +582,8 @@ async function _tabAcademico(c) {
 // ── TAB 3: ASISTENCIA ─────────────────────────────────
 async function _tabAsistencia(c) {
   try {
-    const { data, error } = await sb.from('asistencias')
-      .select('fecha,estado,justificacion,tipo_registro,materia_texto')
+    const { data, error } = await sb.from('asistencia')
+      .select('fecha,estado,hora_clase,materia_id')
       .eq('alumno_id', _legAlumnoSel.id)
       .order('fecha', { ascending: false })
       .limit(60);
@@ -536,20 +595,28 @@ async function _tabAsistencia(c) {
       return;
     }
 
-    const ausentes  = lista.filter(r => r.estado === 'ausente').length;
-    const tardanzas = lista.filter(r => r.estado === 'tardanza').length;
-    const retiros   = lista.filter(r => r.estado === 'retiro').length;
-    const pct = lista.length ? Math.round(((lista.length - ausentes) / lista.length) * 100) : 100;
+    const ausentes   = lista.filter(r => r.estado === 'ausente').length;
+    const mediaFalta = lista.filter(r => r.estado === 'media_falta').length;
+    const tardanzas  = lista.filter(r => r.estado === 'tardanza').length;
+    // Días únicos para calcular % de asistencia
+    const diasUnicos = [...new Set(lista.filter(r => !r.hora_clase).map(r => r.fecha))];
+    const ausentesDias = lista.filter(r => !r.hora_clase && r.estado === 'ausente').map(r => r.fecha);
+    const ausDiasUnicos = [...new Set(ausentesDias)].length;
+    const pct = diasUnicos.length ? Math.round(((diasUnicos.length - ausDiasUnicos) / diasUnicos.length) * 100) : 100;
     const pcClr = pct >= 85 ? 'var(--verde)' : pct >= 75 ? 'var(--ambar)' : 'var(--rojo)';
 
+    const ESTADO_LABEL = {
+      presente:'Presente', ausente:'Ausente', media_falta:'Media falta',
+      tardanza:'Tardanza', justificado:'Justificado',
+    };
     const rows = lista.slice(0, 30).map(r => {
-      const clr = r.estado === 'presente' ? 'var(--verde)' : r.estado === 'ausente' ? 'var(--rojo)' : 'var(--ambar)';
+      const clr = r.estado === 'presente' || r.estado === 'justificado'
+        ? 'var(--verde)' : r.estado === 'ausente' ? 'var(--rojo)' : 'var(--ambar)';
       return `
         <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--brd)">
           <div style="width:8px;height:8px;border-radius:50%;background:${clr};flex-shrink:0"></div>
-          <div style="font-size:11px;flex:1">${formatFechaLatam(r.fecha)}${r.materia_texto ? ' · <span style="color:var(--txt3)">'+r.materia_texto+'</span>' : ''}</div>
-          <div style="font-size:10px;color:${clr};font-weight:500;text-transform:capitalize">${r.estado}</div>
-          ${r.justificacion ? `<div style="font-size:10px;color:var(--txt3)">${r.justificacion}</div>` : ''}
+          <div style="font-size:11px;flex:1">${formatFechaLatam(r.fecha)}${r.hora_clase ? ' · <span style="color:var(--txt3)">'+r.hora_clase+'</span>' : ''}</div>
+          <div style="font-size:10px;color:${clr};font-weight:500">${ESTADO_LABEL[r.estado] || r.estado}</div>
         </div>`;
     }).join('');
 
@@ -558,7 +625,7 @@ async function _tabAsistencia(c) {
         <div class="metrics m3" style="margin-bottom:14px">
           <div class="mc"><div class="mc-v" style="color:${pcClr}">${pct}%</div><div class="mc-l">Asistencia</div></div>
           <div class="mc"><div class="mc-v" style="color:var(--rojo)">${ausentes}</div><div class="mc-l">Inasistencias</div></div>
-          <div class="mc"><div class="mc-v" style="color:var(--ambar)">${tardanzas + retiros}</div><div class="mc-l">Tardanzas/retiros</div></div>
+          <div class="mc"><div class="mc-v" style="color:var(--ambar)">${tardanzas + mediaFalta}</div><div class="mc-l">Tardanzas/medias</div></div>
         </div>
         <div class="sec-lb" style="margin-bottom:8px">Últimos registros</div>
         ${rows}
@@ -673,13 +740,26 @@ async function _tabObservaciones(c) {
     const lista = (data || []).filter(o => !o.privada || p.verObsPrivadas);
     const usersMap = await _fetchUserNames(lista.map(o => o.registrado_por));
 
+    const canEdit = legPermisos().agregarObservaciones;
     const rows = lista.map(o => `
-      <div style="padding:10px 0;border-bottom:1px solid var(--brd)">
+      <div id="obs-row-${o.id}" style="padding:10px 0;border-bottom:1px solid var(--brd)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
           <div style="font-size:10px;color:var(--txt3)">${usersMap[o.registrado_por] || '—'} · ${tiempoDesde(o.created_at)}</div>
-          ${o.privada ? '<span class="tag td" style="font-size:9px">Privada</span>' : ''}
+          <div style="display:flex;gap:6px;align-items:center">
+            ${o.privada ? '<span class="tag td" style="font-size:9px">Privada</span>' : ''}
+            ${canEdit && o.registrado_por === USUARIO_ACTUAL.id
+              ? `<button class="btn-ghost" style="font-size:10px;padding:2px 6px" onclick="_editarObs('${o.id}','${(o.texto||'').replace(/'/g,"\\'")}')">Editar</button>`
+              : ''}
+          </div>
         </div>
-        <div style="font-size:11px;color:var(--txt);line-height:1.5">${o.texto}</div>
+        <div id="obs-txt-${o.id}" style="font-size:11px;color:var(--txt);line-height:1.5">${o.texto}</div>
+        <div id="obs-edit-${o.id}" style="display:none;margin-top:6px">
+          <textarea id="obs-ta-${o.id}" rows="2" style="margin-bottom:6px"></textarea>
+          <div style="display:flex;gap:6px">
+            <button class="btn-p" style="font-size:10px" onclick="_guardarEditObs('${o.id}')">Guardar</button>
+            <button class="btn-s" style="font-size:10px" onclick="_cancelarEditObs('${o.id}')">Cancelar</button>
+          </div>
+        </div>
       </div>`).join('') || '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Sin observaciones registradas.</div>';
 
     c.innerHTML = `
@@ -716,6 +796,35 @@ function _mostrarFormObs() {
         <button class="btn-s" style="font-size:11px" onclick="document.getElementById('form-obs').innerHTML=''">Cancelar</button>
       </div>
     </div>`;
+}
+
+function _editarObs(obsId, textoActual) {
+  const editDiv = document.getElementById('obs-edit-' + obsId);
+  const txtDiv  = document.getElementById('obs-txt-'  + obsId);
+  const ta      = document.getElementById('obs-ta-'   + obsId);
+  if (!editDiv || !ta) return;
+  ta.value = textoActual;
+  editDiv.style.display = 'block';
+  if (txtDiv) txtDiv.style.display = 'none';
+  ta.focus();
+}
+
+function _cancelarEditObs(obsId) {
+  const editDiv = document.getElementById('obs-edit-' + obsId);
+  const txtDiv  = document.getElementById('obs-txt-'  + obsId);
+  if (editDiv) editDiv.style.display = 'none';
+  if (txtDiv)  txtDiv.style.display  = 'block';
+}
+
+async function _guardarEditObs(obsId) {
+  const ta = document.getElementById('obs-ta-' + obsId);
+  const texto = ta?.value.trim();
+  if (!texto) { alert('Escribí el texto.'); return; }
+  const { error } = await sb.from('observaciones_legajo')
+    .update({ texto })
+    .eq('id', obsId);
+  if (error) { alert('Error: ' + error.message); return; }
+  await _tabObservaciones(document.getElementById('leg-tab-contenido'));
 }
 
 async function _guardarObservacion(alumnoId) {
@@ -822,12 +931,11 @@ function inyectarEstilosLeg() {
     .leg-anio-num{font-family:'Lora',serif;font-size:22px;font-weight:600;color:var(--verde)}
     .leg-anio-card .leg-curso-arrow{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:16px}
     .leg-nivel-header{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px;padding-left:2px}
-    .leg-cursos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
-    .leg-curso-card{background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad);padding:14px 12px;cursor:pointer;display:flex;flex-direction:column;gap:6px;transition:box-shadow .15s,border-color .15s}
+    .leg-cursos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+    .leg-curso-card{background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad);padding:18px 12px 14px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;transition:box-shadow .15s,border-color .15s}
     .leg-curso-card:hover{box-shadow:0 2px 10px rgba(0,0,0,.1);border-color:var(--verde)}
-    .leg-curso-badge{font-family:'Lora',serif;font-size:17px;font-weight:700;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center}
-    .leg-curso-nombre{font-size:11px;font-weight:500;color:var(--txt);line-height:1.3}
-    .leg-curso-arrow{font-size:14px;color:var(--txt3);align-self:flex-end}
+    .leg-curso-badge{font-family:'Lora',serif;font-size:22px;font-weight:700;width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center}
+    .leg-curso-alumnos{font-size:10px;color:var(--txt2);font-weight:400}
     .leg-alumno-row{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--brd);transition:background .1s}
     .leg-alumno-row:last-child{border-bottom:none}
     .leg-alumno-row:hover{background:var(--surf2)}
