@@ -159,36 +159,54 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
   const contenedor = document.getElementById('sit-docente-global');
   if (!contenedor) return;
 
-  const instId = USUARIO_ACTUAL.institucion_id;
-  // Periodo activo actual o primero disponible
   const hoy = new Date();
-  const periodoActivo = PERIODOS.find(p => new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin));
-  const periodoId = periodoActivo?.id;
-
   const cursoIds = Object.keys(cursoMap);
   if (!cursoIds.length) { contenedor.innerHTML = '<div class="empty-state">Sin cursos asignados.</div>'; return; }
 
-  // Fetch alumnos de sus cursos
+  // Período activo por nivel (el docente puede tener cursos en varios niveles)
+  const periodosActivosPorNivel = {};
+  PERIODOS.forEach(p => {
+    if (new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin)) {
+      periodosActivosPorNivel[p.nivel] = p.id;
+    }
+  });
+
+  // Si no hay períodos activos, usar los primeros de cada nivel
+  if (!Object.keys(periodosActivosPorNivel).length) {
+    PERIODOS.forEach(p => {
+      if (!periodosActivosPorNivel[p.nivel]) periodosActivosPorNivel[p.nivel] = p.id;
+    });
+  }
+
+  // Agrupar cursoIds por nivel para hacer queries por período correcto
+  const cursosPorNivel = {};
+  cursoIds.forEach(id => {
+    const cu = cursoMap[id];
+    const niv = cu?.nivel;
+    if (!cursosPorNivel[niv]) cursosPorNivel[niv] = [];
+    cursosPorNivel[niv].push(id);
+  });
+
+  // Fetch alumnos
   const { data: alumnos } = await sb.from('alumnos')
     .select('id,nombre,apellido,curso_id').in('curso_id', cursoIds).eq('activo', true);
-
   if (!alumnos?.length) { contenedor.innerHTML = '<div class="empty-state">Sin alumnos.</div>'; return; }
 
-  // Fetch calificaciones del período activo
-  let query = sb.from('calificaciones')
-    .select('alumno_id,nota,ausente,materia_id,instancias_evaluativas(es_recuperatorio)')
-    .in('curso_id', cursoIds);
-  if (periodoId) query = query.eq('periodo_id', periodoId);
-  const { data: califs } = await query;
-
-  // Calcular promedio global por alumno (promedio de promedios por materia)
+  // Fetch calificaciones por nivel (con su período activo correspondiente)
   const notasPorAlumnoMateria = {};
-  (califs || []).forEach(c => {
-    if (c.ausente || c.nota === null || c.instancias_evaluativas?.es_recuperatorio) return;
-    const k = `${c.alumno_id}_${c.materia_id}`;
-    if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
-    notasPorAlumnoMateria[k].push(c.nota);
-  });
+  for (const [nivel, ids] of Object.entries(cursosPorNivel)) {
+    const pid = periodosActivosPorNivel[nivel];
+    if (!pid || !ids.length) continue;
+    const { data: califs } = await sb.from('calificaciones')
+      .select('alumno_id,nota,ausente,materia_id')
+      .in('curso_id', ids).eq('periodo_id', pid).limit(3000);
+    (califs || []).forEach(c => {
+      if (c.ausente || c.nota === null) return;
+      const k = `${c.alumno_id}_${c.materia_id}`;
+      if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
+      notasPorAlumnoMateria[k].push(c.nota);
+    });
+  }
 
   const getPromedio = (al) => {
     const keys = Object.keys(notasPorAlumnoMateria).filter(k => k.startsWith(al.id + '_'));
@@ -200,7 +218,6 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
     return proms.reduce((a, b) => a + b, 0) / proms.length;
   };
 
-  // Agregar nombre del curso al alumno para el listado
   const alumnosConCurso = alumnos.map(al => ({
     ...al,
     cursoNombre: cursoMap[al.curso_id]
@@ -208,7 +225,11 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
       : '',
   }));
 
-  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'docg-', periodoActivo ? `Período: ${periodoActivo.nombre}` : 'Año en curso');
+  const periodoLabel = Object.keys(periodosActivosPorNivel).length
+    ? PERIODOS.find(p => Object.values(periodosActivosPorNivel).includes(p.id))?.nombre || 'Período activo'
+    : 'Año en curso';
+
+  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'docg-', periodoLabel);
 }
 
 async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nombreMateria) {
@@ -888,14 +909,8 @@ async function rNotasDirectivo() {
   const rol    = USUARIO_ACTUAL.rol;
   const nivel  = USUARIO_ACTUAL.nivel;
 
-  const cursosQuery = sb.from('cursos')
+  const { data: cursos } = await sb.from('cursos')
     .select('*').eq('institucion_id', instId).order('nivel').order('nombre');
-
-  const periodosPendQuery = (rol === 'preceptor')
-    ? sb.from('periodos_evaluativos').select('*').eq('institucion_id', instId).eq('cerrado', true).is('validado_at', null)
-    : Promise.resolve({ data: [] });
-
-  const [{ data: cursos }, { data: periodosPend }] = await Promise.all([cursosQuery, periodosPendQuery]);
 
   let filtrados = cursos || [];
   if (nivel) filtrados = filtrados.filter(cu => cu.nivel === nivel);
@@ -903,29 +918,12 @@ async function rNotasDirectivo() {
   const niveles = ['inicial','primario','secundario'];
   const colores = { inicial:'#1a7a4a', primario:'#1a5276', secundario:'#6c3483' };
 
-  const validacionBanner = (rol === 'preceptor' && periodosPend?.length) ? `
-    <div style="background:var(--amb-l);border-left:4px solid var(--ambar);border-radius:var(--rad);
-      padding:12px 14px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:700;color:var(--ambar);margin-bottom:8px">
-        ⏳ Períodos pendientes de validación
-      </div>
-      ${periodosPend.map(p => `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-          <div>
-            <div style="font-size:11px;font-weight:600">${p.nombre}</div>
-            <div style="font-size:10px;color:var(--txt2)">${p.nivel} · Cerrado por docente</div>
-          </div>
-          <button class="btn-p" style="font-size:10px;padding:5px 12px;background:var(--ambar)"
-            onclick="validarCierrePeriodo('${p.id}','${p.nombre}')">
-            ✓ Validar
-          </button>
-        </div>`).join('')}
-    </div>` : '';
-
   c.innerHTML = `
     <div class="pg-t">Calificaciones</div>
     <div class="pg-s">${rol === 'preceptor' ? 'Preceptoría' : 'Vista institucional'} · Solo lectura</div>
-    ${validacionBanner}
+    ${rol === 'preceptor' ? `<div style="font-size:11px;color:var(--txt2);background:var(--surf2);border-radius:var(--rad);padding:8px 12px;margin-bottom:12px">
+      Ingresá a cada curso para revisar y validar el cierre de período.
+    </div>` : ''}
     ${niveles.map(n => {
       const cs = filtrados.filter(cu => cu.nivel === n);
       if (!cs.length) return '';
@@ -955,9 +953,18 @@ async function _cargarSituacionDirectivoGlobal(cursos) {
   if (!contenedor || !cursos?.length) return;
 
   const hoy = new Date();
-  const periodoActivo = PERIODOS.find(p => new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin));
-  const periodoId = periodoActivo?.id;
   const cursoIds  = cursos.map(c => c.id);
+
+  // Período activo por nivel
+  const periodosActivosPorNivel = {};
+  PERIODOS.forEach(p => {
+    if (new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin)) {
+      periodosActivosPorNivel[p.nivel] = p.id;
+    }
+  });
+  if (!Object.keys(periodosActivosPorNivel).length) {
+    PERIODOS.forEach(p => { if (!periodosActivosPorNivel[p.nivel]) periodosActivosPorNivel[p.nivel] = p.id; });
+  }
 
   const { data: alumnos } = await sb.from('alumnos')
     .select('id,nombre,apellido,curso_id,cursos(nombre,division)')
@@ -965,19 +972,27 @@ async function _cargarSituacionDirectivoGlobal(cursos) {
 
   if (!alumnos?.length) { contenedor.innerHTML = '<div class="empty-state">Sin alumnos.</div>'; return; }
 
-  let query = sb.from('calificaciones')
-    .select('alumno_id,nota,ausente,materia_id,instancias_evaluativas(es_recuperatorio)')
-    .in('curso_id', cursoIds);
-  if (periodoId) query = query.eq('periodo_id', periodoId);
-  const { data: califs } = await query;
+  // Agrupar cursos por nivel para queries por período correcto
+  const cursosPorNivel = {};
+  cursos.forEach(cu => {
+    if (!cursosPorNivel[cu.nivel]) cursosPorNivel[cu.nivel] = [];
+    cursosPorNivel[cu.nivel].push(cu.id);
+  });
 
   const notasPorAlumnoMateria = {};
-  (califs || []).forEach(c => {
-    if (c.ausente || c.nota === null || c.instancias_evaluativas?.es_recuperatorio) return;
-    const k = `${c.alumno_id}_${c.materia_id}`;
-    if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
-    notasPorAlumnoMateria[k].push(c.nota);
-  });
+  for (const [nivel, ids] of Object.entries(cursosPorNivel)) {
+    const pid = periodosActivosPorNivel[nivel];
+    if (!pid || !ids.length) continue;
+    const { data: califs } = await sb.from('calificaciones')
+      .select('alumno_id,nota,ausente,materia_id')
+      .in('curso_id', ids).eq('periodo_id', pid).limit(3000);
+    (califs || []).forEach(c => {
+      if (c.ausente || c.nota === null) return;
+      const k = `${c.alumno_id}_${c.materia_id}`;
+      if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
+      notasPorAlumnoMateria[k].push(c.nota);
+    });
+  }
 
   const getPromedio = (al) => {
     const keys = Object.keys(notasPorAlumnoMateria).filter(k => k.startsWith(al.id + '_'));
@@ -994,7 +1009,8 @@ async function _cargarSituacionDirectivoGlobal(cursos) {
     cursoNombre: al.cursos ? `${al.cursos.nombre}${al.cursos.division}` : '',
   }));
 
-  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'dirg-', periodoActivo ? `Período: ${periodoActivo.nombre}` : 'Año en curso');
+  const primerPeriodoLabel = PERIODOS.find(p => Object.values(periodosActivosPorNivel).includes(p.id))?.nombre;
+  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'dirg-', primerPeriodoLabel || 'Año en curso');
 }
 
 async function verCalifCurso(cursoId, nivel) {
@@ -1017,25 +1033,23 @@ async function verCalifCurso(cursoId, nivel) {
     const alumnos  = alumnosRes.data || [];
     const materias = materiasRes.data || [];
 
-    // Períodos pendientes de validación — AGREGÁ ESTO ACÁ
-  const { data: periodosPendientes } = await sb.from('periodos_evaluativos')
-    .select('*')
-    .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-    .eq('cerrado', true)
-    .is('validado_at', null);
-
-  const validacionPendHTML = (USUARIO_ACTUAL.rol === 'preceptor' && periodosPendientes?.length) ? `
-    <div class="alr" style="margin-bottom:12px">
-      <div class="alr-t">⏳ Períodos pendientes de validación</div>
-      ${periodosPendientes.map(p => `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
-          <span style="font-size:11px">${p.nombre} · ${p.nivel}</span>
-          <button class="btn-p" style="font-size:10px"
-            onclick="validarCierrePeriodo('${p.id}','${p.nombre}')">
-            ✓ Validar
-          </button>
-        </div>`).join('')}
-    </div>` : '';
+    // Períodos de este nivel que están cerrados y pendientes de validación
+    const periodosPendCurso = periodosCurso.filter(p => p.cerrado && !p.validado_at);
+    const validacionPendHTML = (USUARIO_ACTUAL.rol === 'preceptor' && periodosPendCurso.length) ? `
+      <div style="background:var(--amb-l);border-left:3px solid var(--ambar);border-radius:var(--rad);
+        padding:10px 14px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--ambar);margin-bottom:8px">
+          ⏳ Pendiente de validación
+        </div>
+        ${periodosPendCurso.map(p => `
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <span style="font-size:11px;font-weight:600">${p.nombre}</span>
+            <button class="btn-p" style="font-size:10px;padding:5px 12px;background:var(--ambar)"
+              onclick="validarCierrePeriodo('${p.id}','${p.nombre}')">
+              ✓ Validar este curso
+            </button>
+          </div>`).join('')}
+      </div>` : '';
 
     // Calcular promedios por alumno por materia
     const promediosMap = {};

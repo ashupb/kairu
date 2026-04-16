@@ -153,7 +153,6 @@ async function verCursoDirector(cursoId, nivel) {
     <!-- Tabs -->
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <button class="btn-p" style="font-size:11px" onclick="mostrarGrillaDirector('${cursoId}','${nivel}')">📊 Grilla completa</button>
-      <button class="btn-s" style="font-size:11px" onclick="mostrarListaCurso('${cursoId}','${nivel}','${hoy}',false)">📋 Lista de hoy</button>
     </div>
 
     <!-- Resumen por alumno -->

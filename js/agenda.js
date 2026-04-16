@@ -74,7 +74,7 @@ async function rAgenda() {
     AGENDA_NIVEL === 'todos' || e.nivel === AGENDA_NIVEL || e.nivel === 'todos'
   );
 
-  const puedeCrear = ['director_general','directivo_nivel','docente','preceptor','eoe'].includes(rol);
+  const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
 
   const tabsHTML = (rol === 'director_general' || rol === 'directivo_nivel') ? `
     <div class="nivel-tabs-ag" style="margin-bottom:14px">
@@ -109,8 +109,10 @@ async function rAgenda() {
     ${tabsHTML}
     ${leyendaHTML}
     <div id="form-evento"></div>
+    <div id="detalle-evento"></div>
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
-      ${buildCalGrid(eventosFiltrados, primerDia, ultimoDia)}`;
+      ${buildCalGrid(eventosFiltrados, primerDia, ultimoDia)}
+    </div>`;
 
   inyectarEstilosAgenda();
 }
@@ -194,7 +196,7 @@ async function verEvento(id) {
   const responsables = (e.responsables_ids || [])
     .map(uid => USUARIOS_INST.find(u => u.id === uid)?.nombre_completo).filter(Boolean);
 
-  const puedeEditar = USUARIO_ACTUAL.rol === 'director_general' || e.creado_por === USUARIO_ACTUAL.id;
+  const puedeEditar = ['director_general','directivo_nivel','preceptor'].includes(USUARIO_ACTUAL.rol) || e.creado_por === USUARIO_ACTUAL.id;
 
   document.getElementById('detalle-evento').innerHTML = `
     <div class="card" style="border-left:4px solid ${nc.color};margin-bottom:12px">
