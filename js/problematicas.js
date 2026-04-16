@@ -39,26 +39,41 @@ function puedeAgregarSeg(prob) {
   return perm.agregarSeg || (prob && prob.responsable_id === USUARIO_ACTUAL.id);
 }
 
+// Detecta si las columnas de la migración v2 ya existen en el schema
+let _probMigracionOk = null;
+async function detectarMigracion() {
+  if (_probMigracionOk !== null) return _probMigracionOk;
+  const { error } = await sb.from('problematicas').select('nivel').limit(1);
+  _probMigracionOk = !error || !error.message?.includes('column');
+  return _probMigracionOk;
+}
+
 // ─── DATA FETCH CON PERMISOS ──────────────────────────
 async function getProblematicasData() {
-  const perm   = probPermisos();
-  const instId = USUARIO_ACTUAL.institucion_id;
-  const f      = _probFiltros;
+  const perm        = probPermisos();
+  const instId      = USUARIO_ACTUAL.institucion_id;
+  const f           = _probFiltros;
+  const migOk       = await detectarMigracion();
+
+  // SELECT base — con o sin columnas de v2
+  const selectBase = `*,
+    alumno:alumnos(id,nombre,apellido,curso:cursos(id,nombre,division${migOk ? ',nivel' : ''})),
+    registrado_por_usuario:usuarios!problematicas_registrado_por_fkey(id,nombre_completo)
+    ${migOk ? ',responsable:usuarios!problematicas_responsable_id_fkey(id,nombre_completo)' : ''}`;
 
   let q = sb.from('problematicas')
-    .select(`*,
-      alumno:alumnos(id,nombre,apellido,curso:cursos(id,nombre,division,nivel)),
-      registrado_por_usuario:usuarios!problematicas_registrado_por_fkey(id,nombre_completo),
-      responsable:usuarios!problematicas_responsable_id_fkey(id,nombre_completo)`)
+    .select(selectBase)
     .eq('institucion_id', instId);
 
   // Filtro estado
   if (f.estado === 'activas')    q = q.in('estado', ['abierta','en_seguimiento']);
   else if (f.estado !== 'todas') q = q.eq('estado', f.estado);
 
-  // Filtro urgencia y nivel
+  // Filtro urgencia
   if (f.urgencia !== 'todas') q = q.eq('urgencia', f.urgencia);
-  if (f.nivel    !== 'todos') q = q.eq('nivel',    f.nivel);
+
+  // Filtro nivel solo si migración aplicada
+  if (migOk && f.nivel !== 'todos') q = q.eq('nivel', f.nivel);
 
   // Filtro por rol
   if (perm.soloPropias) {
@@ -80,6 +95,7 @@ async function getProblematicasData() {
 async function rProb() {
   showLoading('prob');
   try {
+    await detectarMigracion();              // inicializa _probMigracionOk antes de renderizar
     const q              = await getProblematicasData();
     const { data, error } = await q;
     if (error) throw error;
@@ -138,12 +154,12 @@ function renderFiltrosProb() {
         ${chip('urgencia','media','Media', 'color:var(--ambar);border-color:rgba(214,137,16,.3);background:var(--amb-l)')}
         ${chip('urgencia','baja','Baja',   'color:var(--verde);border-color:rgba(26,74,46,.3);background:var(--verde-l)')}
       </div>
-      <div class="chip-row">
+      ${(_probMigracionOk === true) ? `<div class="chip-row">
         ${chip('nivel','todos','Todos los niveles')}
         ${chip('nivel','inicial','Inicial')}
         ${chip('nivel','primario','Primario')}
         ${chip('nivel','secundario','Secundario')}
-      </div>
+      </div>` : ''}
     </div>`;
 }
 
@@ -303,15 +319,13 @@ function selChipRow(el, rowId) {
 }
 
 async function confirmarCierreProb(probId) {
-  const el     = document.querySelector(`#motivos-${probId} .chip.on`);
-  const motivo = el?.textContent || 'Resuelta';
-  const { error } = await sb.from('problematicas').update({
-    estado:        'cerrada',
-    motivo_cierre: motivo,
-    cerrado_por:   USUARIO_ACTUAL.id,
-    cerrado_at:    new Date().toISOString(),
-    updated_at:    new Date().toISOString(),
-  }).eq('id', probId);
+  const el      = document.querySelector(`#motivos-${probId} .chip.on`);
+  const motivo  = el?.textContent || 'Resuelta';
+  const migOk   = await detectarMigracion();
+  const updatePayload = migOk
+    ? { estado:'cerrada', motivo_cierre:motivo, cerrado_por:USUARIO_ACTUAL.id, cerrado_at:new Date().toISOString(), updated_at:new Date().toISOString() }
+    : { estado:'resuelta', updated_at:new Date().toISOString() };
+  const { error } = await sb.from('problematicas').update(updatePayload).eq('id', probId);
   if (error) { alert('Error: ' + error.message); return; }
   await sb.from('intervenciones').insert({
     problematica_id: probId,
@@ -325,12 +339,11 @@ async function confirmarCierreProb(probId) {
 
 // ─── REABRIR ──────────────────────────────────────────
 async function reabrirProb(probId) {
-  const { error } = await sb.from('problematicas').update({
-    estado:        'en_seguimiento',
-    reabierto_por: USUARIO_ACTUAL.id,
-    reabierto_at:  new Date().toISOString(),
-    updated_at:    new Date().toISOString(),
-  }).eq('id', probId);
+  const migOk = await detectarMigracion();
+  const payload = migOk
+    ? { estado:'en_seguimiento', reabierto_por:USUARIO_ACTUAL.id, reabierto_at:new Date().toISOString(), updated_at:new Date().toISOString() }
+    : { estado:'en_seguimiento', updated_at:new Date().toISOString() };
+  const { error } = await sb.from('problematicas').update(payload).eq('id', probId);
   if (error) { alert('Error: ' + error.message); return; }
   await sb.from('intervenciones').insert({
     problematica_id: probId,
@@ -441,11 +454,12 @@ async function onNivelProbChange(nivel) {
   cursosEl.innerHTML = '<option>Cargando...</option>';
   cursosEl.disabled  = true;
 
-  const { data } = await sb.from('cursos')
-    .select('id,nombre,division')
+  const migOk = await detectarMigracion();
+  let cursoQ = sb.from('cursos').select('id,nombre,division')
     .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-    .eq('nivel', nivel)
     .order('nombre');
+  if (migOk && nivel) cursoQ = cursoQ.eq('nivel', nivel);
+  const { data } = await cursoQ;
 
   cursosEl.innerHTML = '<option value="">— Seleccioná curso —</option>' +
     (data || []).map(c => `<option value="${c.id}">${c.nombre} ${c.division || ''}</option>`).join('');
@@ -535,8 +549,10 @@ async function guardarProb() {
   const btn = document.getElementById('btn-guardar-prob');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
 
+  const migOk = await detectarMigracion();
+
   for (const alumno of alumnos) {
-    const { data: nueva, error } = await sb.from('problematicas').insert({
+    const basePayload = {
       institucion_id: USUARIO_ACTUAL.institucion_id,
       alumno_id:      alumno.id,
       registrado_por: USUARIO_ACTUAL.id,
@@ -544,10 +560,14 @@ async function guardarProb() {
       urgencia:       urg,
       descripcion:    desc,
       confidencial:   conf,
-      responsable_id: respId || null,
-      nivel,
       estado:         'abierta',
-    }).select().single();
+    };
+    // Incluir columnas v2 solo si la migración fue aplicada
+    const payload = migOk
+      ? { ...basePayload, responsable_id: respId || null, nivel: nivel || null }
+      : basePayload;
+
+    const { data: nueva, error } = await sb.from('problematicas').insert(payload).select().single();
     if (error) {
       alert('Error al guardar: ' + error.message);
       if (btn) { btn.disabled = false; btn.textContent = 'Registrar y notificar'; }
@@ -614,8 +634,12 @@ async function cargarProbAlumno(alumnoId, contenedorId) {
   if (!cont) return;
   cont.innerHTML = '<div class="loading-state small"><div class="spinner"></div></div>';
 
+  const migOk  = await detectarMigracion();
+  const campos = migOk
+    ? 'id,tipo,urgencia,estado,descripcion,created_at,motivo_cierre,confidencial'
+    : 'id,tipo,urgencia,estado,descripcion,created_at,confidencial';
   const { data } = await sb.from('problematicas')
-    .select('id,tipo,urgencia,estado,descripcion,created_at,motivo_cierre,confidencial')
+    .select(campos)
     .eq('alumno_id', alumnoId)
     .order('created_at', { ascending: false });
 
