@@ -41,7 +41,7 @@ async function iniciarApp() {
   document.getElementById('sb-inst-nombre').textContent = instNombre;
 
   // Título de la pestaña del navegador
-  document.title = instNombre + ' · EduGestión';
+  document.title = instNombre + ' · Kairos';
 
   iniciarReloj();
   renderNav();
