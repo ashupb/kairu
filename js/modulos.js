@@ -26,7 +26,7 @@ const ESTADO_OBJ = {
 };
 
 function _objPuedeEditar() {
-  return ['director_general','directivo_nivel','admin'].includes(USUARIO_ACTUAL?.rol);
+  return ['director_general','directivo_nivel','admin','preceptor'].includes(USUARIO_ACTUAL?.rol);
 }
 function _objPuedeRegistrarInc() {
   return ['director_general','directivo_nivel','admin','eoe','preceptor','docente'].includes(USUARIO_ACTUAL?.rol);
@@ -36,7 +36,7 @@ async function rObj() {
   showLoading('obj');
   try {
     const { data, error } = await sb.from('objetivos')
-      .select('*')
+      .select('*, incs:objetivo_incidentes(count)')
       .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -76,13 +76,16 @@ function _rObjLista() {
       <div class="sec-lb" style="margin:0">Objetivos</div>
       ${_objPuedeEditar()?'<button class="btn-p" onclick="_abrirFormObj()">+ Nuevo</button>':''}
     </div>
-    <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-      <select style="font-size:11px;padding:5px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf);color:var(--txt)" onchange="_objFiltros.categoria=this.value;_renderCardsObj()">
-        <option value="">Todas las categorías</option>${cats}
-      </select>
-      <select style="font-size:11px;padding:5px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf);color:var(--txt)" onchange="_objFiltros.estado=this.value;_renderCardsObj()">
-        <option value="">Todos los estados</option>${ests}
-      </select>
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Filtros</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <select style="font-size:11px;padding:5px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf);color:var(--txt)" onchange="_objFiltros.categoria=this.value;_renderCardsObj()">
+          <option value="">Todas las categorías</option>${cats}
+        </select>
+        <select style="font-size:11px;padding:5px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf);color:var(--txt)" onchange="_objFiltros.estado=this.value;_renderCardsObj()">
+          <option value="">Todos los estados</option>${ests}
+        </select>
+      </div>
     </div>
     <div id="obj-cards"></div>`;
   _renderCardsObj();
@@ -100,8 +103,9 @@ function _renderCardsObj() {
     const cat  = CAT_OBJ[obj.categoria]       || CAT_OBJ.institucional;
     const tnd  = TENDENCIA_OBJ[obj.tendencia] || TENDENCIA_OBJ.estable;
     const est  = ESTADO_OBJ[obj.estado]       || ESTADO_OBJ.activo;
-    const prog = obj.progreso ?? obj.cumplimiento ?? 0;
-    const semClr = obj.estado==='en_riesgo'?'var(--rojo)':obj.estado==='logrado'?'var(--azul)':obj.estado==='archivado'?'var(--txt3)':'var(--verde)';
+    const prog     = obj.progreso ?? obj.cumplimiento ?? 0;
+    const incCount = obj.incs?.[0]?.count ?? 0;
+    const semClr   = obj.estado==='en_riesgo'?'var(--rojo)':obj.estado==='logrado'?'var(--azul)':obj.estado==='archivado'?'var(--txt3)':'var(--verde)';
     return `
       <div class="card" style="margin-bottom:10px;cursor:pointer" onclick="_abrirDetalleObj('${obj.id}')">
         <div style="display:flex;align-items:flex-start;gap:10px">
@@ -116,8 +120,8 @@ function _renderCardsObj() {
             </div>
             <div style="font-size:10px;color:var(--txt2);margin-bottom:6px">${obj.responsable_texto||'—'}</div>
             <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--txt3);margin-bottom:3px">
-              <span>Progreso</span>
-              <span style="color:${tnd.color};font-weight:600">${tnd.icon} ${tnd.label} · ${prog}%</span>
+              <span style="color:${tnd.color};font-weight:600">${tnd.icon} ${tnd.label}</span>
+              <span>${prog}% · ${incCount} incidente${incCount!==1?'s':''}</span>
             </div>
             <div class="bb"><div class="bf" style="width:${prog}%;background:${cat.color}"></div></div>
           </div>
@@ -147,12 +151,7 @@ async function _rObjDetalle(objId) {
       .eq('objetivo_id', objId).order('created_at', { ascending: true }),
   ]);
 
-  let respNombre = obj.responsable_texto || '—';
-  if (obj.responsable_id) {
-    const ur = await sb.from('usuarios').select('nombre_completo').eq('id', obj.responsable_id).single();
-    if (ur.data) respNombre = ur.data.nombre_completo;
-  }
-
+  const respNombre = obj.responsable_texto || '—';
   const incs  = incsRes.data  || [];
   const hitos = hitosRes.data || [];
   const cat   = CAT_OBJ[obj.categoria]       || CAT_OBJ.institucional;
@@ -197,7 +196,7 @@ async function _rObjDetalle(objId) {
       <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--txt3);margin-bottom:4px"><span>Progreso</span><span>${prog}%</span></div>
       <div class="bb" style="margin-bottom:10px"><div class="bf" style="width:${prog}%;background:${cat.color}"></div></div>
       <div style="font-size:11px;color:var(--txt2);display:grid;grid-template-columns:1fr 1fr;gap:4px">
-        <span><b>Responsable:</b> ${respNombre}</span>
+        <span style="grid-column:1/-1"><b>Responsable${(obj.responsable_ids?.length??0)>1?'s':''}:</b> ${respNombre}</span>
         ${obj.fecha_inicio   ?`<span><b>Inicio:</b> ${formatFechaCorta(obj.fecha_inicio)}</span>`   :'<span></span>'}
         ${obj.fecha_cierre   ?`<span><b>Cierre:</b> ${formatFechaCorta(obj.fecha_cierre)}</span>`   :'<span></span>'}
         ${obj.fecha_revision ?`<span><b>Revisión:</b> ${formatFechaCorta(obj.fecha_revision)}</span>`:'<span></span>'}
@@ -263,12 +262,16 @@ function _volverListaObj() {
 function _objModal(modalId, titulo, html, btns) {
   document.getElementById(modalId)?.remove();
   const el = document.createElement('div');
-  el.id = modalId; el.className = 'modal-overlay';
+  el.id = modalId;
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.46);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box';
   el.innerHTML = `
-    <div class="modal" style="max-width:480px">
-      <div class="modal-h"><span>${titulo}</span><button class="modal-x" onclick="_cerrarModalObj('${modalId}')">✕</button></div>
-      <div class="modal-b">${html}</div>
-      <div class="modal-f">${btns}</div>
+    <div style="background:var(--surf);border-radius:var(--rad-lg);width:100%;max-width:500px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.24)">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--brd);flex-shrink:0">
+        <span style="font-size:14px;font-weight:600">${titulo}</span>
+        <button onclick="_cerrarModalObj('${modalId}')" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--txt2);padding:0 4px;line-height:1">×</button>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:16px 18px">${html}</div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--brd);flex-shrink:0">${btns}</div>
     </div>`;
   document.body.appendChild(el);
 }
@@ -276,17 +279,26 @@ function _cerrarModalObj(id) { document.getElementById(id)?.remove(); }
 
 async function _abrirFormObj(objId) {
   const obj = objId ? _objCache.find(o=>o.id===objId) : null;
-  const usrRes = await sb.from('usuarios').select('id,nombre_completo')
-    .eq('institucion_id', USUARIO_ACTUAL.institucion_id).or('activo.is.null,activo.eq.true');
+  const usrRes = await sb.from('usuarios').select('id,nombre_completo,rol')
+    .eq('institucion_id', USUARIO_ACTUAL.institucion_id).or('activo.is.null,activo.eq.true')
+    .order('rol').order('nombre_completo');
   const cats = Object.entries(CAT_OBJ).map(([k,v]) =>
     `<option value="${k}" ${obj?.categoria===k?'selected':''}>${v.label}</option>`).join('');
   const nivelesOpts = ['primario','secundario','terciario'].map(n =>
     `<option value="${n}" ${obj?.nivel===n?'selected':''}>${n[0].toUpperCase()+n.slice(1)}</option>`).join('');
-  const respOpts = (usrRes.data||[]).map(u =>
-    `<option value="${u.id}" ${obj?.responsable_id===u.id?'selected':''}>${u.nombre_completo}</option>`).join('');
+
+  const selectedIds = obj?.responsable_ids?.length ? obj.responsable_ids
+    : (obj?.responsable_id ? [obj.responsable_id] : []);
+  const respChks = (usrRes.data||[]).map(u => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;padding:3px 0">
+      <input type="checkbox" class="fo-resp-chk" value="${u.id}" data-nombre="${u.nombre_completo}" data-rol="${u.rol}" ${selectedIds.includes(u.id)?'checked':''}>
+      <span style="flex:1">${u.nombre_completo}</span>
+      <span style="font-size:9px;color:var(--txt3)">${u.rol}</span>
+    </label>`).join('');
+
   const prog = obj?.progreso ?? obj?.cumplimiento ?? 0;
   const html = `
-    <div style="display:grid;gap:8px">
+    <div style="display:grid;gap:10px">
       <div><label class="lbl">Nombre *</label>
         <input type="text" id="fo-nombre" value="${obj?.nombre||''}" placeholder="Nombre del objetivo"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
@@ -299,8 +311,15 @@ async function _abrirFormObj(objId) {
         <textarea id="fo-desc" rows="2" placeholder="Contexto...">${obj?.descripcion||''}</textarea></div>
       <div><label class="lbl">Meta / Criterio de éxito</label>
         <textarea id="fo-meta" rows="2" placeholder="¿Qué queremos lograr y cómo lo mediremos?">${obj?.meta_descripcion||obj?.meta||''}</textarea></div>
-      <div><label class="lbl">Responsable</label>
-        <select id="fo-resp" style="width:100%"><option value="">Sin asignar</option>${respOpts}</select></div>
+      <div>
+        <label class="lbl">Responsables</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+          <button type="button" class="btn-s" style="font-size:10px;padding:3px 8px" onclick="_selRespRol('docente')">Todos docentes</button>
+          <button type="button" class="btn-s" style="font-size:10px;padding:3px 8px" onclick="_selRespRol('preceptor')">Todos preceptores</button>
+          <button type="button" class="btn-s" style="font-size:10px;padding:3px 8px" onclick="_selRespRol('')">Desmarcar todos</button>
+        </div>
+        <div style="border:1px solid var(--brd);border-radius:var(--rad);max-height:140px;overflow-y:auto;padding:6px 10px">${respChks||'<div style="font-size:11px;color:var(--txt2)">Sin usuarios</div>'}</div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div><label class="lbl">Fecha inicio</label>
           <input type="date" id="fo-inicio" value="${obj?.fecha_inicio||''}"></div>
@@ -316,16 +335,26 @@ async function _abrirFormObj(objId) {
   _objModal('modal-form-obj', obj?'Editar objetivo':'Nuevo objetivo', html, btns);
 }
 
+function _selRespRol(rol) {
+  const chks = document.querySelectorAll('.fo-resp-chk');
+  if (rol === '') { chks.forEach(c => c.checked = false); }
+  else { chks.forEach(c => { if (c.dataset.rol === rol) c.checked = true; }); }
+}
+
 async function _guardarFormObj(objId) {
   const nombre = document.getElementById('fo-nombre')?.value.trim();
   if (!nombre) { alert('El nombre es obligatorio.'); return; }
+  const respChks = [...document.querySelectorAll('.fo-resp-chk:checked')];
+  const responsable_ids   = respChks.map(c => c.value);
+  const responsable_texto = respChks.map(c => c.dataset.nombre).join(', ') || null;
   const payload = {
     nombre,
     categoria:        document.getElementById('fo-cat')?.value   || null,
     nivel:            document.getElementById('fo-nivel')?.value  || null,
     descripcion:      document.getElementById('fo-desc')?.value   || null,
     meta_descripcion: document.getElementById('fo-meta')?.value   || null,
-    responsable_id:   document.getElementById('fo-resp')?.value   || null,
+    responsable_ids:  responsable_ids.length ? responsable_ids : null,
+    responsable_texto,
     fecha_inicio:     document.getElementById('fo-inicio')?.value || null,
     fecha_cierre:     document.getElementById('fo-cierre')?.value || null,
     progreso: Math.min(100, Math.max(0, parseInt(document.getElementById('fo-prog')?.value)||0)),

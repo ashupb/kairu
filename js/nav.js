@@ -54,7 +54,7 @@ const NAV_CONFIG = {
     { id:'asist',   icon:'✓',  label:'Asistencia' },
     { id:'notas',   icon:'≡',  label:'Calificaciones' },
     { sec: 'Institucional' },
-    { id:'prob',    icon:'△',  label:'Reportar situación' },
+    { id:'prob',    icon:'△',  label:'Problemáticas' },
     { id:'obj',     icon:'◎',  label:'Objetivos' },
   ],
   preceptor: [
@@ -65,7 +65,7 @@ const NAV_CONFIG = {
     { id:'asist', icon:'✓',   label:'Tomar lista' },
     { id:'notas', icon:'≡',   label:'Calificaciones' },
     { sec: 'Institucional' },
-    { id:'prob',  icon:'△',   label:'Reportar situación' },
+    { id:'prob',  icon:'△',   label:'Problemáticas' },
     { id:'obj',   icon:'◎',   label:'Objetivos' },
     { id:'leg',   icon:'▤',   label:'Resumen del estudiante' },
     { id:'admin', icon:'⊙',   label:'Configuración' },
