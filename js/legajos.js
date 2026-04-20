@@ -266,6 +266,7 @@ const LEG_TABS = [
   { id:'academico',     label:'Académico' },
   { id:'asistencia',    label:'Asistencia' },
   { id:'problematicas', label:'Situaciones' },
+  { id:'objetivos',     label:'Objetivos' },
   { id:'eoe',           label:'EOE' },
   { id:'observaciones', label:'Notas' },
   { id:'docs',          label:'Docs' },
@@ -330,6 +331,7 @@ async function _cargarTabLeg(idx) {
     academico:     _tabAcademico,
     asistencia:    _tabAsistencia,
     problematicas: _tabProblematicas,
+    objetivos:     _tabObjetivos,
     eoe:           _tabEOE,
     observaciones: _tabObservaciones,
     docs:          _tabDocs,
@@ -640,6 +642,39 @@ async function _tabProblematicas(c) {
   const id = 'leg-probs-' + _legAlumnoSel.id;
   c.innerHTML = `<div id="${id}" style="margin-top:12px"></div>`;
   await cargarProbAlumno(_legAlumnoSel.id, id);
+}
+
+// ── TAB: OBJETIVOS ────────────────────────────────────
+async function _tabObjetivos(c) {
+  const alumnoId = _legAlumnoSel.id;
+  try {
+    const { data } = await sb.from('objetivo_incidentes')
+      .select('*, obj:objetivos!objetivo_incidentes_objetivo_id_fkey(nombre,categoria), reg:usuarios!objetivo_incidentes_registrado_por_fkey(nombre_completo)')
+      .eq('alumno_id', alumnoId)
+      .order('created_at', { ascending: false });
+    const incs = data || [];
+    const catColor = { academico:'var(--azul)', conductual:'var(--rojo)', convivencial:'var(--verde)', institucional:'var(--dorado)' };
+    const html = incs.length ? incs.map(i => `
+      <div style="padding:8px 0;border-bottom:1px solid var(--brd)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:3px">
+          <div style="font-size:11px;font-weight:600">${i.obj?.nombre||'—'}</div>
+          ${i.obj?.categoria ? `<span style="font-size:9px;padding:2px 6px;border-radius:4px;background:${catColor[i.obj.categoria]+'22'};color:${catColor[i.obj.categoria]};flex-shrink:0">${i.obj.categoria}</span>` : ''}
+        </div>
+        <div style="font-size:11px;color:var(--txt2)">${i.accion_tomada}</div>
+        ${i.medida ? `<div style="font-size:10px;color:var(--txt3)">Medida: ${i.medida}</div>` : ''}
+        <div style="font-size:10px;color:var(--txt3);margin-top:2px">${i.reg?.nombre_completo||'—'} · ${formatFechaCorta(i.created_at)}</div>
+      </div>`).join('') : '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Sin incidentes de objetivos registrados.</div>';
+    c.innerHTML = `
+      <div class="card" style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div class="sec-lb" style="margin:0">Incidentes en objetivos</div>
+          <button class="btn-s" style="font-size:10px" onclick="goPage('obj')">Ver objetivos →</button>
+        </div>
+        ${html}
+      </div>`;
+  } catch(e) {
+    c.innerHTML = '<div class="card" style="margin-top:12px"><div style="font-size:11px;color:var(--txt2)">Sin incidentes de objetivos registrados.</div></div>';
+  }
 }
 
 // ── TAB 5: EOE ────────────────────────────────────────

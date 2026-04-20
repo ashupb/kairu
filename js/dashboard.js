@@ -92,40 +92,43 @@ function renderAgendaSemana(eventosSem, sem, nivelFiltro) {
 
 // ── SHARED: Strip de objetivos ─────────────────────────
 function renderObjetivosStrip(objetivos) {
-  const activos = (objetivos || []).filter(o => o.estado !== 'cerrado');
-  if (!activos.length) return '';
+  const lista = (objetivos || []).filter(o => o.estado !== 'archivado' && o.estado !== 'logrado');
+  if (!lista.length) return '';
 
-  const ok   = activos.filter(o => o.estado === 'ok').length;
-  const warn = activos.filter(o => o.estado === 'warn').length;
-  const risk = activos.filter(o => o.estado === 'risk' || o.estado === 'riesgo').length;
-  const total = activos.length || 1;
-  const problemas = activos.filter(o => o.estado !== 'ok');
+  const activos    = lista.filter(o => o.estado === 'activo').length;
+  const enRiesgo   = lista.filter(o => o.estado === 'en_riesgo').length;
+  const empeorando = lista.filter(o => o.tendencia === 'empeorando');
+  const problemas  = lista.filter(o => o.estado === 'en_riesgo' || o.tendencia === 'empeorando');
 
   return `
+    ${empeorando.length ? `
+    <div class="alr" style="margin-bottom:14px">
+      <div class="alr-t">↓ ${empeorando.length} objetivo${empeorando.length>1?'s':''} empeorando${empeorando.length>1?'n':''}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-top:4px">${empeorando.slice(0,2).map(o=>o.nombre).join(', ')}${empeorando.length>2?' y más...':''}</div>
+      <div class="acc" style="margin-top:8px"><button class="btn-d" onclick="goPage('obj')">Ver objetivos →</button></div>
+    </div>` : ''}
     <div class="card obj-strip" onclick="goPage('obj')" style="cursor:pointer;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span style="font-size:12px;font-weight:600">◎ Objetivos institucionales</span>
         <button class="btn-s" style="font-size:10px" onclick="event.stopPropagation();goPage('obj')">Ver todos →</button>
       </div>
       <div class="obj-barra">
-        <div style="flex:${ok || 0.1};background:var(--verde);border-radius:4px 0 0 4px"></div>
-        <div style="flex:${warn || 0};background:var(--ambar)"></div>
-        <div style="flex:${risk || 0};background:var(--rojo);border-radius:0 4px 4px 0"></div>
+        <div style="flex:${activos||0.1};background:var(--verde);border-radius:4px 0 0 4px"></div>
+        <div style="flex:${enRiesgo||0};background:var(--rojo);border-radius:0 4px 4px 0"></div>
       </div>
       <div style="display:flex;gap:14px;font-size:10px;margin-top:6px;flex-wrap:wrap">
-        <span style="color:var(--verde)">● ${ok} en curso</span>
-        ${warn ? `<span style="color:var(--ambar)">● ${warn} requieren atención</span>` : ''}
-        ${risk ? `<span style="color:var(--rojo)">● ${risk} en riesgo</span>` : ''}
+        <span style="color:var(--verde)">● ${activos} activo${activos!==1?'s':''}</span>
+        ${enRiesgo ? `<span style="color:var(--rojo)">● ${enRiesgo} en riesgo</span>` : ''}
+        ${empeorando.length ? `<span style="color:var(--rojo)">↓ ${empeorando.length} empeorando</span>` : ''}
       </div>
       ${problemas.length ? `
         <div style="margin-top:10px;border-top:1px solid var(--brd);padding-top:8px;display:flex;flex-direction:column;gap:5px">
-          ${problemas.slice(0, 3).map(o => `
+          ${problemas.slice(0,3).map(o => `
             <div style="display:flex;align-items:center;gap:8px;font-size:11px">
-              <span>${o.icono || '🎯'}</span>
               <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.nombre}</span>
-              <span class="tag ${o.estado === 'warn' ? 'ta' : 'tr'}" style="font-size:9px;flex-shrink:0">${o.estado === 'warn' ? 'Atención' : 'Riesgo'}</span>
+              <span class="tag ${o.estado==='en_riesgo'?'tr':'ta'}" style="font-size:9px;flex-shrink:0">${o.estado==='en_riesgo'?'En riesgo':'Empeorando'}</span>
             </div>`).join('')}
-          ${problemas.length > 3 ? `<div style="font-size:10px;color:var(--verde);text-align:right">+ ${problemas.length - 3} más →</div>` : ''}
+          ${problemas.length > 3 ? `<div style="font-size:10px;color:var(--verde);text-align:right">+ ${problemas.length-3} más →</div>` : ''}
         </div>` : ''}
     </div>`;
 }
@@ -221,9 +224,9 @@ async function rDashDirector() {
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento']),
     sb.from('objetivos')
-      .select('id,nombre,icono,estado')
+      .select('id,nombre,estado,tendencia')
       .eq('institucion_id', instId)
-      .neq('estado', 'cerrado'),
+      .not('estado', 'in', '("archivado","logrado")'),
     sb.from('eventos_institucionales')
       .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
       .eq('institucion_id', instId)
@@ -289,9 +292,9 @@ async function rDashDirectivo() {
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento']),
     sb.from('objetivos')
-      .select('id,nombre,icono,estado')
+      .select('id,nombre,estado,tendencia')
       .eq('institucion_id', instId)
-      .neq('estado', 'cerrado'),
+      .not('estado', 'in', '("archivado","logrado")'),
     sb.from('eventos_institucionales')
       .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
       .eq('institucion_id', instId)
@@ -348,12 +351,16 @@ async function rDashEOE() {
   const miId   = USUARIO_ACTUAL.id;
   const sem    = _semanaActual();
 
-  const [casosRes, eventosRes, respRes, alertasRes] = await Promise.all([
+  const [casosRes, objRes, eventosRes, respRes, alertasRes] = await Promise.all([
     sb.from('problematicas')
       .select('id,tipo,urgencia,alumno:alumnos(nombre,apellido)')
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento'])
       .in('tipo', ['emocional','familiar','salud']),
+    sb.from('objetivos')
+      .select('id,nombre,estado,tendencia')
+      .eq('institucion_id', instId)
+      .not('estado', 'in', '("archivado","logrado")'),
     sb.from('eventos_institucionales')
       .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
       .eq('institucion_id', instId)
@@ -370,6 +377,7 @@ async function rDashEOE() {
   ]);
 
   const casos      = casosRes.data   || [];
+  const objetivos  = objRes.data     || [];
   const eventosSem = eventosRes.data || [];
   const pendientes = (respRes.data   || []).filter(r => r.eventos_institucionales);
   const alertas    = alertasRes.error ? [] : (alertasRes.data || []);
@@ -387,6 +395,7 @@ async function rDashEOE() {
         <div class="alr-t">⚠️ ${urgentes.length} caso${urgentes.length > 1 ? 's' : ''} urgente${urgentes.length > 1 ? 's' : ''}</div>
         <div class="acc"><button class="btn-d" onclick="goPage('eoe')">Ver casos →</button></div>
       </div>` : ''}
+    ${renderObjetivosStrip(objetivos)}
 
     ${renderPendientesRespuesta(pendientes)}
 
