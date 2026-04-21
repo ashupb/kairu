@@ -200,6 +200,43 @@ function renderPendientesRespuesta(pendientes) {
     }).join('')}`;
 }
 
+// ── SHARED: Próximas actividades hoy ──────────────────
+function renderProximasActividades(eventosSem, hoy, nivelFiltro) {
+  let eventos = eventosSem.filter(e => e.fecha_inicio === hoy);
+  if (nivelFiltro && nivelFiltro !== 'todos') {
+    eventos = eventos.filter(e =>
+      !e.nivel || e.nivel === 'todos' ||
+      (e.nivel || '').split(',').map(n => n.trim()).includes(nivelFiltro)
+    );
+  }
+  if (!eventos.length) return '';
+  return `
+    <div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--brd)">
+        <span style="font-size:12px;font-weight:700">Próximas actividades</span>
+        <button class="btn-ghost" onclick="goPage('agenda')" style="font-size:11px;font-weight:600;letter-spacing:0.04em">VER AGENDA →</button>
+      </div>
+      ${eventos.map(e => {
+        const nc = NIVEL_CONFIG[e.nivel] || NIVEL_CONFIG.todos;
+        return `
+          <div style="display:flex;align-items:stretch;cursor:pointer;border-bottom:1px solid var(--brd);transition:background .1s"
+               onmouseover="this.style.background='var(--surf2)'" onmouseout="this.style.background=''"
+               onclick="goPage('agenda')">
+            <div style="width:4px;background:${nc.color};flex-shrink:0"></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;flex:1;min-width:0">
+              <span style="font-family:'DM Mono',monospace;font-size:11px;font-weight:600;color:var(--verde);min-width:38px;flex-shrink:0">
+                ${e.hora ? e.hora.slice(0,5) : '—'}
+              </span>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.nombre}</div>
+                ${e.lugar ? `<div style="font-size:10px;color:var(--txt2)">${e.lugar}</div>` : ''}
+              </div>
+            </div>
+          </div>`;
+      }).join('')}
+    </div>`;
+}
+
 // ── ROUTER ────────────────────────────────────────────
 async function rDash() {
   const rol = USUARIO_ACTUAL?.rol;
@@ -218,7 +255,7 @@ async function rDashDirector() {
   const miId   = USUARIO_ACTUAL.id;
   const sem    = _semanaActual();
 
-  const [probRes, objRes, eventosRes, respRes, alertasRes] = await Promise.all([
+  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes] = await Promise.all([
     sb.from('problematicas')
       .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
       .eq('institucion_id', instId)
@@ -240,13 +277,19 @@ async function rDashDirector() {
       .select('id,problematica:problematicas(id,tipo,urgencia,alumno:alumnos(nombre,apellido))')
       .eq('usuario_id', miId).eq('leida', false)
       .order('created_at', { ascending:false }).limit(10),
+    sb.from('alumnos').select('id', { count:'exact', head:true })
+      .eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
+    sb.from('usuarios').select('id', { count:'exact', head:true })
+      .eq('institucion_id', instId).eq('rol', 'docente').or('activo.is.null,activo.eq.true'),
   ]);
 
-  const probs      = probRes.data    || [];
-  const objetivos  = objRes.data     || [];
-  const eventosSem = eventosRes.data || [];
-  const pendientes = (respRes.data   || []).filter(r => r.eventos_institucionales);
-  const alertas    = alertasRes.error ? [] : (alertasRes.data || []);
+  const probs         = probRes.data    || [];
+  const objetivos     = objRes.data     || [];
+  const eventosSem    = eventosRes.data || [];
+  const pendientes    = (respRes.data   || []).filter(r => r.eventos_institucionales);
+  const alertas       = alertasRes.error ? [] : (alertasRes.data || []);
+  const totalAlumnos  = alumnosRes.count  ?? 0;
+  const totalDocentes = docentesRes.count ?? 0;
 
   const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
 
@@ -257,6 +300,14 @@ async function rDashDirector() {
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · ${INSTITUCION_ACTUAL?.nombre || ''}</div>
 
+    <div class="metrics m4" style="margin-bottom:14px">
+      <div class="mc"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div></div>
+      <div class="mc"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div></div>
+      <div class="mc"><div class="mc-v" style="color:var(--rojo)">${probs.length}</div><div class="mc-l">SITUACIONES</div></div>
+      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${alertas.length}</div><div class="mc-l">ALERTAS</div></div>
+    </div>
+
+    ${renderProximasActividades(eventosSem, sem.hoy, null)}
     ${renderAlertasProb(alertas)}
     ${renderPendientesRespuesta(pendientes)}
     ${renderObjetivosStrip(objetivos)}
@@ -286,7 +337,7 @@ async function rDashDirectivo() {
   const nivel  = USUARIO_ACTUAL.nivel || 'secundario';
   const sem    = _semanaActual();
 
-  const [probRes, objRes, eventosRes, respRes, alertasRes] = await Promise.all([
+  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes] = await Promise.all([
     sb.from('problematicas')
       .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
       .eq('institucion_id', instId)
@@ -308,13 +359,20 @@ async function rDashDirectivo() {
       .select('id,problematica:problematicas(id,tipo,urgencia,alumno:alumnos(nombre,apellido))')
       .eq('usuario_id', miId).eq('leida', false)
       .order('created_at', { ascending:false }).limit(10),
+    sb.from('alumnos').select('id', { count:'exact', head:true })
+      .eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
+    sb.from('usuarios').select('id', { count:'exact', head:true })
+      .eq('institucion_id', instId).eq('rol', 'docente').or('activo.is.null,activo.eq.true'),
   ]);
 
-  const probs      = probRes.data    || [];
-  const objetivos  = objRes.data     || [];
-  const eventosSem = eventosRes.data || [];
-  const pendientes = (respRes.data   || []).filter(r => r.eventos_institucionales);
-  const alertas    = alertasRes.error ? [] : (alertasRes.data || []);
+  const probs         = probRes.data    || [];
+  const objetivos     = objRes.data     || [];
+  const eventosSem    = eventosRes.data || [];
+  const pendientes    = (respRes.data   || []).filter(r => r.eventos_institucionales);
+  const alertas       = alertasRes.error ? [] : (alertasRes.data || []);
+  const totalAlumnos  = alumnosRes.count  ?? 0;
+  const totalDocentes = docentesRes.count ?? 0;
+  const probsNivel    = probs.filter(p => p.alumno?.curso?.nivel === nivel);
 
   const nc = NIVEL_CONFIG[nivel] || NIVEL_CONFIG.todos;
   const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
@@ -323,6 +381,14 @@ async function rDashDirectivo() {
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
 
+    <div class="metrics m4" style="margin-bottom:14px">
+      <div class="mc"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div></div>
+      <div class="mc"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div></div>
+      <div class="mc"><div class="mc-v" style="color:var(--rojo)">${probsNivel.length}</div><div class="mc-l">SITUACIONES</div></div>
+      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${alertas.length}</div><div class="mc-l">ALERTAS</div></div>
+    </div>
+
+    ${renderProximasActividades(eventosSem, sem.hoy, nivel)}
     ${renderAlertasProb(alertas)}
     ${renderPendientesRespuesta(pendientes)}
     ${renderObjetivosStrip(objetivos)}
@@ -556,10 +622,21 @@ async function rDashDocente() {
       }).join('')}
     </div>` : '';
 
+  const listasPendCount = cursos.filter(c => !cursosConLista.has(c.id)).length;
+  const totalSituaciones = Object.values(probsByCurso).reduce((s, a) => s + a.length, 0);
+  const listaColor = listasPendCount ? 'var(--rojo)' : 'var(--verde)';
+
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()}</div>
 
+    <div class="metrics m3" style="margin-bottom:14px">
+      <div class="mc"><div class="mc-v" style="color:${listaColor}">${listasPendCount}</div><div class="mc-l">LISTAS PENDIENTES</div></div>
+      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${totalSituaciones}</div><div class="mc-l">SITUACIONES</div></div>
+      <div class="mc"><div class="mc-v">${cursos.length}</div><div class="mc-l">MIS CURSOS</div></div>
+    </div>
+
+    ${renderProximasActividades(eventosSem, sem.hoy, null)}
     ${renderPendientesRespuesta(pendientes)}
 
     <div class="dash-cols">
@@ -708,10 +785,26 @@ async function rDashPreceptor() {
         </div>`;
     }).join('')}` : '';
 
+  const probsNivel     = probs.filter(p => p.alumno?.curso?.nivel === nivel);
+  const listasOK       = cursosConListaHoy.size;
+  const listasTotal    = cursos.length;
+  const asistPct       = listasTotal ? Math.round(listasOK / listasTotal * 100) : 0;
+  const asistColor     = asistPct >= 100 ? 'var(--verde)' : asistPct > 0 ? 'var(--ambar)' : 'var(--rojo)';
+  const pendColor      = pendientesHoy.length ? 'var(--rojo)' : 'var(--verde)';
+  const urgentesNivel  = probsNivel.filter(p => p.urgencia === 'alta').length;
+
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
 
+    <div class="metrics m4" style="margin-bottom:14px">
+      <div class="mc"><div class="mc-v" style="color:${asistColor}">${asistPct}%</div><div class="mc-l">ASISTENCIA HOY</div></div>
+      <div class="mc"><div class="mc-v" style="color:${pendColor}">${pendientesHoy.length}</div><div class="mc-l">LISTAS PENDIENTES</div></div>
+      <div class="mc"><div class="mc-v" style="color:var(--rojo)">${urgentesNivel}</div><div class="mc-l">URGENTES</div></div>
+      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${alertasAlumnos.length}</div><div class="mc-l">ALERTAS ASIST.</div></div>
+    </div>
+
+    ${renderProximasActividades(eventosSem, sem.hoy, nivel)}
     ${listasHTML}
 
     <div class="dash-cols">

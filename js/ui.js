@@ -22,34 +22,75 @@ document.addEventListener('click', e => {
   }
 });
 
+const _NOTIF_ICONS = {
+  'problematica':       { icon: '🚨', cls: 'alerta' },
+  'intervencion':       { icon: '📋', cls: 'info'   },
+  'reunion':            { icon: '📅', cls: 'info'   },
+  'invitacion_evento':  { icon: '📨', cls: 'info'   },
+  'evento_responsable': { icon: '📌', cls: 'warn'   },
+  'objetivo':           { icon: '🎯', cls: 'success' },
+  'incidente_objetivo': { icon: '⚠️', cls: 'warn'   },
+};
+
+function _notifItemHTML(n) {
+  const { icon, cls } = _NOTIF_ICONS[n.tipo] || { icon: '🔔', cls: 'info' };
+  return `
+    <div class="notif-item${n.leida ? '' : ' no-leida'}"
+         onclick="abrirNotif('${n.id}','${n.referencia_tabla || ''}')">
+      ${!n.leida ? '<div class="notif-unread-dot"></div>' : ''}
+      <div class="notif-dot ${cls}">${icon}</div>
+      <div style="flex:1;min-width:0">
+        <div class="notif-texto">${n.titulo}</div>
+        ${n.descripcion ? `<div class="notif-desc">${n.descripcion}</div>` : ''}
+        <span class="notif-tiempo">${tiempoDesde(n.created_at)}</span>
+      </div>
+    </div>`;
+}
+
 async function cargarNotificaciones() {
   const { data } = await sb
     .from('notificaciones')
     .select('*')
     .eq('usuario_id', USUARIO_ACTUAL.id)
     .order('created_at', { ascending: false })
-    .limit(15);
+    .limit(20);
 
-  const noLeidas = (data || []).filter(n => !n.leida).length;
+  const todas = data || [];
+  const noLeidas = todas.filter(n => !n.leida).length;
   const cnt = document.getElementById('notif-count');
-  cnt.textContent   = noLeidas;
-  cnt.style.display = noLeidas > 0 ? 'inline-block' : 'none';
+  if (cnt) {
+    cnt.textContent   = noLeidas;
+    cnt.style.display = noLeidas > 0 ? 'inline-block' : 'none';
+  }
 
   const lista = document.getElementById('notif-lista');
   if (!lista) return;
 
-  if (!data?.length) {
-    lista.innerHTML = '<div style="font-size:12px;color:var(--txt2);padding:16px;text-align:center">Sin notificaciones</div>';
+  if (!todas.length) {
+    lista.innerHTML = '<div style="font-size:12px;color:var(--txt2);padding:20px;text-align:center">Sin notificaciones recientes</div>';
     return;
   }
 
-  lista.innerHTML = data.map(n => `
-    <div class="notif-item ${n.leida ? '' : 'no-leida'}"
-         onclick="abrirNotif('${n.id}','${n.referencia_tabla || ''}')">
-      <div style="font-size:11px;font-weight:600">${n.titulo}</div>
-      <div style="font-size:10px;color:var(--txt2)">${n.descripcion || ''}</div>
-      <div style="font-size:10px;color:var(--txt3);margin-top:2px">${tiempoDesde(n.created_at)}</div>
-    </div>`).join('');
+  const limitadas = todas.slice(0, 8);
+  const ahora     = new Date();
+  const hoyISO    = ahora.toISOString().split('T')[0];
+  const ayerISO   = new Date(+ahora - 86400000).toISOString().split('T')[0];
+
+  const grupos = { 'Hoy': [], 'Ayer': [], 'Esta semana': [] };
+  limitadas.forEach(n => {
+    const f = n.created_at.split('T')[0];
+    if      (f === hoyISO)  grupos['Hoy'].push(n);
+    else if (f === ayerISO) grupos['Ayer'].push(n);
+    else                    grupos['Esta semana'].push(n);
+  });
+
+  let html = '';
+  for (const [label, notifs] of Object.entries(grupos)) {
+    if (!notifs.length) continue;
+    html += `<div class="notif-grupo-label">${label}</div>`;
+    html += notifs.map(n => _notifItemHTML(n)).join('');
+  }
+  lista.innerHTML = html;
 }
 
 async function abrirNotif(id, tabla) {

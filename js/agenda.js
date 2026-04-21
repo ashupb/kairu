@@ -2,11 +2,32 @@
 // AGENDA.JS — Calendario institucional v3
 // =====================================================
 
-let AGENDA_MES     = new Date().getMonth();
-let AGENDA_ANIO    = new Date().getFullYear();
-let AGENDA_NIVEL   = 'todos';
-let TIPOS_EVENTO   = [];
-let USUARIOS_INST  = [];
+let AGENDA_SEMANA_INICIO = _lunesDeHoy();
+let AGENDA_DIA_SEL       = new Date().toISOString().split('T')[0];
+let AGENDA_NIVEL         = 'todos';
+let TIPOS_EVENTO         = [];
+let USUARIOS_INST        = [];
+let _agendaEventosSem    = [];
+
+function _lunesDeHoy() {
+  const d = new Date();
+  const dow = d.getDay();
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return d.toISOString().split('T')[0];
+}
+
+function _lunesDe(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  const dow = d.getDay();
+  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return d.toISOString().split('T')[0];
+}
+
+function _addDias(iso, dias) {
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().split('T')[0];
+}
 
 const NIVEL_CONFIG = {
   inicial:    { color: '#1a7a4a', bg: '#e8f5ee', label: '🌱 Inicial' },
@@ -52,33 +73,55 @@ async function rAgenda() {
   TIPOS_EVENTO  = tiposRes.data  || [];
   USUARIOS_INST = usuariosRes.data || [];
 
-  const primerDia = new Date(AGENDA_ANIO, AGENDA_MES, 1);
-  const ultimoDia = new Date(AGENDA_ANIO, AGENDA_MES + 1, 0);
-  const desde = isoFecha(AGENDA_ANIO, AGENDA_MES + 1, 1);
-  const hasta  = isoFecha(AGENDA_ANIO, AGENDA_MES + 1, ultimoDia.getDate());
-
-  let query = sb.from('eventos_institucionales')
+  const sabado = _addDias(AGENDA_SEMANA_INICIO, 5);
+  const { data: eventos } = await sb
+    .from('eventos_institucionales')
     .select('*, usuarios(nombre_completo)')
     .eq('institucion_id', instId)
-    .gte('fecha_inicio', desde)
-    .lte('fecha_inicio', hasta)
-    .order('fecha_inicio');
+    .gte('fecha_inicio', AGENDA_SEMANA_INICIO)
+    .lte('fecha_inicio', sabado)
+    .order('hora', { nullsFirst: false })
+    .order('nombre');
 
-  if (rol === 'directivo_nivel') {
-    query = query.in('nivel', [USUARIO_ACTUAL.nivel, 'todos']);
-  }
-
-  const { data: eventos } = await query;
-
-  const eventosFiltrados = (eventos || []).filter(e => {
+  _agendaEventosSem = (eventos || []).filter(e => {
     if (AGENDA_NIVEL === 'todos') return true;
     if (!e.nivel || e.nivel === 'todos') return true;
     return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
   });
 
-  const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
+  if (AGENDA_DIA_SEL < AGENDA_SEMANA_INICIO || AGENDA_DIA_SEL > sabado) {
+    AGENDA_DIA_SEL = AGENDA_SEMANA_INICIO;
+  }
 
-  const tabsHTML = (rol === 'director_general' || rol === 'directivo_nivel') ? `
+  const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
+  const hoy = new Date().toISOString().split('T')[0];
+
+  const dLunes  = new Date(AGENDA_SEMANA_INICIO + 'T12:00:00');
+  const dSabado = new Date(sabado + 'T12:00:00');
+  let tituloSem;
+  if (dLunes.getMonth() === dSabado.getMonth()) {
+    tituloSem = `${dLunes.getDate()} al ${dSabado.getDate()} de ${MESES_NOMBRES[dSabado.getMonth()].toLowerCase()}, ${dSabado.getFullYear()}`;
+  } else if (dLunes.getFullYear() === dSabado.getFullYear()) {
+    tituloSem = `${dLunes.getDate()} de ${MESES_NOMBRES[dLunes.getMonth()].toLowerCase()} al ${dSabado.getDate()} de ${MESES_NOMBRES[dSabado.getMonth()].toLowerCase()}, ${dSabado.getFullYear()}`;
+  } else {
+    tituloSem = `${formatFechaLatam(AGENDA_SEMANA_INICIO)} al ${formatFechaLatam(sabado)}`;
+  }
+
+  const DIAS_TABS = ['Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const tabsDiaHTML = DIAS_TABS.map((lbl, i) => {
+    const iso  = _addDias(AGENDA_SEMANA_INICIO, i);
+    const d    = new Date(iso + 'T12:00:00');
+    const esSel = iso === AGENDA_DIA_SEL;
+    const esHoy = iso === hoy;
+    const tieneEvs = _agendaEventosSem.some(e => e.fecha_inicio === iso);
+    return `<button class="dia-tab${esSel ? ' on' : ''}${esHoy ? ' hoy' : ''}" onclick="selDia('${iso}')">
+      <span class="dia-lbl">${lbl}</span>
+      <span class="dia-num">${d.getDate()}</span>
+      ${tieneEvs ? '<span class="dia-dot"></span>' : ''}
+    </button>`;
+  }).join('');
+
+  const filtroTabsHTML = (rol === 'director_general' || rol === 'directivo_nivel') ? `
     <div class="nivel-tabs-ag" style="margin-bottom:14px">
       ${Object.entries(NIVEL_CONFIG).map(([k,v]) => `
         <button class="nivel-tab-ag ${AGENDA_NIVEL===k?'on':''}"
@@ -87,97 +130,67 @@ async function rAgenda() {
         </button>`).join('')}
     </div>` : '';
 
-  const leyendaHTML = `
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
-      <span style="font-size:10px;color:var(--txt3);font-weight:700">NIVELES:</span>
-      ${Object.entries(NIVEL_CONFIG).map(([k,v]) => `
-        <span style="font-size:10px;padding:2px 10px;border-radius:20px;background:${v.bg};color:${v.color};border:1px solid ${v.color}40;font-weight:500">${v.label}</span>
-      `).join('')}
-    </div>`;
-
   c.innerHTML = `
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div>
         <div class="pg-t">Agenda institucional</div>
-        <div class="pg-s">${MESES_NOMBRES[AGENDA_MES]} ${AGENDA_ANIO}</div>
+        <div class="pg-s">Semana del ${tituloSem}</div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button class="btn-s" style="font-size:11px;padding:6px 10px" onclick="cambiarMes(-1)">← Anterior</button>
-        <button class="btn-s" style="font-size:11px;padding:6px 10px" onclick="irHoy()">Hoy</button>
-        <button class="btn-s" style="font-size:11px;padding:6px 10px" onclick="cambiarMes(1)">Siguiente →</button>
-        ${puedeCrear ? `<button class="btn-p" style="font-size:11px" onclick="abrirFormEvento()">+ Nuevo evento</button>` : ''}
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <button class="semana-nav-btn" onclick="cambiarSemana(-1)" title="Semana anterior">◀</button>
+        <button class="btn-s" style="font-size:11px;padding:6px 12px" onclick="irHoy()">Hoy</button>
+        <button class="semana-nav-btn" onclick="cambiarSemana(1)" title="Semana siguiente">▶</button>
+        ${puedeCrear ? `<button class="btn-p" style="font-size:11px" onclick="abrirFormEvento()">+ Nuevo</button>` : ''}
       </div>
     </div>
-    ${tabsHTML}
-    ${leyendaHTML}
+    ${filtroTabsHTML}
+    <div class="dia-tabs">${tabsDiaHTML}</div>
     <div id="form-evento"></div>
     <div id="detalle-evento"></div>
-    <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
-      ${buildCalGrid(eventosFiltrados, primerDia, ultimoDia)}
-    </div>`;
+    <div id="agenda-lista-dia"></div>`;
 
+  _renderEventosDia(_agendaEventosSem.filter(e => e.fecha_inicio === AGENDA_DIA_SEL));
   inyectarEstilosAgenda();
 }
 
-// ─── GRILLA ───────────────────────────────────────────
-function buildCalGrid(eventos, primerDia, ultimoDia) {
-  const evPorDia = {};
-  eventos.forEach(e => {
-    const d = e.fecha_inicio;
-    if (!evPorDia[d]) evPorDia[d] = [];
-    evPorDia[d].push(e);
-  });
-  Object.keys(evPorDia).forEach(d => {
-    evPorDia[d].sort((a, b) => {
-      if (!a.hora) return 1;
-      if (!b.hora) return -1;
-      return a.hora.localeCompare(b.hora);
-    });
-  });
+// ─── LISTA DE EVENTOS DEL DÍA ─────────────────────────
+function _renderEventosDia(eventos) {
+  const c = document.getElementById('agenda-lista-dia');
+  if (!c) return;
 
-  const hoyISO = new Date().toISOString().split('T')[0];
-  const inicioSemana = primerDia.getDay();
-  const totalDias = ultimoDia.getDate();
-
-  let html = `
-    <div class="cal-header-ag">
-      ${DIAS_NOMBRES.map(d => `<div class="cal-th-ag">${d}</div>`).join('')}
-    </div>
-    <div class="cal-body-ag">`;
-
-  for (let i = 0; i < inicioSemana; i++) html += `<div class="cal-cell-ag empty"></div>`;
-
-  for (let dia = 1; dia <= totalDias; dia++) {
-    const fechaStr = isoFecha(AGENDA_ANIO, AGENDA_MES + 1, dia);
-    const esHoy = fechaStr === hoyISO;
-    const evs   = evPorDia[fechaStr] || [];
-
-    html += `<div class="cal-cell-ag ${esHoy?'hoy':''}">
-  <div class="cal-dia-num-ag ${esHoy?'hoy':''}">${dia}</div>
-  ${evs.slice(0, 3).map(e => {
-    const nc = NIVEL_CONFIG[e.nivel] || NIVEL_CONFIG.todos;
-    return `<div class="cal-ev-chip-ag"
-      style="background:${nc.bg};color:${nc.color};border-left:3px solid ${nc.color}"
-      onclick="verEvento('${e.id}')"
-      title="${e.hora ? e.hora+' · ' : ''}${e.nombre}">
-      ${e.hora ? `<span style="opacity:.7;margin-right:2px">${e.hora}</span>` : ''}${e.nombre.length > 18 ? e.nombre.substring(0,18)+'…' : e.nombre}
+  if (!eventos.length) {
+    c.innerHTML = `<div class="empty-state" style="padding:28px 0">
+      <span style="font-size:28px">📭</span>
+      <div>Sin eventos este día</div>
     </div>`;
-  }).join('')}
-  ${evs.length > 0 ? `
-  <div class="cal-dots">
-    ${evs.slice(0,4).map(e => {
-      const nc = NIVEL_CONFIG[e.nivel] || NIVEL_CONFIG.todos;
-      return `<div class="cal-dot" style="background:${nc.color}" onclick="verEvento('${e.id}')" title="${e.nombre}"></div>`;
-    }).join('')}
-  </div>` : ''}
-  ${evs.length > 3 ? `<div style="font-size:9px;color:var(--txt3);padding:1px 4px">+${evs.length-3}</div>` : ''}
-</div>`;
+    return;
   }
 
-  const resto = (inicioSemana + totalDias) % 7;
-  if (resto > 0) for (let i = 0; i < 7-resto; i++) html += `<div class="cal-cell-ag empty"></div>`;
+  c.innerHTML = eventos.map(e => {
+    const nc   = NIVEL_CONFIG[e.nivel] || NIVEL_CONFIG.todos;
+    const tipo = TIPOS_EVENTO.find(t => t.id === e.tipo_id);
+    return `<div class="agenda-item" onclick="verEvento('${e.id}')">
+      <div class="agenda-hora">${e.hora ? e.hora.slice(0,5) : '—'}</div>
+      <div class="agenda-barra" style="background:${nc.color}"></div>
+      <div class="agenda-info">
+        <div class="agenda-titulo">${e.nombre}</div>
+        <div class="agenda-meta">
+          ${tipo ? `<span>${tipo.nombre}</span>` : ''}
+          ${e.lugar ? `<span>📍 ${e.lugar}</span>` : ''}
+          <span style="color:${nc.color}">${nc.label}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
-  return html + `</div>`;
+function selDia(iso) {
+  AGENDA_DIA_SEL = iso;
+  document.querySelectorAll('.dia-tab').forEach(btn => {
+    const esSel = btn.getAttribute('onclick')?.includes(`'${iso}'`);
+    btn.classList.toggle('on', !!esSel);
+  });
+  _renderEventosDia(_agendaEventosSem.filter(e => e.fecha_inicio === iso));
 }
 
 // ─── VER DETALLE ──────────────────────────────────────
@@ -606,24 +619,20 @@ async function guardarEvento(eventoId) {
   if (error) { alert('Error al guardar: ' + error.message); return; }
 
   document.getElementById('form-evento').innerHTML = '';
-  const d = new Date(fechaNorm + 'T12:00:00');
-  AGENDA_MES  = d.getMonth();
-  AGENDA_ANIO = d.getFullYear();
+  AGENDA_SEMANA_INICIO = _lunesDe(fechaNorm);
+  AGENDA_DIA_SEL = fechaNorm;
   rAgenda();
 }
 
 // ─── NAVEGACIÓN ───────────────────────────────────────
-function cambiarMes(delta) {
-  AGENDA_MES += delta;
-  if (AGENDA_MES > 11) { AGENDA_MES = 0;  AGENDA_ANIO++; }
-  if (AGENDA_MES < 0)  { AGENDA_MES = 11; AGENDA_ANIO--; }
+function cambiarSemana(delta) {
+  AGENDA_SEMANA_INICIO = _addDias(AGENDA_SEMANA_INICIO, delta * 7);
   rAgenda();
 }
 
 function irHoy() {
-  const h = new Date();
-  AGENDA_MES = h.getMonth();
-  AGENDA_ANIO = h.getFullYear();
+  AGENDA_SEMANA_INICIO = _lunesDeHoy();
+  AGENDA_DIA_SEL = new Date().toISOString().split('T')[0];
   rAgenda();
 }
 
@@ -653,17 +662,30 @@ function inyectarEstilosAgenda() {
     .nivel-tab-ag{padding:6px 14px;border-radius:20px;border:1px solid var(--brd);cursor:pointer;font-size:11px;background:var(--surf2);color:var(--txt2);font-family:inherit;transition:all .15s;}
     .nivel-tab-ag:hover{opacity:.85;}
 
-    .cal-header-ag{display:grid;grid-template-columns:repeat(7,1fr);background:var(--surf2);border-bottom:1px solid var(--brd);}
-    .cal-th-ag{padding:8px 4px;text-align:center;font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;}
-    .cal-body-ag{display:grid;grid-template-columns:repeat(7,1fr);}
-    .cal-cell-ag{min-height:88px;padding:4px;border-right:1px solid var(--brd);border-bottom:1px solid var(--brd);}
-    .cal-cell-ag.empty{background:var(--surf2);opacity:.5;}
-    .cal-cell-ag.hoy{background:#f0f9f4;}
-    .dark .cal-cell-ag.hoy{background:#0f2a1a;}
-    .cal-dia-num-ag{font-size:11px;font-weight:600;margin-bottom:3px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:50%;}
-    .cal-dia-num-ag.hoy{background:var(--verde);color:#fff;}
-    .cal-ev-chip-ag{font-size:9px;padding:2px 5px;border-radius:3px;margin-bottom:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .1s;font-weight:500;}
-    .cal-ev-chip-ag:hover{opacity:.75;}
+    .semana-nav-btn{width:32px;height:32px;border:1px solid var(--brd);border-radius:8px;background:var(--surf);cursor:pointer;font-size:12px;color:var(--txt2);display:inline-flex;align-items:center;justify-content:center;transition:background .12s;}
+    .semana-nav-btn:hover{background:var(--surf2);}
+
+    .dia-tabs{display:flex;gap:6px;margin-bottom:16px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px;}
+    .dia-tabs::-webkit-scrollbar{display:none;}
+    .dia-tab{flex:1;min-width:52px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 6px 10px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf);cursor:pointer;transition:all .15s;position:relative;font-family:inherit;}
+    .dia-tab:hover{background:var(--surf2);}
+    .dia-tab.on{background:var(--verde);border-color:var(--verde);color:#fff;}
+    .dia-tab.hoy:not(.on){border-color:var(--verde);}
+    .dia-lbl{font-family:'DM Mono',monospace;font-size:9px;font-weight:500;text-transform:uppercase;letter-spacing:0.06em;color:var(--txt3);}
+    .dia-tab.on .dia-lbl{color:rgba(255,255,255,0.75);}
+    .dia-tab.hoy:not(.on) .dia-lbl{color:var(--verde);}
+    .dia-num{font-size:17px;font-weight:700;line-height:1;color:var(--txt);}
+    .dia-tab.on .dia-num{color:#fff;}
+    .dia-dot{width:5px;height:5px;border-radius:50%;background:var(--verde);position:absolute;bottom:5px;}
+    .dia-tab.on .dia-dot{background:rgba(255,255,255,0.7);}
+
+    .agenda-item{display:grid;grid-template-columns:52px 4px 1fr;gap:0 12px;align-items:stretch;padding:12px 14px;margin-bottom:6px;background:var(--surf);border-radius:var(--rad);border:1px solid var(--brd);cursor:pointer;transition:background .1s;}
+    .agenda-item:hover{background:var(--surf2);}
+    .agenda-hora{font-family:'DM Mono',monospace;font-size:12px;font-weight:500;color:var(--txt2);padding-top:3px;text-align:right;}
+    .agenda-barra{border-radius:2px;align-self:stretch;min-height:36px;}
+    .agenda-info{display:flex;flex-direction:column;gap:4px;}
+    .agenda-titulo{font-size:13px;font-weight:600;color:var(--txt);line-height:1.3;}
+    .agenda-meta{display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--txt2);}
 
     .form-grid-2-ag{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
     @media(max-width:600px){.form-grid-2-ag{grid-template-columns:1fr;}}
@@ -676,7 +698,7 @@ function inyectarEstilosAgenda() {
     .usr-search-wrap{position:relative;}
     .usr-search-inp{width:100%;border:1px solid var(--brd);border-radius:var(--rad);padding:9px 12px;background:var(--surf);color:var(--txt);font-family:'DM Sans',sans-serif;font-size:12px;}
     .usr-search-inp:focus{outline:none;border-color:var(--verde);}
-    .usr-dropdown{position:absolute;z-index:100;background:var(--surf);border:1px solid var(--brd2);border-radius:var(--rad);box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;width:100%;top:calc(100% + 4px);left:0;}
+    .usr-dropdown{position:absolute;z-index:100;background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad);box-shadow:0 4px 16px rgba(0,0,0,.12);max-height:200px;overflow-y:auto;width:100%;top:calc(100% + 4px);left:0;}
     .usr-opt{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;font-size:11px;transition:background .1s;}
     .usr-opt:hover{background:var(--surf2);}
     .usr-opt.sel{background:var(--verde-l);color:var(--verde);}
@@ -684,11 +706,6 @@ function inyectarEstilosAgenda() {
     .chips-sel{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;min-height:24px;}
     .chip-sel{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;background:var(--azul-l);color:var(--azul);font-size:11px;border:1px solid var(--azul);}
     .chip-av-sm{width:16px;height:16px;border-radius:50%;background:var(--verde);color:#fff;font-size:8px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
-
-    @media(max-width:768px){
-      .cal-cell-ag{min-height:50px;}
-      .cal-ev-chip-ag{display:none;}
-    }
   `;
   document.head.appendChild(st);
 }

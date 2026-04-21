@@ -256,5 +256,12 @@ create policy "asistencias_institucion" on asistencias
     )
   );
 
+-- =====================================================
+-- MIGRACIÓN: descripcion en objetivo_incidentes
+-- Ejecutar si la tabla ya existe sin esta columna
+-- =====================================================
+alter table objetivo_incidentes
+  add column if not exists descripcion text;
+
 
 

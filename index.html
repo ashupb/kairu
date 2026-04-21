@@ -66,17 +66,22 @@
   <!-- SIDEBAR -->
   <div class="sidebar" id="sidebar">
     <div class="sb-top">
-      <!-- Logo/nombre de la institución se carga dinámicamente -->
-      <svg viewBox="0 0 48 48" width="30" height="30" fill="none" style="flex-shrink:0">
+      <svg viewBox="0 0 48 48" width="28" height="28" fill="none" style="flex-shrink:0">
         <circle cx="24" cy="24" r="22" stroke="#229957" stroke-width="2.5"/>
         <rect x="13" y="13" width="6" height="22" fill="#fff"/>
         <polygon points="19,24 19,13 33,13 25.5,24" fill="#fff"/>
         <polygon points="19,24 19,35 33,35 25.5,24" fill="#fff"/>
         <rect x="33" y="32" width="4" height="4" fill="#229957"/>
       </svg>
-      <div class="sb-inst-logo" id="sb-inst-logo">E</div>
-      <span class="sb-nombre" id="sb-inst-nombre">[KAIROS]</span>
+      <span class="sb-nombre">[KAIROS]</span>
       <button class="sb-toggle" onclick="toggleSidebar()" title="Contraer menú"><span id="sb-toggle-icon">‹</span></button>
+    </div>
+    <div class="sb-inst-badge" id="sb-inst-badge">
+      <div class="sb-inst-logo" id="sb-inst-logo">E</div>
+      <div style="min-width:0;overflow:hidden">
+        <div class="sb-inst-nombre-text" id="sb-inst-nombre">—</div>
+        <div class="sb-inst-sub">Institución</div>
+      </div>
     </div>
     <div class="sb-user">
       <div class="sb-av" id="sb-av">—</div>

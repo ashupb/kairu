@@ -176,14 +176,25 @@ async function _rObjDetalle(objId) {
     </div>`).join('') : '<div style="font-size:11px;color:var(--txt2)">Sin hitos registrados.</div>';
 
   const incsHTML = incs.length ? incs.map(i => {
-    const nom = i.alm ? `${i.alm.apellido}, ${i.alm.nombre}` : (i.descripcion_alumno||'—');
+    const nom     = i.alm ? `${i.alm.apellido}, ${i.alm.nombre}` : (i.descripcion_alumno || null);
+    const inicAl  = nom ? nom.split(/[\s,]+/).filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase() : null;
+    const desc    = i.descripcion || null;
     return `
-      <div style="padding:8px 0;border-bottom:1px solid var(--brd)">
-        <div style="font-size:11px;font-weight:500">${nom}${i.curso_texto?` <span style="color:var(--txt2);font-weight:400">· ${i.curso_texto}</span>`:''}</div>
-        <div style="font-size:11px;color:var(--txt2);margin-top:2px">${i.accion_tomada}</div>
-        ${i.medida?`<div style="font-size:10px;color:var(--txt3)">Medida: ${i.medida}</div>`:''}
-        <div style="font-size:10px;color:var(--txt3);margin-top:2px">${i.reg?.nombre_completo||'—'} · ${formatFechaCorta(i.created_at)}</div>
-      </div>`}).join('') : '<div style="font-size:11px;color:var(--txt2)">Sin incidentes registrados.</div>';
+      <div style="padding:10px 0;border-bottom:1px solid var(--brd)">
+        ${nom ? `
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
+          <div style="width:26px;height:26px;border-radius:50%;background:var(--rojo-l);color:var(--rojo);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">${inicAl}</div>
+          <div>
+            <div style="font-size:12px;font-weight:600">${nom}</div>
+            ${i.curso_texto?`<div style="font-size:10px;color:var(--txt3)">${i.curso_texto}</div>`:''}
+          </div>
+          <span style="margin-left:auto;font-size:9px;background:var(--verde-l);color:var(--verde);padding:2px 6px;border-radius:10px;flex-shrink:0">En legajo</span>
+        </div>` : ''}
+        ${desc ? `<div style="font-size:11px;color:var(--txt2);margin-bottom:4px;font-style:italic">"${desc}"</div>` : ''}
+        <div style="font-size:11px;color:var(--txt);font-weight:500">${i.accion_tomada}</div>
+        ${i.medida?`<div style="font-size:10px;color:var(--ambar);margin-top:2px">⚠ Medida: ${i.medida}</div>`:''}
+        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${i.reg?.nombre_completo||'—'} · ${formatFechaCorta(i.created_at)}</div>
+      </div>`}).join('') : '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Sin incidentes registrados.</div>';
 
   c.innerHTML = `
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
@@ -282,6 +293,14 @@ function _objModal(modalId, titulo, html, btns) {
   document.body.appendChild(el);
 }
 function _cerrarModalObj(id) { document.getElementById(id)?.remove(); }
+
+function _toastObj(msg) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1B2B22;color:#fff;padding:10px 20px;border-radius:10px;font-size:12px;font-weight:500;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,0.25);white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;transition:opacity .3s';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+}
 
 async function _abrirFormObj(objId) {
   const obj = objId ? _objCache.find(o=>o.id===objId) : null;
@@ -382,83 +401,160 @@ async function _guardarFormObj(objId) {
 }
 
 async function _abrirFormInc(objId) {
-  const cursosRes = await sb.from('cursos').select('id,nombre,division,anio')
+  const cursosRes = await sb.from('cursos').select('id,nombre,division,anio,nivel')
     .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-    .or('activo.is.null,activo.eq.true').order('anio');
-  const cursoOpts = (cursosRes.data||[]).map(cu =>
-    `<option value="${cu.id}">${cu.anio}° ${cu.nombre} ${cu.division||''}</option>`).join('');
+    .or('activo.is.null,activo.eq.true').order('nivel').order('anio');
+  const cursoOpts = (cursosRes.data||[]).map(cu => {
+    const lbl = [cu.anio ? cu.anio+'°' : '', cu.nombre, cu.division||''].filter(Boolean).join(' ');
+    return `<option value="${cu.id}">${lbl}</option>`;
+  }).join('');
+
+  const hoy = new Date().toISOString().slice(0,10);
   const html = `
-    <div style="display:grid;gap:8px">
-      <div>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-bottom:6px">
-          <input type="checkbox" id="inc-tiene-alumno" onchange="_incToggleAlumno(this.checked)">
-          Involucra un alumno específico
-        </label>
-        <div id="inc-alumno-sec" style="display:none;gap:8px">
-          <div style="margin-bottom:8px"><label class="lbl">Curso</label>
-            <select id="inc-curso" style="width:100%" onchange="_incCargaAlumnos(this.value)">
+    <div style="display:grid;gap:10px">
+      <div style="background:var(--verde-l);border:1px solid rgba(34,153,87,0.2);border-radius:var(--rad);padding:10px 12px">
+        <div style="font-size:11px;font-weight:700;color:var(--verde);margin-bottom:8px">Alumno involucrado</div>
+        <div style="display:grid;gap:6px">
+          <div><label class="lbl">Curso</label>
+            <select id="inc-curso" onchange="_incCargaAlumnos(this.value)">
               <option value="">— Seleccioná un curso —</option>${cursoOpts}
             </select></div>
-          <div><label class="lbl">Alumno</label>
-            <select id="inc-alumno" style="width:100%"><option value="">— Primero seleccioná el curso —</option></select></div>
+          <div id="inc-alumno-wrap"><label class="lbl">Alumno</label>
+            <select id="inc-alumno" onchange="_incMostrarInfo(this)">
+              <option value="">— Primero seleccioná el curso —</option>
+            </select></div>
+          <div id="inc-alumno-info" style="display:none;background:var(--surf);border-radius:var(--rad);padding:8px 10px;font-size:11px;border:1px solid var(--brd)"></div>
         </div>
+        <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--txt3);margin-top:8px;cursor:pointer">
+          <input type="checkbox" id="inc-sin-alumno" onchange="_incToggleSinAlumno(this.checked)">
+          Sin alumno específico (incidente institucional)
+        </label>
       </div>
-      <div><label class="lbl">Descripción del incidente</label>
-        <textarea id="inc-desc" rows="2" placeholder="¿Qué ocurrió?"></textarea></div>
+      <div><label class="lbl">Descripción del incidente *</label>
+        <textarea id="inc-desc" rows="3" placeholder="Describí qué ocurrió, cuándo y en qué contexto..."></textarea></div>
       <div><label class="lbl">Acción tomada *</label>
         <textarea id="inc-accion" rows="2" placeholder="¿Qué se hizo al respecto?"></textarea></div>
       <div><label class="lbl">Medida adoptada (opcional)</label>
-        <input type="text" id="inc-medida" placeholder="Ej: Llamado a padres, amonestación..."></div>
+        <input type="text" id="inc-medida" placeholder="Ej: Llamado a padres, amonestación, acuerdo de convivencia..."></div>
+      <div><label class="lbl">Fecha</label>
+        <input type="date" id="inc-fecha" value="${hoy}" style="max-width:180px"></div>
     </div>`;
   const btns = `
     <button class="btn-s" onclick="_cerrarModalObj('modal-form-inc')">Cancelar</button>
-    <button class="btn-p" onclick="_guardarInc('${objId}')">Registrar</button>`;
+    <button class="btn-p" onclick="_guardarInc('${objId}')">Registrar incidente</button>`;
   _objModal('modal-form-inc', 'Registrar incidente', html, btns);
 }
 
-function _incToggleAlumno(mostrar) {
-  const sec = document.getElementById('inc-alumno-sec');
-  if (sec) sec.style.display = mostrar ? 'grid' : 'none';
+function _incToggleSinAlumno(sinAlumno) {
+  const wrap = document.getElementById('inc-alumno-wrap');
+  const cur  = document.getElementById('inc-curso');
+  const info = document.getElementById('inc-alumno-info');
+  if (wrap) wrap.style.opacity = sinAlumno ? '0.4' : '1';
+  if (cur)  cur.disabled = sinAlumno;
+  const sel = document.getElementById('inc-alumno');
+  if (sel)  sel.disabled = sinAlumno;
+  if (info) info.style.display = 'none';
 }
 
 async function _incCargaAlumnos(cursoId) {
-  const sel = document.getElementById('inc-alumno');
-  if (!sel || !cursoId) return;
+  const sel  = document.getElementById('inc-alumno');
+  const info = document.getElementById('inc-alumno-info');
+  if (!sel) return;
+  if (!cursoId) {
+    sel.innerHTML = '<option value="">— Primero seleccioná el curso —</option>';
+    if (info) info.style.display = 'none';
+    return;
+  }
   sel.innerHTML = '<option>Cargando...</option>';
-  const { data } = await sb.from('alumnos').select('id,nombre,apellido')
+  const { data } = await sb.from('alumnos').select('id,nombre,apellido,dni,fecha_nacimiento')
     .eq('curso_id', cursoId).or('activo.is.null,activo.eq.true').order('apellido');
   sel.innerHTML = '<option value="">— Seleccioná un alumno —</option>' +
-    (data||[]).map(a=>`<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
+    (data||[]).map(a=>`<option value="${a.id}" data-nombre="${a.apellido}, ${a.nombre}" data-dni="${a.dni||''}">${a.apellido}, ${a.nombre}</option>`).join('');
+  if (info) info.style.display = 'none';
+}
+
+function _incMostrarInfo(sel) {
+  const info = document.getElementById('inc-alumno-info');
+  if (!info) return;
+  const opt = sel.options[sel.selectedIndex];
+  if (!sel.value || !opt) { info.style.display = 'none'; return; }
+  const nombre = opt.dataset.nombre || opt.text;
+  const dni    = opt.dataset.dni;
+  info.style.display = 'block';
+  info.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="width:28px;height:28px;border-radius:50%;background:var(--verde);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">
+        ${nombre.split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase()}
+      </div>
+      <div>
+        <div style="font-weight:600">${nombre}</div>
+        ${dni ? `<div style="color:var(--txt3)">DNI ${dni}</div>` : ''}
+      </div>
+      <span style="margin-left:auto;font-size:9px;background:var(--verde-l);color:var(--verde);padding:2px 6px;border-radius:10px;font-weight:600">Se registrará en su legajo</span>
+    </div>`;
 }
 
 async function _guardarInc(objId) {
+  const desc   = document.getElementById('inc-desc')?.value.trim();
   const accion = document.getElementById('inc-accion')?.value.trim();
+  if (!desc)   { alert('La descripción del incidente es obligatoria.'); return; }
   if (!accion) { alert('La acción tomada es obligatoria.'); return; }
-  const tieneAlumno = document.getElementById('inc-tiene-alumno')?.checked;
-  const alumnoId    = tieneAlumno ? (document.getElementById('inc-alumno')?.value  || null) : null;
-  const cursoId     = tieneAlumno ? (document.getElementById('inc-curso')?.value   || null) : null;
-  const desc        = document.getElementById('inc-desc')?.value.trim() || null;
-  let cursoTexto = null, descAlumno = null;
-  if (tieneAlumno && cursoId) {
-    const cr = await sb.from('cursos').select('nombre,division,anio').eq('id', cursoId).single();
-    if (cr.data) cursoTexto = `${cr.data.anio}° ${cr.data.nombre} ${cr.data.division||''}`.trim();
+
+  const sinAlumno = document.getElementById('inc-sin-alumno')?.checked;
+  const alumnoId  = sinAlumno ? null : (document.getElementById('inc-alumno')?.value || null);
+  const cursoId   = sinAlumno ? null : (document.getElementById('inc-curso')?.value  || null);
+
+  if (!sinAlumno && !alumnoId) {
+    alert('Seleccioná un alumno o marcá "Sin alumno específico".');
+    return;
   }
-  if (tieneAlumno && alumnoId) {
-    const ar = await sb.from('alumnos').select('nombre,apellido').eq('id', alumnoId).single();
-    if (ar.data) descAlumno = `${ar.data.apellido}, ${ar.data.nombre}`;
+
+  // Obtener texto del alumno seleccionado desde la opción del select
+  let descAlumno = null, cursoTexto = null;
+  if (!sinAlumno) {
+    const selAl = document.getElementById('inc-alumno');
+    const opt   = selAl?.options[selAl.selectedIndex];
+    if (opt && opt.value) descAlumno = opt.dataset.nombre || opt.text;
+
+    if (cursoId) {
+      const selCu = document.getElementById('inc-curso');
+      const optCu = selCu?.options[selCu.selectedIndex];
+      if (optCu && optCu.value) cursoTexto = optCu.text.trim();
+    }
   }
+
+  const btn = document.querySelector('#modal-form-inc .btn-p');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
   const { error } = await sb.from('objetivo_incidentes').insert({
     objetivo_id:        objId,
     registrado_por:     USUARIO_ACTUAL.id,
     alumno_id:          alumnoId,
-    descripcion_alumno: descAlumno || desc,
+    descripcion_alumno: descAlumno || null,
     curso_texto:        cursoTexto,
     accion_tomada:      accion,
     medida:             document.getElementById('inc-medida')?.value.trim() || null,
+    descripcion:        desc,
   });
-  if (error) { alert('Error: ' + error.message); return; }
+  if (error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Registrar incidente'; }
+    alert('Error al guardar: ' + error.message);
+    return;
+  }
+
+  // Actualizar cache inmediatamente para que las métricas del card reflejen el nuevo total
+  const objEnCache = _objCache.find(o => o.id === objId);
+  if (objEnCache) {
+    const incsActuales = objEnCache.incs?.[0]?.count ?? 0;
+    objEnCache.incs = [{ count: incsActuales + 1 }];
+  }
+
   await _actualizarTendenciaObj(objId);
   _cerrarModalObj('modal-form-inc');
+
+  // Mostrar toast de confirmación si hay alumno vinculado
+  if (descAlumno) _toastObj(`✓ Incidente registrado · Vinculado al legajo de ${descAlumno}`);
+
   await rObj();
 }
 
