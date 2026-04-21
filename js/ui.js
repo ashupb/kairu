@@ -5,9 +5,22 @@
 // ── NOTIFICACIONES ────────────────────────────────────
 function toggleNotifPanel() {
   const panel = document.getElementById('notif-panel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') cargarNotificaciones();
+  const abriendo = panel.style.display === 'none';
+  panel.style.display = abriendo ? 'block' : 'none';
+  if (abriendo) {
+    cargarNotificaciones();
+    const cnt = document.getElementById('notif-count');
+    if (cnt) cnt.style.display = 'none';
+  }
 }
+
+document.addEventListener('click', e => {
+  const panel = document.getElementById('notif-panel');
+  const btn   = document.querySelector('.notif-btn');
+  if (panel && panel.style.display !== 'none' && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
+    panel.style.display = 'none';
+  }
+});
 
 async function cargarNotificaciones() {
   const { data } = await sb

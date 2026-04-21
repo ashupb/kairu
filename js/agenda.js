@@ -70,9 +70,11 @@ async function rAgenda() {
 
   const { data: eventos } = await query;
 
-  const eventosFiltrados = (eventos || []).filter(e =>
-    AGENDA_NIVEL === 'todos' || e.nivel === AGENDA_NIVEL || e.nivel === 'todos'
-  );
+  const eventosFiltrados = (eventos || []).filter(e => {
+    if (AGENDA_NIVEL === 'todos') return true;
+    if (!e.nivel || e.nivel === 'todos') return true;
+    return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
+  });
 
   const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
 
@@ -305,10 +307,20 @@ function abrirFormEvento(eventoExistente = null) {
         </div>
 
         <div>
-          <div class="sec-lb">Nivel *</div>
-          <select id="ev-nivel" class="sel-estilizado">
+          <div class="sec-lb">Nivel</div>
+          ${esDirector ? (() => {
+            const selNiveles = (e.nivel||'todos').split(',').map(n=>n.trim());
+            const todos = selNiveles.includes('todos');
+            return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+              ${['todos','inicial','primario','secundario'].map(n => `
+                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+                  <input type="checkbox" class="ev-nivel-chk" value="${n}" ${(todos&&n==='todos')||selNiveles.includes(n)?'checked':''}>
+                  ${NIVEL_CONFIG[n]?.label || 'Todos'}
+                </label>`).join('')}
+            </div>`;
+          })() : `<select id="ev-nivel" class="sel-estilizado">
             ${nivelesDisp.map(n => `<option value="${n}" ${(e.nivel||'todos')===n?'selected':''}>${NIVEL_CONFIG[n]?.label||n}</option>`).join('')}
-          </select>
+          </select>`}
         </div>
 
         <div>
@@ -530,10 +542,15 @@ async function guardarEvento(eventoId) {
   const convocados   = Array.from(document.getElementById('chips-conv')?.querySelectorAll('[data-uid]')||[]).map(b => b.dataset.uid);
   const responsables = Array.from(document.getElementById('chips-resp')?.querySelectorAll('[data-uid]')||[]).map(b => b.dataset.uid);
 
+  const nivelChks = [...document.querySelectorAll('.ev-nivel-chk:checked')].map(c => c.value);
+  const nivelVal  = nivelChks.length
+    ? (nivelChks.includes('todos') ? 'todos' : nivelChks.join(','))
+    : (document.getElementById('ev-nivel')?.value || 'todos');
+
   const payload = {
     nombre,
     tipo_id:             document.getElementById('ev-tipo')?.value || null,
-    nivel:               document.getElementById('ev-nivel')?.value,
+    nivel:               nivelVal,
     fecha_inicio:        fechaNorm,
     fecha_fin:           fechaFin,
     hora:                hora || null,
@@ -555,29 +572,34 @@ async function guardarEvento(eventoId) {
       creado_por:     USUARIO_ACTUAL.id,
     }).select().single());
 
-    if (!error && data && convocados.length) {
-      await sb.from('evento_respuestas').insert(
-        convocados.map(uid => ({
-          evento_id:  data.id,
-          usuario_id: uid,
-          respuesta:  'pendiente',
-        }))
-      );
-      // Notificar a los invitados para que acepten o rechacen
+    if (!error && data) {
+      if (convocados.length) {
+        await sb.from('evento_respuestas').insert(
+          convocados.map(uid => ({
+            evento_id:  data.id,
+            usuario_id: uid,
+            respuesta:  'pendiente',
+          }))
+        );
+      }
+      // Notificar a convocados Y responsables
       const fechaStr = data.fecha_inicio ? (() => {
         const d = new Date(data.fecha_inicio + 'T12:00:00');
         return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
       })() : '';
-      await sb.from('notificaciones').insert(
-        convocados.map(uid => ({
-          usuario_id:       uid,
-          tipo:             'invitacion_evento',
-          titulo:           `Invitación: ${nombre}`,
-          descripcion:      `${fechaStr}${data.hora ? ' · ' + data.hora.slice(0,5) : ''}${data.lugar ? ' · ' + data.lugar : ''} — Confirmá tu asistencia.`,
-          referencia_id:    data.id,
-          referencia_tabla: 'eventos_institucionales',
-        }))
-      );
+      const toNotif = [...new Set([...convocados, ...responsables])];
+      if (toNotif.length) {
+        await sb.from('notificaciones').insert(
+          toNotif.map(uid => ({
+            usuario_id:       uid,
+            tipo:             convocados.includes(uid) ? 'invitacion_evento' : 'evento_responsable',
+            titulo:           `${convocados.includes(uid) ? 'Invitación' : 'Evento asignado'}: ${nombre}`,
+            descripcion:      `${fechaStr}${data.hora ? ' · ' + data.hora.slice(0,5) : ''}${data.lugar ? ' · ' + data.lugar : ''}${convocados.includes(uid) ? ' — Confirmá tu asistencia.' : ''}`,
+            referencia_id:    data.id,
+            referencia_tabla: 'eventos_institucionales',
+          }))
+        );
+      }
     }
   }
 

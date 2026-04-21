@@ -24,9 +24,9 @@ const TIPOS_VALOR_PROB = {
 function probPermisos() {
   const rol = USUARIO_ACTUAL.rol;
   return {
-    verTodas:    ['director_general','directivo_nivel','eoe'].includes(rol),
+    verTodas:    ['director_general','directivo_nivel','eoe','preceptor'].includes(rol),
     soloPropias: rol === 'docente',
-    soloCursos:  rol === 'preceptor',
+    soloCursos:  false,
     crear:       true,
     agregarSeg:  ['director_general','directivo_nivel','eoe','preceptor'].includes(rol),
     cerrar:      ['director_general','directivo_nivel','eoe'].includes(rol),
@@ -100,9 +100,13 @@ async function rProb() {
     const { data, error } = await q;
     if (error) throw error;
 
-    // Preceptor: filtrar confidenciales donde no es responsable
     let lista = data || [];
     if (USUARIO_ACTUAL.rol === 'preceptor') {
+      // Filtrar por nivel del preceptor
+      if (USUARIO_ACTUAL.nivel) {
+        lista = lista.filter(p => p.alumno?.curso?.nivel === USUARIO_ACTUAL.nivel);
+      }
+      // Ocultar confidenciales salvo que sea responsable
       lista = lista.filter(p => !p.confidencial || p.responsable_id === USUARIO_ACTUAL.id);
     }
     window._probCache = lista;

@@ -47,29 +47,67 @@ async function rAsistDirector() {
   const c      = document.getElementById('page-asist');
   const instId = USUARIO_ACTUAL.institucion_id;
   const hoy    = new Date().toISOString().split('T')[0];
+  const nivel  = USUARIO_ACTUAL.rol === 'directivo_nivel' ? USUARIO_ACTUAL.nivel : null;
 
-  const { data: cursos } = await sb.from('cursos')
-    .select('*').eq('institucion_id', instId).order('nivel').order('nombre');
+  const [cursosRes, alumnosRes, asistHoyRes] = await Promise.all([
+    sb.from('cursos').select('*').eq('institucion_id', instId)
+      .order('nivel').order('nombre')
+      .then(r => nivel ? { data: (r.data||[]).filter(c => c.nivel === nivel) } : r),
+    sb.from('alumnos').select('id,curso_id').eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
+    sb.from('asistencias').select('alumno_id').eq('fecha', hoy).eq('tipo_registro', 'preceptor').is('materia_texto', null),
+  ]);
 
-  const niveles = ['inicial','primario','secundario'];
+  const cursos   = cursosRes.data  || [];
+  const alumnos  = alumnosRes.data || [];
+  const asistSet = new Set((asistHoyRes.data||[]).map(a => a.alumno_id));
+
+  // Calcular estado por curso
+  const alumnosPorCurso = {};
+  alumnos.forEach(a => {
+    if (!alumnosPorCurso[a.curso_id]) alumnosPorCurso[a.curso_id] = [];
+    alumnosPorCurso[a.curso_id].push(a.id);
+  });
+
+  const niveles = nivel ? [nivel] : ['inicial','primario','secundario'];
+  const totalPendiente = cursos.filter(cu => {
+    const ids = alumnosPorCurso[cu.id] || [];
+    return ids.length > 0 && ids.filter(id => asistSet.has(id)).length < ids.length;
+  }).length;
 
   c.innerHTML = `
     <div class="pg-t">Asistencia</div>
-    <div class="pg-s">${formatFechaLatam(hoy)} · Todos los niveles</div>
+    <div class="pg-s">${formatFechaLatam(hoy)} · Estado de listas</div>
+    ${totalPendiente > 0 ? `
+    <div class="alr" style="margin-bottom:14px">
+      <div class="alr-t">⏳ ${totalPendiente} curso${totalPendiente>1?'s':''} con lista pendiente hoy</div>
+    </div>` : `
+    <div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">✓</span>
+      <span style="font-size:12px;color:var(--verde);font-weight:600">Todos los preceptores están al día</span>
+    </div>`}
     ${niveles.map(n => {
-      const cs = (cursos||[]).filter(cu => cu.nivel === n);
+      const cs = cursos.filter(cu => cu.nivel === n);
       if (!cs.length) return '';
       return `
         <div class="sec-lb" style="color:${NIVEL_COLORS[n]}">${labelNivel(n)}</div>
         <div class="curso-grid-asist">
-          ${cs.map(cu => `
-            <div class="curso-card-asist" onclick="verCursoDirector('${cu.id}','${cu.nivel}')">
-              <div class="cca-top">
-                <div class="cca-badge" style="background:${NIVEL_COLORS[n]}18;color:${NIVEL_COLORS[n]}">${cu.nombre}${cu.division}</div>
-                <span style="font-size:18px">→</span>
-              </div>
-              <div style="font-size:10px;color:var(--txt2);margin-top:4px">Ver asistencias</div>
-            </div>`).join('')}
+          ${cs.map(cu => {
+            const ids       = alumnosPorCurso[cu.id] || [];
+            const total     = ids.length;
+            const registrados = ids.filter(id => asistSet.has(id)).length;
+            const listo     = total > 0 && registrados >= total;
+            const enProg    = registrados > 0 && registrados < total;
+            const statusClr = listo ? 'var(--verde)' : enProg ? 'var(--ambar)' : total > 0 ? 'var(--rojo)' : 'var(--txt3)';
+            const statusLbl = listo ? '✓ Al día' : enProg ? `${registrados}/${total}` : total > 0 ? 'Pendiente' : 'Sin alumnos';
+            return `
+              <div class="curso-card-asist" onclick="verCursoDirector('${cu.id}','${cu.nivel}')">
+                <div class="cca-top">
+                  <div class="cca-badge" style="background:${NIVEL_COLORS[n]}18;color:${NIVEL_COLORS[n]}">${cu.nombre}${cu.division||''}</div>
+                  <span style="font-size:11px;font-weight:600;color:${statusClr}">${statusLbl}</span>
+                </div>
+                <div style="font-size:10px;color:var(--txt2);margin-top:4px">${total} alumno${total!==1?'s':''}</div>
+              </div>`;
+          }).join('')}
         </div>`;
     }).join('')}`;
 }

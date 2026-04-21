@@ -29,7 +29,7 @@ function _objPuedeEditar() {
   return ['director_general','directivo_nivel','admin','preceptor'].includes(USUARIO_ACTUAL?.rol);
 }
 function _objPuedeRegistrarInc() {
-  return ['director_general','directivo_nivel','admin','eoe','preceptor','docente'].includes(USUARIO_ACTUAL?.rol);
+  return ['director_general','directivo_nivel','admin','preceptor','docente'].includes(USUARIO_ACTUAL?.rol);
 }
 
 async function rObj() {
@@ -96,6 +96,11 @@ function _renderCardsObj() {
   if (!_objFiltros.estado)    lista = lista.filter(o => o.estado !== 'archivado');
   if (_objFiltros.categoria)  lista = lista.filter(o => o.categoria === _objFiltros.categoria);
   if (_objFiltros.estado)     lista = lista.filter(o => o.estado    === _objFiltros.estado);
+  // Filtrar por nivel del usuario (directores ven todo)
+  const rolUser = USUARIO_ACTUAL?.rol;
+  if (!['director_general','admin'].includes(rolUser) && USUARIO_ACTUAL?.nivel) {
+    lista = lista.filter(o => !o.nivel || o.nivel === USUARIO_ACTUAL.nivel);
+  }
   const cont = document.getElementById('obj-cards');
   if (!cont) return;
   if (!lista.length) { cont.innerHTML = '<div class="empty-state">🎯<br>No hay objetivos con ese filtro.</div>'; return; }
@@ -217,6 +222,7 @@ async function _rObjDetalle(objId) {
         </div>
       </div>
       ${incsHTML}
+      ${_objPuedeRegistrarInc()&&esActivo?`<button class="btn-p" style="font-size:11px;width:100%;margin-top:10px" onclick="_abrirFormInc('${objId}')">+ Registrar incidente</button>`:''}
     </div>
     <div style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">

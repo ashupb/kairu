@@ -681,7 +681,7 @@ async function _guardarCurso(cursoId) {
       if (error) throw error;
     } else {
       const { data: nuevo, error } = await sb.from('cursos').insert([{
-        nombre, division, nivel, ciclo_lectivo, preceptor_id,
+        nombre, division, nivel, ciclo_lectivo, anio: ciclo_lectivo, preceptor_id,
         institucion_id: USUARIO_ACTUAL.institucion_id, activo: true,
       }]).select().single();
       if (error) throw error;
@@ -743,7 +743,7 @@ async function _renderAlumnos() {
         ${cursos.map(c => `<option value="${c.id}" ${c.id === _admAlumnosCursoSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[c.nivel] || c.nivel} · ${_esc(c.nombre)}${c.division || ''}</option>`).join('')}
       </select>
       ${canEdit   ? `<button class="btn-p" onclick="_abrirModalAlumno(null)">+ Nuevo alumno</button>` : ''}
-      ${canImport ? `<button class="btn-s" onclick="_abrirImportCSV()">Importar CSV</button>` : ''}
+      ${canImport ? `<button class="btn-s" onclick="_abrirImportCSV()">Importar Excel</button>` : ''}
     </div>
     <div id="adm-alumnos-list"></div>`;
 
@@ -906,20 +906,28 @@ async function _abrirCambiarCurso(alumnoId) {
   );
 }
 
-// ─── IMPORTAR CSV ─────────────────────────────────────
+// ─── IMPORTAR EXCEL / CSV ─────────────────────────────
 let _csvDatos = [];
+
+function _cargarSheetJS(cb) {
+  if (window.XLSX) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  s.onload = cb;
+  document.head.appendChild(s);
+}
 
 function _abrirImportCSV() {
   _csvDatos = [];
   const modal = _crearModal(
-    'Importar alumnos desde CSV',
+    'Importar alumnos desde Excel',
     `
     <p style="font-size:11px;color:var(--txt2);margin-bottom:10px">
-      Columnas requeridas: <strong>nombre, apellido, dni, fecha_nacimiento</strong> (YYYY-MM-DD)<br>
-      La primera fila debe ser el encabezado.
+      Columnas requeridas: <strong>Nombre y apellido</strong>, <strong>DNI</strong>, <strong>Fecha de nacimiento</strong><br>
+      La primera fila debe ser el encabezado. Formatos aceptados: .xlsx, .xls, .csv
     </p>
     <div class="adm-form-row">
-      <input type="file" id="csv-input" accept=".csv" onchange="_parsearCSV(event)" style="font-size:12px">
+      <input type="file" id="csv-input" accept=".xlsx,.xls,.csv" onchange="_parsearCSV(event)" style="font-size:12px">
     </div>
     <div id="csv-preview" style="margin-top:10px"></div>
     `,
@@ -929,66 +937,114 @@ function _abrirImportCSV() {
   if (btnG) btnG.textContent = 'Importar';
 }
 
+function _parsearFecha(val) {
+  if (!val) return null;
+  const s = String(val).trim();
+  // DD/MM/YYYY o DD-MM-YYYY
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  // YYYY-MM-DD ya correcto
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Número serial de Excel
+  if (/^\d+$/.test(s)) {
+    const d = new Date(Math.round((parseInt(s) - 25569) * 86400 * 1000));
+    if (!isNaN(d)) return d.toISOString().slice(0, 10);
+  }
+  return null;
+}
+
+function _procesarFilasImport(rows) {
+  if (!rows || rows.length < 2) {
+    document.getElementById('csv-preview').innerHTML = '<div class="alr"><div class="alr-t">El archivo está vacío o no tiene datos.</div></div>';
+    return;
+  }
+  const headers = rows[0].map(h => String(h || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  // Detectar columnas
+  const iNA = headers.findIndex(h => h.includes('nombre') && h.includes('apellido'));
+  const iN  = headers.findIndex(h => h === 'nombre');
+  const iA  = headers.findIndex(h => h === 'apellido');
+  const iD  = headers.findIndex(h => h.includes('dni'));
+  const iF  = headers.findIndex(h => h.includes('fecha'));
+
+  _csvDatos = [];
+  const errores = [];
+  rows.slice(1).forEach((row, i) => {
+    const get = idx => idx >= 0 ? String(row[idx] || '').trim() : '';
+    let nombre = '', apellido = '';
+    if (iNA >= 0) {
+      const full = get(iNA);
+      const parts = full.split(/\s+/);
+      apellido = parts[0] || '';
+      nombre   = parts.slice(1).join(' ') || '';
+    } else {
+      nombre   = get(iN);
+      apellido = get(iA);
+    }
+    if (!nombre && !apellido) return; // fila vacía
+    if (!nombre || !apellido) { errores.push(`Fila ${i + 2}: nombre/apellido incompleto`); return; }
+    _csvDatos.push({
+      nombre,
+      apellido,
+      dni: iD >= 0 ? get(iD) : '',
+      fecha_nacimiento: iF >= 0 ? _parsearFecha(row[iF]) : null,
+    });
+  });
+
+  const prev = document.getElementById('csv-preview');
+  if (!_csvDatos.length) { prev.innerHTML = '<div class="alr"><div class="alr-t">Sin datos válidos</div></div>'; return; }
+
+  prev.innerHTML = `
+    <div style="font-size:11px;font-weight:600;margin-bottom:6px">
+      ${_csvDatos.length} alumnos a importar${errores.length ? ` · <span style="color:var(--rojo)">${errores.length} filas con error</span>` : ''}
+    </div>
+    <div style="max-height:180px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad)">
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="background:var(--surf2)">
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">Apellido</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">Nombre</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">DNI</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">F.Nac.</th>
+        </tr></thead>
+        <tbody>
+          ${_csvDatos.slice(0, 20).map(r => `<tr>
+            <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${_esc(r.apellido)}</td>
+            <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${_esc(r.nombre)}</td>
+            <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${r.dni}</td>
+            <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${r.fecha_nacimiento || '—'}</td>
+          </tr>`).join('')}
+          ${_csvDatos.length > 20 ? `<tr><td colspan="4" style="padding:5px 8px;color:var(--txt2);font-style:italic">... y ${_csvDatos.length - 20} más</td></tr>` : ''}
+        </tbody>
+      </table>
+    </div>
+    ${errores.length ? `<div style="margin-top:6px;font-size:10px;color:var(--rojo)">${errores.slice(0,5).join(' · ')}${errores.length>5?` · y ${errores.length-5} más`:''}</div>` : ''}`;
+}
+
 function _parsearCSV(event) {
   const file = event.target.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const lines = e.target.result.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length < 2) {
-      document.getElementById('csv-preview').innerHTML = '<div class="alr"><div class="alr-t">El archivo está vacío o no tiene datos.</div></div>';
-      return;
-    }
-    const headers = lines[0].split(',').map(h => h.replace(/['"]/g, '').trim().toLowerCase());
-    const iN = headers.indexOf('nombre');
-    const iA = headers.indexOf('apellido');
-    const iD = headers.indexOf('dni');
-    const iF = headers.indexOf('fecha_nacimiento');
+  const ext = file.name.split('.').pop().toLowerCase();
 
-    if (iN < 0 || iA < 0) {
-      document.getElementById('csv-preview').innerHTML = '<div class="alr"><div class="alr-t">Error de formato</div><div class="alr-d">No se encontraron columnas "nombre" y "apellido".</div></div>';
-      return;
-    }
-
-    _csvDatos = [];
-    const errores = [];
-    lines.slice(1).forEach((line, i) => {
-      const cols = line.split(',').map(c => c.replace(/^["']|["']$/g, '').trim());
-      const nombre   = cols[iN] || '';
-      const apellido = cols[iA] || '';
-      if (!nombre || !apellido) { errores.push(`Fila ${i + 2}: nombre/apellido vacío`); return; }
-      _csvDatos.push({ nombre, apellido, dni: iD >= 0 ? cols[iD] || '' : '', fecha_nacimiento: iF >= 0 ? cols[iF] || null : null });
+  if (ext === 'csv') {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const lines = e.target.result.split('\n').map(l => l.trim()).filter(Boolean);
+      const rows  = lines.map(l => l.split(',').map(c => c.replace(/^["']|["']$/g, '').trim()));
+      _procesarFilasImport(rows);
+    };
+    reader.readAsText(file, 'UTF-8');
+  } else {
+    _cargarSheetJS(() => {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const wb   = XLSX.read(e.target.result, { type: 'array' });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        _procesarFilasImport(rows);
+      };
+      reader.readAsArrayBuffer(file);
     });
-
-    const prev = document.getElementById('csv-preview');
-    if (!_csvDatos.length) { prev.innerHTML = '<div class="alr"><div class="alr-t">Sin datos válidos</div></div>'; return; }
-
-    prev.innerHTML = `
-      <div style="font-size:11px;font-weight:600;margin-bottom:6px">
-        ${_csvDatos.length} alumnos a importar${errores.length ? ` · <span style="color:var(--rojo)">${errores.length} filas con error</span>` : ''}
-      </div>
-      <div style="max-height:180px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad)">
-        <table style="width:100%;border-collapse:collapse;font-size:11px">
-          <thead><tr style="background:var(--surf2)">
-            <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">Apellido</th>
-            <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">Nombre</th>
-            <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">DNI</th>
-            <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--brd)">F.Nac.</th>
-          </tr></thead>
-          <tbody>
-            ${_csvDatos.slice(0, 20).map(r => `<tr>
-              <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${_esc(r.apellido)}</td>
-              <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${_esc(r.nombre)}</td>
-              <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${r.dni}</td>
-              <td style="padding:5px 8px;border-bottom:1px solid var(--brd)">${r.fecha_nacimiento || '—'}</td>
-            </tr>`).join('')}
-            ${_csvDatos.length > 20 ? `<tr><td colspan="4" style="padding:5px 8px;color:var(--txt2);font-style:italic">... y ${_csvDatos.length - 20} más</td></tr>` : ''}
-          </tbody>
-        </table>
-      </div>
-      ${errores.length ? `<div style="margin-top:6px;font-size:10px;color:var(--rojo)">${errores.slice(0, 5).join(' · ')}${errores.length > 5 ? ` · y ${errores.length - 5} más` : ''}</div>` : ''}`;
-  };
-  reader.readAsText(file, 'UTF-8');
+  }
 }
 
 async function _confirmarImportCSV() {
