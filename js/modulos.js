@@ -393,6 +393,9 @@ async function _guardarFormObj(objId) {
     progreso: Math.min(100, Math.max(0, parseInt(document.getElementById('fo-prog')?.value)||0)),
     updated_at: new Date().toISOString(),
   };
+  const btn = document.querySelector('#modal-form-obj .btn-p');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
   let error;
   if (objId) {
     ({ error } = await sb.from('objetivos').update(payload).eq('id', objId));
@@ -402,8 +405,13 @@ async function _guardarFormObj(objId) {
       creado_por: USUARIO_ACTUAL.id, estado: 'activo', tendencia: 'estable',
     }));
   }
-  if (error) { alert('Error: ' + error.message); return; }
+  if (error) {
+    if (btn) { btn.disabled = false; btn.textContent = objId ? 'Guardar cambios' : 'Crear objetivo'; }
+    alert('Error: ' + error.message);
+    return;
+  }
   _cerrarModalObj('modal-form-obj');
+  _toastObj(`✓ Objetivo ${objId ? 'actualizado' : 'creado'} correctamente`);
   if (objId) _objDetalleId = objId;
   await rObj();
 }
@@ -558,10 +566,26 @@ async function _guardarInc(objId) {
   }
 
   await _actualizarTendenciaObj(objId);
+
+  // Registrar automáticamente en el legajo del alumno (observaciones)
+  if (alumnoId) {
+    const objRef = _objCache.find(o => o.id === objId);
+    const partes = [`[Objetivo: ${objRef?.nombre || 'Institucional'}]`, desc];
+    if (accion) partes.push(`Acción: ${accion}`);
+    const medidaVal = document.getElementById('inc-medida')?.value.trim();
+    if (medidaVal) partes.push(`Medida: ${medidaVal}`);
+    await sb.from('observaciones_legajo').insert({
+      alumno_id:      alumnoId,
+      registrado_por: USUARIO_ACTUAL.id,
+      texto:          partes.join(' — '),
+      privada:        false,
+    });
+  }
+
   _cerrarModalObj('modal-form-inc');
 
   // Mostrar toast de confirmación si hay alumno vinculado
-  if (descAlumno) _toastObj(`✓ Incidente registrado · Vinculado al legajo de ${descAlumno}`);
+  if (descAlumno) _toastObj(`✓ Incidente registrado · Anotado en el legajo de ${descAlumno}`);
 
   await rObj();
 }
@@ -638,14 +662,24 @@ async function _cerrarObj(objId) {
   const estado     = document.getElementById('cie-estado')?.value;
   const progreso   = Math.min(100, Math.max(0, parseInt(document.getElementById('cie-prog')?.value)||0));
   const conclusion = document.getElementById('cie-concl')?.value.trim() || null;
+
+  const btn = document.querySelector('#modal-cierre-obj .btn-p');
+  if (btn) { btn.disabled = true; btn.textContent = 'Cerrando...'; }
+
   const { error }  = await sb.from('objetivos').update({
     estado, progreso, conclusion,
     cerrado_por: USUARIO_ACTUAL.id,
     cerrado_at:  new Date().toISOString(),
     updated_at:  new Date().toISOString(),
   }).eq('id', objId);
-  if (error) { alert('Error: ' + error.message); return; }
+
+  if (error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar cierre'; }
+    alert('Error al cerrar: ' + error.message);
+    return;
+  }
   _cerrarModalObj('modal-cierre-obj');
+  _toastObj(`✓ Objetivo ${estado === 'logrado' ? 'logrado' : 'archivado'} correctamente`);
   _objVista = 'lista'; _objDetalleId = null;
   await rObj();
 }
