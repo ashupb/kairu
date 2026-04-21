@@ -772,7 +772,7 @@ function inyectarEstilosDash() {
     /* Paneles de nivel */
     .nivel-panel{background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad-lg);padding:14px;margin-bottom:10px}
     .ns{background:var(--surf2);border-radius:var(--rad);padding:8px;text-align:center}
-    .ns-v{font-size:20px;font-weight:700;font-family:'Lora',serif}
+    .ns-v{font-size:20px;font-weight:700;font-family:'DM Sans',sans-serif}
     .ns-l{font-size:10px;color:var(--txt2);margin-top:2px}
 
     /* Agenda semanal */
