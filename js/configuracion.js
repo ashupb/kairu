@@ -187,6 +187,18 @@ async function _renderInstitucion() {
         <label class="adm-label">Año lectivo vigente</label>
         <input type="number" id="adm-inst-anio" value="${inst.anio_lectivo || new Date().getFullYear()}" min="2020" max="2050" style="max-width:120px">
       </div>
+      <div class="adm-form-row">
+        <label class="adm-label">Logo de la institución</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div id="adm-logo-preview" style="width:40px;height:40px;background:var(--surf2);border:1px solid var(--brd);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:18px;font-weight:700;color:var(--txt2)">
+            ${inst.logo_url ? `<img src="${_esc(inst.logo_url)}" style="width:100%;height:100%;object-fit:cover">` : (inst.nombre?.[0]?.toUpperCase() || 'I')}
+          </div>
+          <input type="file" id="adm-logo-file" accept="image/png,image/jpeg,image/gif,image/webp" style="font-size:11px">
+          ${inst.logo_url ? `<button class="btn-d" onclick="_eliminarLogoInstitucion()" style="padding:5px 10px;font-size:11px">Quitar logo</button>` : ''}
+        </div>
+        <div style="font-size:10px;color:var(--txt2);margin-top:3px">PNG o JPG recomendado. Máx. 2 MB.</div>
+        <input type="hidden" id="adm-inst-logo-url" value="${_esc(inst.logo_url || '')}">
+      </div>
 
       <div class="adm-form-row">
         <label class="adm-label">Niveles activos</label>
@@ -276,23 +288,49 @@ async function _guardarInstitucion() {
 
   if (!nombre) { alert('El nombre de la institución es requerido.'); return; }
 
+  let logo_url = document.getElementById('adm-inst-logo-url')?.value || null;
+  const logoFile = document.getElementById('adm-logo-file')?.files?.[0];
+
+  if (logoFile) {
+    if (logoFile.size > 2 * 1024 * 1024) { alert('El logo no puede superar los 2 MB.'); return; }
+    const ext  = logoFile.name.split('.').pop().toLowerCase() || 'png';
+    const path = `${USUARIO_ACTUAL.institucion_id}/logo.${ext}`;
+    const { error: upErr } = await sb.storage.from('logos').upload(path, logoFile, { upsert: true });
+    if (upErr) { alert('Error al subir el logo: ' + upErr.message); return; }
+    const { data: urlData } = sb.storage.from('logos').getPublicUrl(path);
+    logo_url = urlData.publicUrl + '?t=' + Date.now();
+  }
+
   const { error } = await sb.from('instituciones').update({
     nombre, direccion, telefono, email_institucional, anio_lectivo,
-    nivel_inicial, nivel_primario, nivel_secundario,
+    nivel_inicial, nivel_primario, nivel_secundario, logo_url,
   }).eq('id', USUARIO_ACTUAL.institucion_id);
 
   if (error) { alert('Error al guardar: ' + error.message); return; }
 
-  if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.nombre = nombre;
-  const sbInst = document.getElementById('sb-inst-nombre');
-  const sbLogo = document.getElementById('sb-inst-logo');
-  const pgSub  = document.querySelector('#page-admin .pg-s');
+  if (INSTITUCION_ACTUAL) { INSTITUCION_ACTUAL.nombre = nombre; INSTITUCION_ACTUAL.logo_url = logo_url; }
+  const sbInst  = document.getElementById('sb-inst-nombre');
+  const sbLogo  = document.getElementById('sb-inst-logo');
+  const pgSub   = document.querySelector('#page-admin .pg-s');
   if (sbInst) sbInst.textContent = nombre;
-  if (sbLogo) sbLogo.textContent = nombre[0]?.toUpperCase() || 'I';
-  if (pgSub)  pgSub.textContent  = nombre;
+  if (sbLogo) {
+    if (logo_url) sbLogo.innerHTML = `<img src="${logo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+    else sbLogo.textContent = nombre[0]?.toUpperCase() || 'I';
+  }
+  if (pgSub) pgSub.textContent = nombre;
   document.title = nombre + ' · Kairu';
 
   alert('Cambios guardados correctamente.');
+}
+
+async function _eliminarLogoInstitucion() {
+  if (!confirm('¿Quitar el logo de la institución?')) return;
+  const { error } = await sb.from('instituciones').update({ logo_url: null }).eq('id', USUARIO_ACTUAL.institucion_id);
+  if (error) { alert('Error: ' + error.message); return; }
+  if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.logo_url = null;
+  const sbLogo = document.getElementById('sb-inst-logo');
+  if (sbLogo) sbLogo.textContent = INSTITUCION_ACTUAL?.nombre?.[0]?.toUpperCase() || 'I';
+  await _renderInstitucion();
 }
 
 // ══════════════════════════════════════════════════════
@@ -404,28 +442,25 @@ async function _abrirModalUsuario(userId) {
     `
     <div class="adm-form-row">
       <label class="adm-label">Nombre completo</label>
-      <input type="text" id="mu-nombre" value="${_esc(user?.nombre_completo)}" placeholder="Nombre y apellido">
+      <input type="text" id="mu-nombre" value="${_esc(user?.nombre_completo)}" placeholder="Nombre y apellido"
+        ${esNuevo ? 'onblur="_muSugerirUsername()"' : ''}>
     </div>
     <div class="adm-form-row">
       <label class="adm-label">Nombre de usuario</label>
-      <input type="text" id="mu-username" value="${_esc(user?.username)}" placeholder="nombre.usuario"
+      <input type="text" id="mu-username" value="${_esc(user?.username)}" placeholder="Ej: jgarcia"
         ${!esNuevo ? 'readonly style="opacity:.6;cursor:default"' : ''}>
-      ${esNuevo ? `<div style="font-size:10px;color:var(--txt2);margin-top:3px">Solo letras, números, puntos y guiones. Ej: ana.gomez</div>` : ''}
+      ${esNuevo ? `<div style="font-size:10px;color:var(--txt2);margin-top:3px">Inicial del nombre + apellido. Se completa automático al salir del campo nombre.</div>` : ''}
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">DNI${esNuevo ? ' — contraseña de ingreso' : ''}</label>
+      <input type="text" id="mu-dni" value="${_esc(user?.dni)}" placeholder="Ej: 12345678">
+      ${esNuevo ? `<div style="font-size:10px;color:var(--txt2);margin-top:3px">El DNI es la contraseña inicial del usuario.</div>` : ''}
     </div>
     <div class="adm-form-row">
       <label class="adm-label">Email (para recuperación de contraseña)</label>
       <input type="email" id="mu-email" value="${_esc(user?.email)}" placeholder="email@ejemplo.com"
         ${!esNuevo ? 'readonly style="opacity:.6;cursor:default"' : ''}>
     </div>
-    ${esNuevo ? `
-    <div class="adm-form-row">
-      <label class="adm-label">Contraseña temporal</label>
-      <div style="position:relative">
-        <input type="password" id="mu-pass" placeholder="Mínimo 8 caracteres">
-        <button type="button" onclick="_togPassVis('mu-pass')"
-          style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:14px;color:var(--txt2);padding:0">👁</button>
-      </div>
-    </div>` : ''}
     <div class="adm-form-row">
       <label class="adm-label">Rol</label>
       <select id="mu-rol" onchange="_muOnRolChange('${nivelesJSON}','${cursosTodosJSON}')">
@@ -483,7 +518,7 @@ async function _abrirModalUsuario(userId) {
     btnReset.className = 'btn-s';
     btnReset.textContent = 'Resetear contraseña';
     btnReset.style.marginRight = 'auto';
-    btnReset.onclick = () => _resetPassUsuario(user.email);
+    btnReset.onclick = () => _resetPassADni(userId);
     footer.insertBefore(btnReset, footer.firstChild);
   }
 }
@@ -491,6 +526,25 @@ async function _abrirModalUsuario(userId) {
 function _togPassVis(inputId) {
   const inp = document.getElementById(inputId);
   if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function _muSugerirUsername() {
+  const nombre = document.getElementById('mu-nombre')?.value?.trim();
+  const usrInp = document.getElementById('mu-username');
+  if (!nombre || !usrInp || usrInp.value) return;
+  const rmDia = s => [...s.normalize('NFD')].filter(c => c.charCodeAt(0) < 768 || c.charCodeAt(0) > 879).join('');
+  const clean = s => rmDia(s).toLowerCase().replace(/[^a-z]/g, '');
+  let inicial = '', apellido = '';
+  if (nombre.includes(',')) {
+    const [ap, nm] = nombre.split(',');
+    apellido = clean(ap.trim().split(/\s+/)[0]);
+    inicial  = clean(nm.trim().split(/\s+/)[0])[0] || '';
+  } else {
+    const partes = nombre.trim().split(/\s+/);
+    inicial  = clean(partes[0])[0] || '';
+    apellido = clean(partes[partes.length - 1]);
+  }
+  usrInp.value = (inicial + apellido).slice(0, 20);
 }
 
 function _muOnRolChange(nivelesJSON, cursosTodosJSON) {
@@ -535,7 +589,7 @@ async function _guardarUsuario(userId, esNuevo) {
   const nombre_completo = document.getElementById('mu-nombre')?.value?.trim();
   const username        = document.getElementById('mu-username')?.value?.trim().toLowerCase();
   const email           = document.getElementById('mu-email')?.value?.trim();
-  const password        = document.getElementById('mu-pass')?.value || '';
+  const dni             = document.getElementById('mu-dni')?.value?.trim() || null;
   const rol             = document.getElementById('mu-rol')?.value;
   const nivel           = document.getElementById('mu-nivel')?.value || null;
   const activo          = document.getElementById('mu-activo')?.classList.contains('on');
@@ -543,11 +597,10 @@ async function _guardarUsuario(userId, esNuevo) {
   const cursosChecks = document.querySelectorAll('#mu-cursos-list input[type=checkbox]:checked');
   const cursos_ids   = Array.from(cursosChecks).map(c => c.value);
 
-  if (!nombre_completo)              { alert('El nombre es requerido.'); return; }
-  if (esNuevo && !username)          { alert('El nombre de usuario es requerido.'); return; }
-  if (esNuevo && !email)             { alert('El email es requerido.'); return; }
-  if (esNuevo && !password)          { alert('La contraseña es requerida para nuevos usuarios.'); return; }
-  if (esNuevo && password.length < 8){ alert('La contraseña debe tener al menos 8 caracteres.'); return; }
+  if (!nombre_completo)     { alert('El nombre es requerido.'); return; }
+  if (esNuevo && !username) { alert('El nombre de usuario es requerido.'); return; }
+  if (esNuevo && !email)    { alert('El email es requerido.'); return; }
+  if (esNuevo && !dni)      { alert('El DNI es requerido (se usa como contraseña inicial).'); return; }
   if (esNuevo && !/^[a-z0-9._-]+$/.test(username)) {
     alert('El nombre de usuario solo puede contener letras minúsculas, números, puntos y guiones.');
     return;
@@ -562,7 +615,7 @@ async function _guardarUsuario(userId, esNuevo) {
           'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
           'apikey': SUPABASE_SERVICE_KEY,
         },
-        body: JSON.stringify({ email, password, email_confirm: true }),
+        body: JSON.stringify({ email, password: dni, email_confirm: true }),
       });
       const authData = await resp.json();
       if (authData.error || !authData.id) {
@@ -571,17 +624,16 @@ async function _guardarUsuario(userId, esNuevo) {
 
       const { error: insErr } = await sb.from('usuarios').insert([{
         id: authData.id,
-        nombre_completo, username, email, rol, nivel, activo,
+        nombre_completo, username, email, rol, nivel, activo, dni,
         cursos_ids: cursos_ids.length ? cursos_ids : null,
         institucion_id: USUARIO_ACTUAL.institucion_id,
       }]);
       if (insErr) throw insErr;
     } else {
       const updatePayload = {
-        nombre_completo, rol, nivel, activo,
+        nombre_completo, rol, nivel, activo, dni: dni || null,
         cursos_ids: cursos_ids.length ? cursos_ids : null,
       };
-      // Guardar accesos extra si la migración está aplicada y el editor es director_general
       if (_configExtraOk && USUARIO_ACTUAL.rol === 'director_general') {
         const tabChecks = document.querySelectorAll('input[name="mu-cfg-tab"]:not(:disabled):checked');
         const tabsExtra = Array.from(tabChecks).map(c => c.value);
@@ -598,11 +650,27 @@ async function _guardarUsuario(userId, esNuevo) {
   }
 }
 
-async function _resetPassUsuario(email) {
-  if (!confirm(`¿Enviar email de reseteo de contraseña a ${email}?`)) return;
-  const { error } = await sb.auth.resetPasswordForEmail(email);
-  if (error) { alert('Error: ' + error.message); return; }
-  alert('Email de reseteo enviado.');
+async function _resetPassADni(userId) {
+  const dni = document.getElementById('mu-dni')?.value?.trim();
+  if (!dni) { alert('Ingresá el DNI del usuario primero para resetear su contraseña.'); return; }
+  if (!confirm(`¿Resetear la contraseña de este usuario a su DNI (${dni})?`)) return;
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'apikey': SUPABASE_SERVICE_KEY,
+      },
+      body: JSON.stringify({ password: dni }),
+    });
+    const data = await resp.json();
+    if (data.error || !data.id) throw new Error(data.error?.message || data.msg || 'Error al resetear contraseña');
+    await sb.from('usuarios').update({ dni }).eq('id', userId);
+    alert('Contraseña reseteada al DNI correctamente.');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -698,7 +766,7 @@ async function _abrirModalCurso(cursoId) {
 
   const niveles   = USUARIO_ACTUAL.rol === 'directivo_nivel' ? [USUARIO_ACTUAL.nivel] : ['inicial', 'primario', 'secundario'];
   const nivelSel  = curso?.nivel || niveles[0];
-  const precsDisp = precs.filter(p => !nivelSel || !p.nivel || p.nivel === nivelSel);
+  const precsDisp = precs;
   const anioActual = new Date().getFullYear();
   const esAnioAlto = /^[456]/.test((curso?.nombre || '').trim());
 
@@ -1320,6 +1388,50 @@ async function _renderAsigContent() {
   const materias = window._admAsigMaterias || [];
   const docentes = window._admAsigDocentes || [];
 
+  function _buildAsigFilas(materiasCurso, docentesCurso, asigMap) {
+    if (!materiasCurso.length) return '<div class="empty-state">Sin materias para este nivel</div>';
+    const nomMap = {};
+    docentesCurso.forEach(d => { nomMap[d.id] = d.nombre_completo; });
+    const asignadas  = materiasCurso.filter(m => asigMap[m.id]);
+    const sinAsignar = materiasCurso.filter(m => !asigMap[m.id]);
+    const optsHtml   = docentesCurso.map(d => `<option value="${d.id}">${_esc(d.nombre_completo)}</option>`).join('');
+
+    const filaAsignada = m => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
+        <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
+        <div id="static-asig-${m.id}" style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:12px;color:var(--txt2)">${_esc(nomMap[asigMap[m.id]] || '')}</span>
+          <button class="btn-s" onclick="_asigEditarFila('${m.id}')" style="padding:3px 8px;font-size:11px">Cambiar</button>
+        </div>
+        <select id="asig-${m.id}" style="max-width:220px;display:none">
+          <option value="">— Sin asignar —</option>
+          ${docentesCurso.map(d => `<option value="${d.id}" ${d.id === asigMap[m.id] ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`).join('')}
+        </select>
+      </div>`;
+
+    const filaSinAsignar = m => `
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
+        <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
+        <select id="asig-${m.id}" style="max-width:220px">
+          <option value="">— Sin asignar —</option>
+          ${optsHtml}
+        </select>
+      </div>`;
+
+    return `
+      <div class="card">
+        ${asignadas.length ? `
+          <div style="font-size:10px;font-weight:600;color:var(--verde);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Asignadas</div>
+          ${asignadas.map(filaAsignada).join('')}` : ''}
+        ${sinAsignar.length ? `
+          <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-top:${asignadas.length ? 14 : 0}px;margin-bottom:4px">Sin asignar</div>
+          ${sinAsignar.map(filaSinAsignar).join('')}` : ''}
+        <div class="acc" style="margin-top:12px">
+          <button class="btn-p" onclick="_guardarAsignaciones()">Guardar asignaciones</button>
+        </div>
+      </div>`;
+  }
+
   if (_admAsigVistaPor === 'curso') {
     const cursoSel = cursos.find(c => c.id === _admAsigCursoSel);
 
@@ -1331,7 +1443,8 @@ async function _renderAsigContent() {
     const materiasCurso = cursoSel ? materias.filter(m => m.nivel === cursoSel.nivel) : [];
     const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
 
-    window._admAsigMateriaIds = materiasCurso.map(m => m.id);
+    window._admAsigMateriaIds     = materiasCurso.map(m => m.id);
+    window._admAsigDocentesCurso  = docentesCurso;
 
     cont.innerHTML = `
       <div class="adm-form-row">
@@ -1340,20 +1453,7 @@ async function _renderAsigContent() {
           ${cursos.map(c => `<option value="${c.id}" ${c.id === _admAsigCursoSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[c.nivel] || c.nivel} · ${_esc(c.nombre)}${c.division || ''}</option>`).join('')}
         </select>
       </div>
-      ${!materiasCurso.length ? '<div class="empty-state">Sin materias para este nivel</div>' : `
-      <div class="card">
-        ${materiasCurso.map(m => `
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
-            <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
-            <select id="asig-${m.id}" style="max-width:220px">
-              <option value="">— Sin asignar —</option>
-              ${docentesCurso.map(d => `<option value="${d.id}" ${asigMap[m.id] === d.id ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`).join('')}
-            </select>
-          </div>`).join('')}
-        <div class="acc" style="margin-top:12px">
-          <button class="btn-p" onclick="_guardarAsignaciones()">Guardar asignaciones</button>
-        </div>
-      </div>`}`;
+      ${_buildAsigFilas(materiasCurso, docentesCurso, asigMap)}`;
   } else {
     if (!_admAsigDocenteCursoSel && cursos.length) _admAsigDocenteCursoSel = cursos[0].id;
     const cursoSel = cursos.find(c => c.id === _admAsigDocenteCursoSel) || cursos[0];
@@ -1366,7 +1466,8 @@ async function _renderAsigContent() {
     const materiasCurso = cursoSel ? materias.filter(m => m.nivel === cursoSel.nivel) : [];
     const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
 
-    window._admAsigMateriaIds = materiasCurso.map(m => m.id);
+    window._admAsigMateriaIds    = materiasCurso.map(m => m.id);
+    window._admAsigDocentesCurso = docentesCurso;
 
     cont.innerHTML = `
       <div class="adm-form-row">
@@ -1381,21 +1482,15 @@ async function _renderAsigContent() {
           ${cursos.map(c => `<option value="${c.id}" ${c.id === _admAsigDocenteCursoSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[c.nivel] || c.nivel} · ${_esc(c.nombre)}${c.division || ''}</option>`).join('')}
         </select>
       </div>
-      ${!materiasCurso.length ? '<div class="empty-state">Sin materias para este nivel</div>' : `
-      <div class="card">
-        ${materiasCurso.map(m => `
-          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
-            <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
-            <select id="asig-${m.id}" style="max-width:220px">
-              <option value="">— Sin asignar —</option>
-              ${docentesCurso.map(d => `<option value="${d.id}" ${asigMap[m.id] === d.id ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`).join('')}
-            </select>
-          </div>`).join('')}
-        <div class="acc" style="margin-top:12px">
-          <button class="btn-p" onclick="_guardarAsignaciones()">Guardar asignaciones</button>
-        </div>
-      </div>`}`;
+      ${_buildAsigFilas(materiasCurso, docentesCurso, asigMap)}`;
   }
+}
+
+function _asigEditarFila(materiaId) {
+  const staticEl = document.getElementById('static-asig-' + materiaId);
+  const selectEl = document.getElementById('asig-' + materiaId);
+  if (staticEl) staticEl.style.display = 'none';
+  if (selectEl) selectEl.style.display = '';
 }
 
 async function _guardarAsignaciones() {
@@ -1608,12 +1703,33 @@ async function _renderParamNivel(nivel) {
 function _renderListaTipos(lista, tabla, nivel, listaId) {
   if (!lista.length) return '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin tipos definidos</div>';
   return lista.map(t => `
-    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--brd)">
-      <div style="flex:1;font-size:12px;${t.activo === false ? 'color:var(--txt3);text-decoration:line-through' : ''}">${_esc(t.nombre)}</div>
+    <div id="tipo-row-${t.id}" style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--brd)">
+      <div id="tipo-text-${t.id}" style="flex:1;font-size:12px;${t.activo === false ? 'color:var(--txt3);text-decoration:line-through' : ''}">${_esc(t.nombre)}</div>
+      <input id="tipo-input-${t.id}" type="text" value="${_esc(t.nombre)}" style="flex:1;display:none;font-size:12px;padding:4px 8px;border:1px solid var(--brd);border-radius:5px;background:var(--bg);color:var(--txt)">
+      <button id="tipo-btn-edit-${t.id}" onclick="_editarTipoInline('${t.id}')"
+        style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--txt3);padding:0 3px;line-height:1" title="Editar nombre">✎</button>
+      <button id="tipo-btn-save-${t.id}" onclick="_guardarTipoEdit('${t.id}','${tabla}','${nivel}','${listaId}')"
+        style="display:none;background:none;border:none;cursor:pointer;font-size:12px;color:var(--verde);padding:0 4px;font-weight:700" title="Guardar">✓</button>
       <div class="tog${t.activo !== false ? ' on' : ''}" onclick="_togTipoActivo('${tabla}','${t.id}','${listaId}','${nivel}')">
         <div class="tog-thumb"></div>
       </div>
     </div>`).join('');
+}
+
+function _editarTipoInline(id) {
+  document.getElementById('tipo-text-'    + id).style.display = 'none';
+  document.getElementById('tipo-input-'   + id).style.display = '';
+  document.getElementById('tipo-btn-edit-'+ id).style.display = 'none';
+  document.getElementById('tipo-btn-save-'+ id).style.display = '';
+  document.getElementById('tipo-input-'   + id).focus();
+}
+
+async function _guardarTipoEdit(id, tabla, nivel, listaId) {
+  const nombre = document.getElementById('tipo-input-' + id)?.value?.trim();
+  if (!nombre) return;
+  const { error } = await sb.from(tabla).update({ nombre }).eq('id', id);
+  if (error) { alert('Error: ' + error.message); return; }
+  await _renderParamNivel(nivel);
 }
 
 async function _guardarConfigAsistencia(nivel, existingId) {
