@@ -1410,15 +1410,16 @@ async function _guardarAsignaciones() {
   });
 
   try {
-    await sb.from('asignaciones').delete()
+    const { error: delErr } = await sb.from('asignaciones').delete()
       .eq('curso_id', cursoId).eq('anio_lectivo', _admAsigAnioLectivo).in('materia_id', materiaIds);
+    if (delErr) throw delErr;
     if (upserts.length) {
-      const { error } = await sb.from('asignaciones').insert(upserts);
-      if (error) throw error;
+      const { error: insErr } = await sb.from('asignaciones').insert(upserts);
+      if (insErr) throw insErr;
     }
     alert('Asignaciones guardadas correctamente.');
   } catch (e) {
-    alert('Error: ' + e.message);
+    alert('Error al guardar asignaciones: ' + e.message);
   }
 }
 
