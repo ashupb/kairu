@@ -153,13 +153,15 @@ async function _renderInstitucion() {
   const sec = document.getElementById('adm-section-content');
   sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
 
-  const { data: inst, error } = await sb
-    .from('instituciones')
-    .select('*')
-    .eq('id', USUARIO_ACTUAL.institucion_id)
-    .single();
+  const [instRes, orientsRes] = await Promise.all([
+    sb.from('instituciones').select('*').eq('id', USUARIO_ACTUAL.institucion_id).single(),
+    sb.from('orientaciones').select('*').eq('activo', true).order('nombre'),
+  ]);
 
+  const { data: inst, error } = instRes;
   if (error) { _admError(sec, error.message); return; }
+  const orients = orientsRes.data || [];
+  const nivelSecOn = inst['nivel_secundario'] !== false;
 
   sec.innerHTML = `
     <div class="card">
@@ -192,7 +194,7 @@ async function _renderInstitucion() {
           ${['inicial', 'primario', 'secundario'].map(n => `
             <div class="toggle-row-ui" style="flex:1;min-width:130px">
               <span style="font-size:12px;font-weight:500;color:${NIVEL_COLORS_ADM[n]}">${NIVEL_LABELS_ADM[n]}</span>
-              <div class="tog${inst['nivel_' + n] !== false ? ' on' : ''}" id="tog-nivel-${n}" onclick="_togAdm('tog-nivel-${n}')">
+              <div class="tog${inst['nivel_' + n] !== false ? ' on' : ''}" id="tog-nivel-${n}" onclick="_togNivel('${n}')">
                 <div class="tog-thumb"></div>
               </div>
             </div>`).join('')}
@@ -202,12 +204,64 @@ async function _renderInstitucion() {
       <div class="acc" style="margin-top:16px">
         <button class="btn-p" onclick="_guardarInstitucion()">Guardar cambios</button>
       </div>
+    </div>
+
+    <div class="card" id="adm-orientaciones-card" style="display:${nivelSecOn ? '' : 'none'}">
+      <div class="card-t" style="color:${NIVEL_COLORS_ADM.secundario}">Orientaciones (Secundario)</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Configurá las orientaciones que ofrece tu institución. Se usan al crear cursos de 4°, 5° y 6°.</div>
+      <div id="lista-orientaciones">
+        ${_renderListaOrientaciones(orients)}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-orientacion" placeholder="Ej: Economía y Administración" style="flex:1">
+        <button class="btn-s" onclick="_agregarOrientacion()">Agregar</button>
+      </div>
     </div>`;
 }
 
 function _togAdm(id) {
   const el = document.getElementById(id);
   if (el) el.classList.toggle('on');
+}
+
+function _togNivel(n) {
+  _togAdm('tog-nivel-' + n);
+  if (n === 'secundario') {
+    const on   = document.getElementById('tog-nivel-secundario')?.classList.contains('on');
+    const card = document.getElementById('adm-orientaciones-card');
+    if (card) card.style.display = on ? '' : 'none';
+  }
+}
+
+function _renderListaOrientaciones(lista) {
+  if (!lista.length) return '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin orientaciones definidas</div>';
+  return lista.map(o => `
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--brd)">
+      <div style="flex:1;font-size:12px;font-weight:500">${_esc(o.nombre)}</div>
+      <button onclick="_eliminarOrientacion('${o.id}')"
+        style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--txt3);padding:0 2px;line-height:1" title="Desactivar">×</button>
+    </div>`).join('');
+}
+
+async function _agregarOrientacion() {
+  const inp    = document.getElementById('new-orientacion');
+  const nombre = inp?.value?.trim();
+  if (!nombre) return;
+  const { error } = await sb.from('orientaciones').insert([{ nombre, activo: true }]);
+  if (error) { alert('Error: ' + error.message); return; }
+  inp.value = '';
+  const { data } = await sb.from('orientaciones').select('*').eq('activo', true).order('nombre');
+  const lista = document.getElementById('lista-orientaciones');
+  if (lista) lista.innerHTML = _renderListaOrientaciones(data || []);
+}
+
+async function _eliminarOrientacion(id) {
+  if (!confirm('¿Desactivar esta orientación?')) return;
+  const { error } = await sb.from('orientaciones').update({ activo: false }).eq('id', id);
+  if (error) { alert('Error: ' + error.message); return; }
+  const { data } = await sb.from('orientaciones').select('*').eq('activo', true).order('nombre');
+  const lista = document.getElementById('lista-orientaciones');
+  if (lista) lista.innerHTML = _renderListaOrientaciones(data || []);
 }
 
 async function _guardarInstitucion() {
@@ -228,7 +282,16 @@ async function _guardarInstitucion() {
   }).eq('id', USUARIO_ACTUAL.institucion_id);
 
   if (error) { alert('Error al guardar: ' + error.message); return; }
+
   if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.nombre = nombre;
+  const sbInst = document.getElementById('sb-inst-nombre');
+  const sbLogo = document.getElementById('sb-inst-logo');
+  const pgSub  = document.querySelector('#page-admin .pg-s');
+  if (sbInst) sbInst.textContent = nombre;
+  if (sbLogo) sbLogo.textContent = nombre[0]?.toUpperCase() || 'I';
+  if (pgSub)  pgSub.textContent  = nombre;
+  document.title = nombre + ' · Kairu';
+
   alert('Cambios guardados correctamente.');
 }
 
@@ -395,7 +458,7 @@ async function _abrirModalUsuario(userId) {
         </div>
       </div>
     </div>
-    ${(_configExtraOk && USUARIO_ACTUAL.rol === 'director_general' && !esNuevo) ? `
+    ${(_configExtraOk && USUARIO_ACTUAL.rol === 'director_general') ? `
     <div class="adm-form-row">
       <label class="adm-label">Accesos a Configuración</label>
       <div style="display:flex;flex-direction:column;gap:6px;padding:10px;background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad)">
@@ -635,7 +698,7 @@ async function _abrirModalCurso(cursoId) {
 
   const niveles   = USUARIO_ACTUAL.rol === 'directivo_nivel' ? [USUARIO_ACTUAL.nivel] : ['inicial', 'primario', 'secundario'];
   const nivelSel  = curso?.nivel || niveles[0];
-  const precsDisp = precs.filter(p => !nivelSel || p.nivel === nivelSel);
+  const precsDisp = precs.filter(p => !nivelSel || !p.nivel || p.nivel === nivelSel);
   const anioActual = new Date().getFullYear();
   const esAnioAlto = /^[456]/.test((curso?.nombre || '').trim());
 
@@ -1189,10 +1252,11 @@ async function _desactivarMateria(materiaId) {
 // ══════════════════════════════════════════════════════
 // SECCIÓN: ASIGNACIONES
 // ══════════════════════════════════════════════════════
-let _admAsigCursoSel    = null;
-let _admAsigVistaPor    = 'curso';
-let _admAsigDocenteSel  = null;
-let _admAsigAnioLectivo = new Date().getFullYear();
+let _admAsigCursoSel       = null;
+let _admAsigVistaPor       = 'curso';
+let _admAsigDocenteSel     = null;
+let _admAsigDocenteCursoSel = null;
+let _admAsigAnioLectivo    = new Date().getFullYear();
 
 async function _renderAsignaciones() {
   const sec = document.getElementById('adm-section-content');
@@ -1214,6 +1278,7 @@ async function _renderAsignaciones() {
   if (USUARIO_ACTUAL.rol === 'directivo_nivel') cursos = cursos.filter(c => c.nivel === USUARIO_ACTUAL.nivel);
   if (!_admAsigCursoSel && cursos.length) _admAsigCursoSel = cursos[0].id;
   if (!_admAsigDocenteSel && docentes.length) _admAsigDocenteSel = docentes[0].id;
+  if (!_admAsigDocenteCursoSel && cursos.length) _admAsigDocenteCursoSel = cursos[0].id;
 
   // Guardar para acceso desde funciones de guardado
   window._admAsigCursos   = cursos;
@@ -1264,7 +1329,7 @@ async function _renderAsigContent() {
     (asigns || []).forEach(a => { asigMap[a.materia_id] = a.docente_id; });
 
     const materiasCurso = cursoSel ? materias.filter(m => m.nivel === cursoSel.nivel) : [];
-    const docentesCurso = cursoSel ? docentes.filter(d => d.nivel === cursoSel.nivel) : docentes;
+    const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
 
     window._admAsigMateriaIds = materiasCurso.map(m => m.id);
 
@@ -1290,33 +1355,53 @@ async function _renderAsigContent() {
         </div>
       </div>`}`;
   } else {
-    const { data: asigns } = await sb.from('asignaciones_detalle')
-      .select('*').eq('docente_id', _admAsigDocenteSel || '').eq('anio_lectivo', _admAsigAnioLectivo);
+    if (!_admAsigDocenteCursoSel && cursos.length) _admAsigDocenteCursoSel = cursos[0].id;
+    const cursoSel = cursos.find(c => c.id === _admAsigDocenteCursoSel) || cursos[0];
+
+    const { data: asigns } = await sb.from('asignaciones')
+      .select('*').eq('curso_id', _admAsigDocenteCursoSel || '').eq('anio_lectivo', _admAsigAnioLectivo);
+    const asigMap = {};
+    (asigns || []).forEach(a => { asigMap[a.materia_id] = a.docente_id; });
+
+    const materiasCurso = cursoSel ? materias.filter(m => m.nivel === cursoSel.nivel) : [];
+    const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
+
+    window._admAsigMateriaIds = materiasCurso.map(m => m.id);
 
     cont.innerHTML = `
       <div class="adm-form-row">
-        <label class="adm-label">Docente</label>
-        <select onchange="_admAsigDocenteSel=this.value;_renderAsigContent()" style="max-width:280px">
+        <label class="adm-label">Docente de referencia</label>
+        <select onchange="_admAsigDocenteSel=this.value" style="max-width:280px">
           ${docentes.map(d => `<option value="${d.id}" ${d.id === _admAsigDocenteSel ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`).join('')}
         </select>
       </div>
-      ${!(asigns?.length) ? '<div class="empty-state">Sin asignaciones para este docente</div>' : `
+      <div class="adm-form-row">
+        <label class="adm-label">Curso</label>
+        <select onchange="_admAsigDocenteCursoSel=this.value;_renderAsigContent()" style="max-width:280px">
+          ${cursos.map(c => `<option value="${c.id}" ${c.id === _admAsigDocenteCursoSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[c.nivel] || c.nivel} · ${_esc(c.nombre)}${c.division || ''}</option>`).join('')}
+        </select>
+      </div>
+      ${!materiasCurso.length ? '<div class="empty-state">Sin materias para este nivel</div>' : `
       <div class="card">
-        ${(asigns || []).map(a => `
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--brd)">
-            <div style="flex:1">
-              <div style="font-size:12px;font-weight:500">${_esc(a.materia) || '—'}</div>
-              <div style="font-size:10px;color:var(--txt2)">${_esc(a.curso_nombre) || ''}${a.curso_division || ''} · ${NIVEL_LABELS_ADM[a.curso_nivel] || ''}</div>
-            </div>
+        ${materiasCurso.map(m => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
+            <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
+            <select id="asig-${m.id}" style="max-width:220px">
+              <option value="">— Sin asignar —</option>
+              ${docentesCurso.map(d => `<option value="${d.id}" ${asigMap[m.id] === d.id ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`).join('')}
+            </select>
           </div>`).join('')}
+        <div class="acc" style="margin-top:12px">
+          <button class="btn-p" onclick="_guardarAsignaciones()">Guardar asignaciones</button>
+        </div>
       </div>`}`;
   }
 }
 
 async function _guardarAsignaciones() {
-  const cursoId    = _admAsigCursoSel;
+  const cursoId    = _admAsigVistaPor === 'docente' ? _admAsigDocenteCursoSel : _admAsigCursoSel;
   const materiaIds = window._admAsigMateriaIds || [];
-  if (!cursoId || !materiaIds.length) return;
+  if (!cursoId || !materiaIds.length) { alert('Seleccioná un curso con materias disponibles.'); return; }
 
   const upserts = [];
   materiaIds.forEach(mId => {

@@ -13,6 +13,6 @@ const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const APP_CONFIG = {
-  nombre:  'EduGestión',
+  nombre:  'Kairu',
   version: '1.0.0-mvp',
 };

@@ -35,13 +35,13 @@ async function iniciarApp() {
   document.getElementById('sb-rol').textContent    = labelRol(u.rol);
 
   // Nombre de la institución en sidebar — genérico, se carga de la BD
-  const instNombre = INSTITUCION_ACTUAL?.nombre || 'EduGestión';
-  const instLetra  = instNombre[0]?.toUpperCase() || 'E';
+  const instNombre = INSTITUCION_ACTUAL?.nombre || 'Kairu';
+  const instLetra  = instNombre[0]?.toUpperCase() || 'K';
   document.getElementById('sb-inst-logo').textContent  = instLetra;
   document.getElementById('sb-inst-nombre').textContent = instNombre;
 
   // Título de la pestaña del navegador
-  document.title = instNombre + ' · Kairos';
+  document.title = instNombre + ' · Kairu';
 
   iniciarReloj();
   renderNav();
