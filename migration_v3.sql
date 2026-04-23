@@ -246,16 +246,74 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- ── 9. POLÍTICA INSERT para usuarios (respaldo) ───────
+-- ── 9. RLS COMPLETO PARA TABLA usuarios ──────────────
+-- SELECT: ver la propia fila siempre + todos de la misma institución
+-- El "auth.uid() = id" evita el problema de bootstrap circular.
+
+drop policy if exists "usuarios_select_inst"  on usuarios;
 drop policy if exists "usuarios_insert_admin" on usuarios;
-create policy "usuarios_insert_admin" on usuarios
-  for insert with check (
-    institucion_id in (
-      select institucion_id from usuarios where id = auth.uid()
+drop policy if exists "usuarios_update_inst"  on usuarios;
+drop policy if exists "usuarios_update_own"   on usuarios;
+
+create policy "usuarios_select_inst" on usuarios
+  for select using (
+    auth.uid() = id
+    or institucion_id = (
+      select u2.institucion_id from usuarios u2 where u2.id = auth.uid()
     )
   );
 
--- ── 10. RECARGAR SCHEMA CACHE DE SUPABASE ────────────
+create policy "usuarios_insert_admin" on usuarios
+  for insert with check (
+    institucion_id = (
+      select u2.institucion_id from usuarios u2 where u2.id = auth.uid()
+    )
+  );
+
+create policy "usuarios_update_inst" on usuarios
+  for update using (
+    auth.uid() = id
+    or institucion_id = (
+      select u2.institucion_id from usuarios u2 where u2.id = auth.uid()
+    )
+  );
+
+-- ── 10. FK asignaciones con CASCADE ──────────────────
+alter table asignaciones drop constraint if exists asignaciones_docente_id_fkey;
+alter table asignaciones add constraint asignaciones_docente_id_fkey
+  foreign key (docente_id) references usuarios(id) on delete cascade;
+
+alter table cursos drop constraint if exists cursos_preceptor_id_fkey;
+alter table cursos add constraint cursos_preceptor_id_fkey
+  foreign key (preceptor_id) references usuarios(id) on delete set null;
+
+alter table public.usuarios drop constraint if exists usuarios_id_fkey;
+alter table public.usuarios add constraint usuarios_id_fkey
+  foreign key (id) references auth.users(id) on delete cascade;
+
+-- ── 11. FUNCIÓN: username → email (para login sin sesión) ─
+-- La query de login corre antes de autenticarse (auth.uid = null),
+-- por eso RLS bloquea el SELECT en usuarios.
+-- Esta función corre con SECURITY DEFINER y bypassea RLS.
+
+create or replace function public.get_email_by_username(p_username text)
+returns text
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select email
+  from public.usuarios
+  where username = p_username
+    and activo = true
+  limit 1;
+$$;
+
+-- Permitir que anon y authenticated llamen a la función
+grant execute on function public.get_email_by_username(text) to anon, authenticated;
+
+-- ── 12. RECARGAR SCHEMA CACHE DE SUPABASE ────────────
 notify pgrst, 'reload schema';
 
 -- ── FIN DE MIGRACIÓN ──────────────────────────────────

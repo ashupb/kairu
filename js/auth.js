@@ -22,21 +22,18 @@ async function login() {
 
   try {
     // 1. Resolver email: si tiene @ es email directo, sino buscar por username
+    // Usamos RPC para bypassear RLS (el login corre sin sesión activa)
     let emailParaAuth = username;
     if (!username.includes('@')) {
-      const { data: usuarioRow, error: errUser } = await sb
-        .from('usuarios')
-        .select('email')
-        .eq('username', username)
-        .eq('activo', true)
-        .single();
+      const { data: emailEncontrado, error: errUser } = await sb
+        .rpc('get_email_by_username', { p_username: username });
 
-      if (errUser || !usuarioRow?.email) {
+      if (errUser || !emailEncontrado) {
         mostrarErrorLogin('Usuario o contraseña incorrectos.');
         resetBtn();
         return;
       }
-      emailParaAuth = usuarioRow.email;
+      emailParaAuth = emailEncontrado;
     }
 
     // 2. Autenticar con Supabase Auth
