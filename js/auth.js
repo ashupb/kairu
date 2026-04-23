@@ -45,10 +45,10 @@ async function login() {
       return;
     }
 
-    // 2. Traer perfil de la tabla usuarios
+    // 2. Traer perfil (sin join para evitar fallos por columnas o RLS en instituciones)
     const { data: perfil, error: errPerfil } = await sb
       .from('usuarios')
-      .select('*, institucion:instituciones(id, nombre, logo_url)')
+      .select('*')
       .eq('id', data.user.id)
       .single();
 
@@ -66,9 +66,20 @@ async function login() {
       return;
     }
 
-    // 3. Guardar estado global
+    // 3. Traer institución por separado (falla silenciosa si hay problema)
+    let instData = null;
+    if (perfil.institucion_id) {
+      const { data: inst } = await sb
+        .from('instituciones')
+        .select('id, nombre, logo_url')
+        .eq('id', perfil.institucion_id)
+        .single();
+      instData = inst;
+    }
+
+    // 4. Guardar estado global
     USUARIO_ACTUAL     = { ...data.user, ...perfil };
-    INSTITUCION_ACTUAL = perfil.institucion;
+    INSTITUCION_ACTUAL = instData;
 
     // Si aún no tiene institución asignada → pantalla de configuración inicial
     if (!USUARIO_ACTUAL.institucion_id) {
@@ -107,13 +118,23 @@ async function verificarSesion() {
 
   const { data: perfil } = await sb
     .from('usuarios')
-    .select('*, institucion:instituciones(id, nombre, logo_url)')
+    .select('*')
     .eq('id', session.user.id)
     .single();
 
+  let instData = null;
+  if (perfil?.institucion_id) {
+    const { data: inst } = await sb
+      .from('instituciones')
+      .select('id, nombre, logo_url')
+      .eq('id', perfil.institucion_id)
+      .single();
+    instData = inst;
+  }
+
   if (perfil && perfil.activo) {
     USUARIO_ACTUAL     = { ...session.user, ...perfil };
-    INSTITUCION_ACTUAL = perfil.institucion;
+    INSTITUCION_ACTUAL = instData;
 
     // Si aún no tiene institución asignada → pantalla de configuración inicial
     if (!USUARIO_ACTUAL.institucion_id) {
