@@ -411,10 +411,20 @@ async function _abrirModalUsuario(userId) {
       ${esNuevo ? `<div style="font-size:10px;color:var(--txt2);margin-top:3px">Inicial del nombre + apellido. Se completa automático al salir del campo nombre.</div>` : ''}
     </div>
     <div class="adm-form-row">
-      <label class="adm-label">DNI${esNuevo ? ' — contraseña de ingreso' : ''}</label>
+      <label class="adm-label">DNI</label>
       <input type="text" id="mu-dni" value="${_esc(user?.dni)}" placeholder="Ej: 12345678">
-      ${esNuevo ? `<div style="font-size:10px;color:var(--txt2);margin-top:3px">El DNI es la contraseña inicial del usuario.</div>` : ''}
     </div>
+    ${esNuevo ? `
+    <div class="adm-form-row">
+      <label class="adm-label">Contraseña inicial</label>
+      <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para usar el DNI como contraseña">
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si no se completa, el DNI se usa como contraseña de ingreso.</div>
+    </div>` : `
+    <div class="adm-form-row">
+      <label class="adm-label">Nueva contraseña</label>
+      <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para no modificar">
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si completás este campo se actualizará la contraseña del usuario.</div>
+    </div>`}
     <div class="adm-form-row">
       <label class="adm-label">Email (para recuperación de contraseña)</label>
       <input type="email" id="mu-email" value="${_esc(user?.email)}" placeholder="email@ejemplo.com"
@@ -471,13 +481,22 @@ async function _abrirModalUsuario(userId) {
     async () => { await _guardarUsuario(userId, esNuevo); }
   );
 
-  if (!esNuevo) {
+  const puedeResetear = ['director_general', 'directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+  if (!esNuevo && puedeResetear) {
     const footer = modal.querySelector('.adm-modal-footer');
     const btnReset = document.createElement('button');
     btnReset.className = 'btn-s';
-    btnReset.textContent = 'Resetear contraseña';
+    btnReset.textContent = 'Resetear a DNI';
     btnReset.style.marginRight = 'auto';
-    btnReset.onclick = () => _resetPassADni(userId);
+    btnReset.title = 'Copia el DNI en el campo de nueva contraseña para resetear';
+    btnReset.onclick = () => {
+      const passInput = document.getElementById('mu-pass');
+      const dniInput  = document.getElementById('mu-dni');
+      if (passInput && dniInput) {
+        passInput.value = dniInput.value;
+        passInput.focus();
+      }
+    };
     footer.insertBefore(btnReset, footer.firstChild);
   }
 }
@@ -549,6 +568,7 @@ async function _guardarUsuario(userId, esNuevo) {
   const username        = document.getElementById('mu-username')?.value?.trim().toLowerCase();
   const email           = document.getElementById('mu-email')?.value?.trim();
   const dni             = document.getElementById('mu-dni')?.value?.trim() || null;
+  const passField       = document.getElementById('mu-pass')?.value?.trim();
   const rol             = document.getElementById('mu-rol')?.value;
   const nivel           = document.getElementById('mu-nivel')?.value || null;
   const activo          = document.getElementById('mu-activo')?.classList.contains('on');
@@ -559,7 +579,7 @@ async function _guardarUsuario(userId, esNuevo) {
   if (!nombre_completo)     { alert('El nombre es requerido.'); return; }
   if (esNuevo && !username) { alert('El nombre de usuario es requerido.'); return; }
   if (esNuevo && !email)    { alert('El email es requerido.'); return; }
-  if (esNuevo && !dni)      { alert('El DNI es requerido (se usa como contraseña inicial).'); return; }
+  if (esNuevo && !dni)      { alert('El DNI es requerido.'); return; }
   if (esNuevo && !/^[a-z0-9._-]+$/.test(username)) {
     alert('El nombre de usuario solo puede contener letras minúsculas, números, puntos y guiones.');
     return;
@@ -576,7 +596,7 @@ async function _guardarUsuario(userId, esNuevo) {
         },
         body: JSON.stringify({
           email,
-          password: dni,
+          password: passField || dni,
           email_confirm: true,
           user_metadata: {
             nombre_completo,
@@ -619,6 +639,19 @@ async function _guardarUsuario(userId, esNuevo) {
       }
       const { error } = await sb.from('usuarios').update(updatePayload).eq('id', userId);
       if (error) throw error;
+      if (passField) {
+        const resp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+            'apikey': SUPABASE_SERVICE_KEY,
+          },
+          body: JSON.stringify({ password: passField }),
+        });
+        const data = await resp.json();
+        if (data.error || !data.id) throw new Error(data.error?.message || data.msg || 'Error al actualizar contraseña');
+      }
     }
 
     _cerrarModal();
@@ -628,28 +661,6 @@ async function _guardarUsuario(userId, esNuevo) {
   }
 }
 
-async function _resetPassADni(userId) {
-  const dni = document.getElementById('mu-dni')?.value?.trim();
-  if (!dni) { alert('Ingresá el DNI del usuario primero para resetear su contraseña.'); return; }
-  if (!confirm(`¿Resetear la contraseña de este usuario a su DNI (${dni})?`)) return;
-  try {
-    const resp = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
-        'apikey': SUPABASE_SERVICE_KEY,
-      },
-      body: JSON.stringify({ password: dni }),
-    });
-    const data = await resp.json();
-    if (data.error || !data.id) throw new Error(data.error?.message || data.msg || 'Error al resetear contraseña');
-    await sb.from('usuarios').update({ dni }).eq('id', userId);
-    alert('Contraseña reseteada al DNI correctamente.');
-  } catch (e) {
-    alert('Error: ' + e.message);
-  }
-}
 
 // ══════════════════════════════════════════════════════
 // SECCIÓN: CURSOS
@@ -703,7 +714,7 @@ async function _renderCursos() {
     return `
       <div class="sec-lb" style="color:${color}">${NIVEL_LABELS_ADM[nivel] || nivel}</div>
       ${lista.map(c => `
-        <div class="card" style="border-left:3px solid ${color};padding:12px 14px;margin-bottom:8px">
+        <div class="card" style="border-left:3px solid ${color};padding:12px 14px;margin-bottom:8px;cursor:pointer" onclick="_irAAlumnosDeCurso('${c.id}')" title="Ver alumnos de este curso">
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="background:${color}1a;color:${color};font-size:13px;font-weight:700;padding:4px 10px;border-radius:6px;flex-shrink:0">
               ${_esc(c.nombre)}${c.division || ''}
@@ -714,10 +725,8 @@ async function _renderCursos() {
             </div>
             ${canEdit ? `
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn-s" onclick="_abrirModalCurso('${c.id}')">Editar</button>
-              ${c.activo !== false
-                ? `<button class="btn-d" onclick="_desactivarCurso('${c.id}')">Desactivar</button>`
-                : `<span class="tag tr">Inactivo</span>`}
+              <button class="btn-s" onclick="event.stopPropagation();_abrirModalCurso('${c.id}')">Editar</button>
+              <button class="btn-d" onclick="event.stopPropagation();_eliminarCurso('${c.id}')">Eliminar</button>
             </div>` : ''}
           </div>
         </div>`).join('')}`;
@@ -726,6 +735,11 @@ async function _renderCursos() {
   sec.innerHTML = `
     ${canEdit ? `<div style="text-align:right;margin-bottom:12px"><button class="btn-p" onclick="_abrirModalCurso(null)">+ Nuevo curso</button></div>` : ''}
     ${html || '<div class="empty-state">Sin cursos registrados</div>'}`;
+}
+
+function _irAAlumnosDeCurso(cursoId) {
+  _admAlumnosCursoSel = cursoId;
+  _switchAdminTab('alumnos');
 }
 
 async function _abrirModalCurso(cursoId) {
@@ -832,9 +846,9 @@ async function _guardarCurso(cursoId) {
   }
 }
 
-async function _desactivarCurso(cursoId) {
-  if (!confirm('¿Desactivar este curso? No se eliminará, se puede reactivar luego.')) return;
-  const { error } = await sb.from('cursos').update({ activo: false }).eq('id', cursoId);
+async function _eliminarCurso(cursoId) {
+  if (!confirm('¿Eliminar este curso? Se eliminará definitivamente y no se podrá recuperar.')) return;
+  const { error } = await sb.from('cursos').delete().eq('id', cursoId);
   if (error) { alert('Error: ' + error.message); return; }
   await _renderCursos();
 }
@@ -1107,9 +1121,15 @@ function _procesarFilasImport(rows) {
     let nombre = '', apellido = '';
     if (iNA >= 0) {
       const full = get(iNA);
-      const parts = full.split(/\s+/);
-      apellido = parts[0] || '';
-      nombre   = parts.slice(1).join(' ') || '';
+      if (full.includes(',')) {
+        const commaIdx = full.indexOf(',');
+        apellido = full.slice(0, commaIdx).trim();
+        nombre   = full.slice(commaIdx + 1).trim();
+      } else {
+        const parts = full.split(/\s+/);
+        apellido = parts[0] || '';
+        nombre   = parts.slice(1).join(' ') || '';
+      }
     } else {
       nombre   = get(iN);
       apellido = get(iA);
@@ -1303,6 +1323,7 @@ let _admAsigVistaPor       = 'curso';
 let _admAsigDocenteSel     = null;
 let _admAsigDocenteCursoSel = null;
 let _admAsigAnioLectivo    = new Date().getFullYear();
+let _admAsigModoEdicion    = true;
 
 async function _renderAsignaciones() {
   const sec = document.getElementById('adm-section-content');
@@ -1351,6 +1372,7 @@ async function _renderAsignaciones() {
 
 async function _admAsigVista(modo) {
   _admAsigVistaPor = modo;
+  _admAsigModoEdicion = true;
   document.querySelectorAll('#adm-section-content .chip').forEach(c => {
     c.classList.toggle('on', (modo === 'curso' && c.textContent === 'Por curso') || (modo === 'docente' && c.textContent === 'Por docente'));
   });
@@ -1373,6 +1395,21 @@ async function _renderAsigContent() {
     const asignadas  = materiasCurso.filter(m => asigMap[m.id]);
     const sinAsignar = materiasCurso.filter(m => !asigMap[m.id]);
     const optsHtml   = docentesCurso.map(d => `<option value="${d.id}">${_esc(d.nombre_completo)}</option>`).join('');
+
+    if (!_admAsigModoEdicion) {
+      const filaVista = m => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
+          <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
+          <span style="font-size:12px;color:${asigMap[m.id] ? 'var(--txt2)' : 'var(--txt3)'}">${asigMap[m.id] ? _esc(nomMap[asigMap[m.id]] || '') : '— Sin asignar —'}</span>
+        </div>`;
+      return `
+        <div class="card">
+          ${materiasCurso.map(filaVista).join('')}
+          <div class="acc" style="margin-top:12px">
+            <button class="btn-s" onclick="_admAsigModoEdicion=true;_renderAsigContent()">Editar asignaciones</button>
+          </div>
+        </div>`;
+    }
 
     const filaAsignada = m => `
       <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
@@ -1433,34 +1470,44 @@ async function _renderAsigContent() {
       </div>
       ${_buildAsigFilas(materiasCurso, docentesCurso, asigMap)}`;
   } else {
-    if (!_admAsigDocenteCursoSel && cursos.length) _admAsigDocenteCursoSel = cursos[0].id;
-    const cursoSel = cursos.find(c => c.id === _admAsigDocenteCursoSel) || cursos[0];
-
     const { data: asigns } = await sb.from('asignaciones')
-      .select('*').eq('curso_id', _admAsigDocenteCursoSel || '').eq('anio_lectivo', _admAsigAnioLectivo);
-    const asigMap = {};
-    (asigns || []).forEach(a => { asigMap[a.materia_id] = a.docente_id; });
+      .select('*').eq('docente_id', _admAsigDocenteSel || '').eq('anio_lectivo', _admAsigAnioLectivo);
 
-    const materiasCurso = cursoSel ? materias.filter(m => m.nivel === cursoSel.nivel) : [];
-    const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
+    const materiasMap = {};
+    materias.forEach(m => { materiasMap[m.id] = m; });
 
-    window._admAsigMateriaIds    = materiasCurso.map(m => m.id);
-    window._admAsigDocentesCurso = docentesCurso;
+    const porCurso = {};
+    (asigns || []).forEach(a => {
+      if (!porCurso[a.curso_id]) porCurso[a.curso_id] = [];
+      porCurso[a.curso_id].push(a.materia_id);
+    });
+
+    const cursosConAsig = cursos.filter(c => porCurso[c.id]);
+    const filasCursos = cursosConAsig.map(c => {
+      const color = NIVEL_COLORS_ADM[c.nivel] || 'var(--gris)';
+      const items = (porCurso[c.id] || []).map(mId => {
+        const mat = materiasMap[mId];
+        return mat ? `<div style="font-size:12px;padding:5px 0;border-bottom:1px solid var(--brd)">${_esc(mat.nombre)}</div>` : '';
+      }).join('');
+      return `
+        <div class="card" style="border-left:3px solid ${color};margin-bottom:10px">
+          <div style="font-size:11px;font-weight:700;color:${color};margin-bottom:8px">
+            ${NIVEL_LABELS_ADM[c.nivel] || c.nivel} · ${_esc(c.nombre)}${c.division || ''}
+          </div>
+          ${items}
+        </div>`;
+    }).join('');
 
     cont.innerHTML = `
       <div class="adm-form-row">
-        <label class="adm-label">Docente de referencia</label>
-        <select onchange="_admAsigDocenteSel=this.value" style="max-width:280px">
+        <label class="adm-label">Docente</label>
+        <select onchange="_admAsigDocenteSel=this.value;_renderAsigContent()" style="max-width:280px">
           ${docentes.map(d => `<option value="${d.id}" ${d.id === _admAsigDocenteSel ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`).join('')}
         </select>
       </div>
-      <div class="adm-form-row">
-        <label class="adm-label">Curso</label>
-        <select onchange="_admAsigDocenteCursoSel=this.value;_renderAsigContent()" style="max-width:280px">
-          ${cursos.map(c => `<option value="${c.id}" ${c.id === _admAsigDocenteCursoSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[c.nivel] || c.nivel} · ${_esc(c.nombre)}${c.division || ''}</option>`).join('')}
-        </select>
-      </div>
-      ${_buildAsigFilas(materiasCurso, docentesCurso, asigMap)}`;
+      ${!cursosConAsig.length
+        ? '<div class="empty-state">Este docente no tiene asignaciones para el año seleccionado.</div>'
+        : filasCursos}`;
   }
 }
 
@@ -1490,7 +1537,8 @@ async function _guardarAsignaciones() {
       const { error: insErr } = await sb.from('asignaciones').insert(upserts);
       if (insErr) throw insErr;
     }
-    alert('Asignaciones guardadas correctamente.');
+    _admAsigModoEdicion = false;
+    await _renderAsigContent();
   } catch (e) {
     alert('Error al guardar asignaciones: ' + e.message);
   }
@@ -1596,8 +1644,8 @@ async function _renderParamNivel(nivel) {
           </select>
         </div>
       </div>
-      <div class="acc" style="margin-top:14px">
-        <button class="btn-p" onclick="_guardarConfigAsistencia('${nivel}','${cfgId}')">Guardar configuración</button>
+      <div class="acc" style="margin-top:14px" id="param-cfg-acc-${nivel}">
+        <button class="btn-p" id="param-cfg-btn-${nivel}" onclick="_guardarConfigAsistencia('${nivel}','${cfgId}')">Guardar configuración</button>
       </div>
     </div>
 
@@ -1732,7 +1780,16 @@ async function _guardarConfigAsistencia(nivel, existingId) {
       const { error } = await sb.from('config_asistencia').insert([datos]);
       if (error) throw error;
     }
-    alert('Configuración guardada.');
+    const btn = document.getElementById('param-cfg-btn-' + nivel);
+    if (btn) {
+      btn.textContent = 'Editar configuración';
+      btn.className   = 'btn-s';
+      btn.onclick     = () => {
+        btn.textContent = 'Guardar configuración';
+        btn.className   = 'btn-p';
+        btn.onclick     = () => _guardarConfigAsistencia(nivel, existingId || btn.dataset.cfgId || '');
+      };
+    }
   } catch (e) {
     alert('Error: ' + e.message);
   }
@@ -1795,7 +1852,7 @@ function _crearModal(titulo, contenidoHtml, onGuardar) {
   const overlay = document.createElement('div');
   overlay.id        = 'adm-modal-overlay';
   overlay.className = 'adm-modal-overlay';
-  overlay.onclick   = e => { if (e.target === overlay) _cerrarModal(); };
+  // Click fuera no cierra — el usuario debe usar Cancelar o ×
 
   overlay.innerHTML = `
     <div class="adm-modal">
