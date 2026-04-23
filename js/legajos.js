@@ -269,7 +269,6 @@ const LEG_TABS = [
   { id:'objetivos',     label:'Objetivos' },
   { id:'eoe',           label:'EOE' },
   { id:'observaciones', label:'Notas' },
-  { id:'docs',          label:'Docs' },
 ];
 
 async function abrirLegajoAlumno(alumnoId) {
@@ -334,7 +333,6 @@ async function _cargarTabLeg(idx) {
     objetivos:     _tabObjetivos,
     eoe:           _tabEOE,
     observaciones: _tabObservaciones,
-    docs:          _tabDocs,
   };
   const fn = fns[LEG_TABS[idx].id];
   if (fn) await fn(el);

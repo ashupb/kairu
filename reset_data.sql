@@ -50,6 +50,21 @@ end $$;
 delete from auth.users
   where email != 'aperezbenary@gmail.com';
 
+-- ── Guardia: si public.usuarios del admin se borró por CASCADE accidental,
+--    lo recrea automáticamente desde auth.users ─────────
+insert into public.usuarios (id, email, nombre_completo, username, rol, activo, institucion_id)
+select
+  au.id,
+  au.email,
+  coalesce(au.raw_user_meta_data->>'nombre_completo', 'Administrador Kairu'),
+  coalesce(au.raw_user_meta_data->>'username', 'aperezbenary'),
+  'director_general',
+  true,
+  (select id from instituciones limit 1)
+from auth.users au
+where au.email = 'aperezbenary@gmail.com'
+on conflict (id) do nothing;
+
 -- ── Verificación ─────────────────────────────────────
 select 'auth.users'      as tabla, count(*) as filas from auth.users
 union all

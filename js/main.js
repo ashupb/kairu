@@ -35,12 +35,10 @@ async function iniciarApp() {
   document.getElementById('sb-rol').textContent    = labelRol(u.rol);
 
   // Nombre de la institución en sidebar — genérico, se carga de la BD
-  const instNombre  = INSTITUCION_ACTUAL?.nombre || 'Kairu';
-  const instLetra   = instNombre[0]?.toUpperCase() || 'K';
-  const instLogoUrl = INSTITUCION_ACTUAL?.logo_url;
-  const sbLogoEl    = document.getElementById('sb-inst-logo');
-  if (instLogoUrl) sbLogoEl.innerHTML = `<img src="${instLogoUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
-  else sbLogoEl.textContent = instLetra;
+  const instNombre = INSTITUCION_ACTUAL?.nombre || 'Kairu';
+  const instLetra  = instNombre[0]?.toUpperCase() || 'K';
+  const sbLogoEl   = document.getElementById('sb-inst-logo');
+  if (sbLogoEl) sbLogoEl.textContent = instLetra;
   document.getElementById('sb-inst-nombre').textContent = instNombre;
 
   // Título de la pestaña del navegador

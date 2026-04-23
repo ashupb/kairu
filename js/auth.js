@@ -45,7 +45,7 @@ async function login() {
       return;
     }
 
-    // 2. Traer perfil (sin join para evitar fallos por columnas o RLS en instituciones)
+    // 2. Traer perfil
     const { data: perfil, error: errPerfil } = await sb
       .from('usuarios')
       .select('*')

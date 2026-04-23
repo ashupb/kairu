@@ -188,19 +188,6 @@ async function _renderInstitucion() {
         <input type="number" id="adm-inst-anio" value="${inst.anio_lectivo || new Date().getFullYear()}" min="2020" max="2050" style="max-width:120px">
       </div>
       <div class="adm-form-row">
-        <label class="adm-label">Logo de la institución</label>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div id="adm-logo-preview" style="width:40px;height:40px;background:var(--surf2);border:1px solid var(--brd);border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:18px;font-weight:700;color:var(--txt2)">
-            ${inst.logo_url ? `<img src="${_esc(inst.logo_url)}" style="width:100%;height:100%;object-fit:cover">` : (inst.nombre?.[0]?.toUpperCase() || 'I')}
-          </div>
-          <input type="file" id="adm-logo-file" accept="image/png,image/jpeg,image/gif,image/webp" style="font-size:11px">
-          ${inst.logo_url ? `<button class="btn-d" onclick="_eliminarLogoInstitucion()" style="padding:5px 10px;font-size:11px">Quitar logo</button>` : ''}
-        </div>
-        <div style="font-size:10px;color:var(--txt2);margin-top:3px">PNG o JPG recomendado. Máx. 2 MB.</div>
-        <input type="hidden" id="adm-inst-logo-url" value="${_esc(inst.logo_url || '')}">
-      </div>
-
-      <div class="adm-form-row">
         <label class="adm-label">Niveles activos</label>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           ${['inicial', 'primario', 'secundario'].map(n => `
@@ -288,49 +275,21 @@ async function _guardarInstitucion() {
 
   if (!nombre) { alert('El nombre de la institución es requerido.'); return; }
 
-  let logo_url = document.getElementById('adm-inst-logo-url')?.value || null;
-  const logoFile = document.getElementById('adm-logo-file')?.files?.[0];
-
-  if (logoFile) {
-    if (logoFile.size > 2 * 1024 * 1024) { alert('El logo no puede superar los 2 MB.'); return; }
-    const ext  = logoFile.name.split('.').pop().toLowerCase() || 'png';
-    const path = `${USUARIO_ACTUAL.institucion_id}/logo.${ext}`;
-    const { error: upErr } = await sb.storage.from('logos').upload(path, logoFile, { upsert: true });
-    if (upErr) { alert('Error al subir el logo: ' + upErr.message); return; }
-    const { data: urlData } = sb.storage.from('logos').getPublicUrl(path);
-    logo_url = urlData.publicUrl + '?t=' + Date.now();
-  }
-
   const { error } = await sb.from('instituciones').update({
     nombre, direccion, telefono, email_institucional, anio_lectivo,
-    nivel_inicial, nivel_primario, nivel_secundario, logo_url,
+    nivel_inicial, nivel_primario, nivel_secundario,
   }).eq('id', USUARIO_ACTUAL.institucion_id);
 
   if (error) { alert('Error al guardar: ' + error.message); return; }
 
-  if (INSTITUCION_ACTUAL) { INSTITUCION_ACTUAL.nombre = nombre; INSTITUCION_ACTUAL.logo_url = logo_url; }
-  const sbInst  = document.getElementById('sb-inst-nombre');
-  const sbLogo  = document.getElementById('sb-inst-logo');
-  const pgSub   = document.querySelector('#page-admin .pg-s');
+  if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.nombre = nombre;
+  const sbInst = document.getElementById('sb-inst-nombre');
+  const pgSub  = document.querySelector('#page-admin .pg-s');
   if (sbInst) sbInst.textContent = nombre;
-  if (sbLogo) {
-    if (logo_url) sbLogo.innerHTML = `<img src="${logo_url}" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
-    else sbLogo.textContent = nombre[0]?.toUpperCase() || 'I';
-  }
-  if (pgSub) pgSub.textContent = nombre;
+  if (pgSub)  pgSub.textContent  = nombre;
   document.title = nombre + ' · Kairu';
 
   alert('Cambios guardados correctamente.');
-}
-
-async function _eliminarLogoInstitucion() {
-  if (!confirm('¿Quitar el logo de la institución?')) return;
-  const { error } = await sb.from('instituciones').update({ logo_url: null }).eq('id', USUARIO_ACTUAL.institucion_id);
-  if (error) { alert('Error: ' + error.message); return; }
-  if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.logo_url = null;
-  const sbLogo = document.getElementById('sb-inst-logo');
-  if (sbLogo) sbLogo.textContent = INSTITUCION_ACTUAL?.nombre?.[0]?.toUpperCase() || 'I';
-  await _renderInstitucion();
 }
 
 // ══════════════════════════════════════════════════════
