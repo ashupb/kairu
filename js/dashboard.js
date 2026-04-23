@@ -255,7 +255,9 @@ async function rDashDirector() {
   const miId   = USUARIO_ACTUAL.id;
   const sem    = _semanaActual();
 
-  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes] = await Promise.all([
+  const hoy = sem.hoy;
+
+  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes, asistHoyRes] = await Promise.all([
     sb.from('problematicas')
       .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
       .eq('institucion_id', instId)
@@ -281,6 +283,7 @@ async function rDashDirector() {
       .eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
     sb.from('usuarios').select('id', { count:'exact', head:true })
       .eq('institucion_id', instId).eq('rol', 'docente').or('activo.is.null,activo.eq.true'),
+    sb.from('asistencia').select('estado').eq('fecha', hoy).is('hora_clase', null),
   ]);
 
   const probs         = probRes.data    || [];
@@ -291,6 +294,32 @@ async function rDashDirector() {
   const totalAlumnos  = alumnosRes.count  ?? 0;
   const totalDocentes = docentesRes.count ?? 0;
 
+  const asistHoy = asistHoyRes.data || [];
+  const asistContador = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
+  asistHoy.forEach(a => { if (asistContador[a.estado] !== undefined) asistContador[a.estado]++; });
+  const pctAsist = totalAlumnos > 0
+    ? Math.min(100, Math.round((asistContador.presente + asistContador.tardanza + asistContador.justificado) / totalAlumnos * 100))
+    : 0;
+  const asistCardHTML = asistHoy.length > 0 ? `
+    <div class="card" style="margin-bottom:14px;border-left:4px solid var(--verde)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:600">📋 Asistencia hoy</div>
+        <div style="font-size:16px;font-weight:700;color:var(--verde)">${pctAsist}%</div>
+      </div>
+      <div style="background:var(--gris-l);border-radius:4px;height:6px;margin-bottom:10px">
+        <div style="width:${pctAsist}%;background:var(--verde);height:6px;border-radius:4px;transition:width .3s"></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px">
+        <span style="color:var(--verde)">✅ ${asistContador.presente} presentes</span>
+        <span style="color:var(--rojo)">❌ ${asistContador.ausente} ausentes</span>
+        ${asistContador.media_falta+asistContador.tardanza > 0 ? `<span style="color:var(--ambar)">🕐 ${asistContador.media_falta+asistContador.tardanza} tardanzas/MF</span>` : ''}
+        ${asistContador.justificado > 0 ? `<span style="color:var(--azul)">📋 ${asistContador.justificado} justificados</span>` : ''}
+      </div>
+    </div>` : `
+    <div class="card" style="margin-bottom:14px;border-left:4px solid var(--gris)">
+      <div style="font-size:12px;color:var(--txt2)">📋 Asistencia hoy — Sin registros todavía</div>
+    </div>`;
+
   const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
 
   const nivelesPanel = ['inicial','primario','secundario']
@@ -299,6 +328,8 @@ async function rDashDirector() {
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · ${INSTITUCION_ACTUAL?.nombre || ''}</div>
+
+    ${asistCardHTML}
 
     <div class="metrics m4" style="margin-bottom:14px">
       <div class="mc"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div></div>

@@ -422,8 +422,8 @@ async function _abrirModalUsuario(userId) {
     </div>` : `
     <div class="adm-form-row">
       <label class="adm-label">Nueva contraseña</label>
-      <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para no modificar">
-      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si completás este campo se actualizará la contraseña del usuario.</div>
+      <input type="text" id="mu-pass" value="" placeholder="${user?.dni ? 'Actual: ' + _esc(user.dni) + ' — Dejar vacío para no modificar' : 'Dejar vacío para no modificar'}">
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si completás este campo se actualizará la contraseña y el DNI registrado.</div>
     </div>`}
     <div class="adm-form-row">
       <label class="adm-label">Email (para recuperación de contraseña)</label>
@@ -629,7 +629,8 @@ async function _guardarUsuario(userId, esNuevo) {
       }
     } else {
       const updatePayload = {
-        nombre_completo, rol, nivel, activo, dni: dni || null,
+        nombre_completo, rol, nivel, activo,
+        dni: passField || dni || null,
         cursos_ids: cursos_ids.length ? cursos_ids : null,
       };
       if (_configExtraOk && USUARIO_ACTUAL.rol === 'director_general') {

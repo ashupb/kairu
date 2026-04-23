@@ -187,6 +187,12 @@ function formatFechaLatam(iso) {
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
+function formatFechaLarga(iso) {
+  if (!iso) return '—';
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const [y, m, d] = iso.split('-');
+  return `${parseInt(d)} de ${meses[parseInt(m)-1]} de ${y}`;
+}
 function formatFechaCorta(iso) {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-');

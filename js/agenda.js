@@ -11,6 +11,7 @@ let AGENDA_ANIO          = new Date().getFullYear();
 let TIPOS_EVENTO         = [];
 let USUARIOS_INST        = [];
 let _agendaEventosSem    = [];
+let _agendaEventoAbierto = null;
 
 function _lunesDeHoy() {
   const d = new Date();
@@ -42,6 +43,7 @@ const NIVEL_CONFIG = {
 const GRUPOS_CONV = [
   { id: 'equipo_directivo', label: 'Equipo Directivo' },
   { id: 'director_general', label: 'Director/a General' },
+  { id: 'preceptores',      label: 'Preceptores' },
   { id: 'docentes',         label: 'Docentes' },
   { id: 'alumnos',          label: 'Alumnos' },
   { id: 'familias',         label: 'Familias' },
@@ -112,12 +114,13 @@ async function rAgenda() {
 // ─── VISTA SEMANA ─────────────────────────────────────
 async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaToggle) {
   const sabado = _addDias(AGENDA_SEMANA_INICIO, 5);
+  // Traer eventos que empiecen dentro de la semana O que terminen dentro (multi-día)
   const { data: eventos } = await sb
     .from('eventos_institucionales')
     .select('*, usuarios(nombre_completo)')
     .eq('institucion_id', instId)
-    .gte('fecha_inicio', AGENDA_SEMANA_INICIO)
     .lte('fecha_inicio', sabado)
+    .or(`fecha_fin.gte.${AGENDA_SEMANA_INICIO},fecha_inicio.gte.${AGENDA_SEMANA_INICIO}`)
     .order('hora', { nullsFirst: false })
     .order('nombre');
 
@@ -148,7 +151,7 @@ async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaT
     const d     = new Date(iso + 'T12:00:00');
     const esSel = iso === AGENDA_DIA_SEL;
     const esHoy = iso === hoy;
-    const tieneEvs = _agendaEventosSem.some(e => e.fecha_inicio === iso);
+    const tieneEvs = _agendaEventosSem.some(e => iso >= e.fecha_inicio && iso <= (e.fecha_fin || e.fecha_inicio));
     return `<button class="dia-tab${esSel ? ' on' : ''}${esHoy ? ' hoy' : ''}" onclick="selDia('${iso}')">
       <span class="dia-lbl">${lbl}</span>
       <span class="dia-num">${d.getDate()}</span>
@@ -176,15 +179,12 @@ async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaT
     <div id="detalle-evento"></div>
     <div id="agenda-lista-dia"></div>`;
 
-  _renderEventosDia(_agendaEventosSem.filter(e => e.fecha_inicio === AGENDA_DIA_SEL));
+  _renderEventosDia(_agendaEventosSem.filter(e => AGENDA_DIA_SEL >= e.fecha_inicio && AGENDA_DIA_SEL <= (e.fecha_fin || e.fecha_inicio)));
 }
 
 // ─── VISTA MES ────────────────────────────────────────
 async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaToggle) {
-  // Sync month from week state
-  const d0 = new Date(AGENDA_SEMANA_INICIO + 'T12:00:00');
-  AGENDA_MES  = d0.getMonth();
-  AGENDA_ANIO = d0.getFullYear();
+  // AGENDA_MES/ANIO ya vienen seteados correctamente (no pisar con estado de semana)
 
   const primerDia = new Date(AGENDA_ANIO, AGENDA_MES, 1);
   const ultimoDia = new Date(AGENDA_ANIO, AGENDA_MES + 1, 0);
@@ -194,8 +194,8 @@ async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaTogg
   let query = sb.from('eventos_institucionales')
     .select('*, usuarios(nombre_completo)')
     .eq('institucion_id', instId)
-    .gte('fecha_inicio', desde)
     .lte('fecha_inicio', hasta)
+    .or(`fecha_fin.gte.${desde},fecha_inicio.gte.${desde}`)
     .order('fecha_inicio');
 
   if (rol === 'directivo_nivel') {
@@ -236,9 +236,15 @@ async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaTogg
 function buildCalGrid(eventos, primerDia, ultimoDia) {
   const evPorDia = {};
   eventos.forEach(e => {
-    const d = e.fecha_inicio;
-    if (!evPorDia[d]) evPorDia[d] = [];
-    evPorDia[d].push(e);
+    let cur = e.fecha_inicio;
+    const fin = e.fecha_fin || e.fecha_inicio;
+    while (cur <= fin) {
+      if (!evPorDia[cur]) evPorDia[cur] = [];
+      if (!evPorDia[cur].find(x => x.id === e.id)) evPorDia[cur].push(e);
+      const d = new Date(cur + 'T12:00:00');
+      d.setDate(d.getDate() + 1);
+      cur = d.toISOString().split('T')[0];
+    }
   });
   Object.keys(evPorDia).forEach(d => {
     evPorDia[d].sort((a,b) => (!a.hora?1:!b.hora?-1:a.hora.localeCompare(b.hora)));
@@ -317,11 +323,19 @@ function selDia(iso) {
     const esSel = btn.getAttribute('onclick')?.includes(`'${iso}'`);
     btn.classList.toggle('on', !!esSel);
   });
-  _renderEventosDia(_agendaEventosSem.filter(e => e.fecha_inicio === iso));
+  _renderEventosDia(_agendaEventosSem.filter(e => iso >= e.fecha_inicio && iso <= (e.fecha_fin || e.fecha_inicio)));
 }
 
 // ─── VER DETALLE ──────────────────────────────────────
 async function verEvento(id) {
+  const detalleEl = document.getElementById('detalle-evento');
+  if (_agendaEventoAbierto === id && detalleEl) {
+    detalleEl.innerHTML = '';
+    _agendaEventoAbierto = null;
+    return;
+  }
+  _agendaEventoAbierto = id;
+
   const { data: e } = await sb.from('eventos_institucionales')
     .select('*, usuarios(nombre_completo)').eq('id', id).single();
   if (!e) return;
@@ -350,7 +364,7 @@ async function verEvento(id) {
             ${tipo ? `<span class="tag tgr">${tipo.nombre}</span>` : ''}
           </div>
         </div>
-        <button onclick="document.getElementById('detalle-evento').innerHTML=''"
+        <button onclick="document.getElementById('detalle-evento').innerHTML='';_agendaEventoAbierto=null;"
           style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2);margin-left:8px">×</button>
       </div>
 
@@ -442,7 +456,7 @@ function abrirFormEvento(eventoExistente = null) {
             <option value="">— Seleccioná —</option>
             ${TIPOS_EVENTO.map(t => `<option value="${t.id}" ${e.tipo_id===t.id?'selected':''}>${t.nombre}</option>`).join('')}
           </select>
-          ${esDirector ? `<div style="font-size:10px;color:var(--verde);margin-top:4px;cursor:pointer" onclick="abrirNuevoTipo()">+ Agregar tipo</div>` : ''}
+          <div style="font-size:10px;color:var(--verde);margin-top:4px;cursor:pointer" onclick="abrirNuevoTipo()">+ Agregar tipo</div>
           <div id="form-nuevo-tipo"></div>
         </div>
 
@@ -768,6 +782,11 @@ function cambiarMes(delta) {
 }
 
 function setAgendaVista(v) {
+  if (v === 'mes' && AGENDA_VISTA !== 'mes') {
+    const d0 = new Date(AGENDA_SEMANA_INICIO + 'T12:00:00');
+    AGENDA_MES  = d0.getMonth();
+    AGENDA_ANIO = d0.getFullYear();
+  }
   AGENDA_VISTA = v;
   rAgenda();
 }

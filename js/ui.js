@@ -36,7 +36,7 @@ function _notifItemHTML(n) {
   const { icon, cls } = _NOTIF_ICONS[n.tipo] || { icon: '🔔', cls: 'info' };
   return `
     <div class="notif-item${n.leida ? '' : ' no-leida'}"
-         onclick="abrirNotif('${n.id}','${n.referencia_tabla || ''}')">
+         onclick="abrirNotif('${n.id}','${n.referencia_tabla || ''}','${n.referencia_id || ''}')">
       ${!n.leida ? '<div class="notif-unread-dot"></div>' : ''}
       <div class="notif-dot ${cls}">${icon}</div>
       <div style="flex:1;min-width:0">
@@ -93,11 +93,14 @@ async function cargarNotificaciones() {
   lista.innerHTML = html;
 }
 
-async function abrirNotif(id, tabla) {
+async function abrirNotif(id, tabla, referenciaId) {
   await sb.from('notificaciones').update({ leida: true }).eq('id', id);
   document.getElementById('notif-panel').style.display = 'none';
   const destino = { problematicas:'prob', reuniones:'reuniones', objetivos:'obj', eventos_institucionales:'agenda' }[tabla] || 'dash';
   goPage(destino);
+  if (tabla === 'eventos_institucionales' && referenciaId) {
+    setTimeout(() => { if (typeof verEvento === 'function') verEvento(referenciaId); }, 600);
+  }
   cargarNotificaciones();
 }
 

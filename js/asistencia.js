@@ -54,12 +54,22 @@ async function rAsistDirector() {
       .order('nivel').order('nombre')
       .then(r => nivel ? { data: (r.data||[]).filter(c => c.nivel === nivel) } : r),
     sb.from('alumnos').select('id,curso_id').eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
-    sb.from('asistencias').select('alumno_id').eq('fecha', hoy).eq('tipo_registro', 'preceptor').is('materia_texto', null),
+    sb.from('asistencia').select('alumno_id,estado').eq('fecha', hoy).is('hora_clase', null),
   ]);
 
   const cursos   = cursosRes.data  || [];
   const alumnos  = alumnosRes.data || [];
-  const asistSet = new Set((asistHoyRes.data||[]).map(a => a.alumno_id));
+  const asistHoy = asistHoyRes.data || [];
+  const asistSet = new Set(asistHoy.map(a => a.alumno_id));
+
+  // Contadores globales de estados del día
+  const contadorEstados = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
+  asistHoy.forEach(a => { if (contadorEstados[a.estado] !== undefined) contadorEstados[a.estado]++; });
+  const totalRegistradosHoy = asistHoy.length;
+  const totalAlumnosHoy     = alumnos.length;
+  const pctAsistHoy         = totalAlumnosHoy > 0
+    ? Math.min(100, Math.round((contadorEstados.presente + contadorEstados.tardanza + contadorEstados.justificado) / totalAlumnosHoy * 100))
+    : 0;
 
   // Calcular estado por curso
   const alumnosPorCurso = {};
@@ -74,9 +84,30 @@ async function rAsistDirector() {
     return ids.length > 0 && ids.filter(id => asistSet.has(id)).length < ids.length;
   }).length;
 
+  const contCardsHTML = totalRegistradosHoy > 0 ? `
+    <div class="metrics m4" style="margin-bottom:14px">
+      <div class="mc">
+        <div class="mc-v" style="color:var(--verde)">${contadorEstados.presente}</div>
+        <div class="mc-l">PRESENTES</div>
+      </div>
+      <div class="mc">
+        <div class="mc-v" style="color:var(--rojo)">${contadorEstados.ausente}</div>
+        <div class="mc-l">AUSENTES</div>
+      </div>
+      <div class="mc">
+        <div class="mc-v" style="color:var(--ambar)">${contadorEstados.media_falta + contadorEstados.tardanza}</div>
+        <div class="mc-l">TARDANZAS/MF</div>
+      </div>
+      <div class="mc">
+        <div class="mc-v" style="color:var(--azul)">${pctAsistHoy}%</div>
+        <div class="mc-l">ASISTENCIA HOY</div>
+      </div>
+    </div>` : '';
+
   c.innerHTML = `
     <div class="pg-t">Asistencia</div>
     <div class="pg-s">${formatFechaLatam(hoy)} · Estado de listas</div>
+    ${contCardsHTML}
     ${totalPendiente > 0 ? `
     <div class="alr" style="margin-bottom:14px">
       <div class="alr-t">⏳ ${totalPendiente} curso${totalPendiente>1?'s':''} con lista pendiente hoy</div>
@@ -94,7 +125,7 @@ async function rAsistDirector() {
           ${cs.map(cu => {
             const ids       = alumnosPorCurso[cu.id] || [];
             const total     = ids.length;
-            const registrados = ids.filter(id => asistSet.has(id)).length;
+            const registrados = Math.min(total, ids.filter(id => asistSet.has(id)).length);
             const listo     = total > 0 && registrados >= total;
             const enProg    = registrados > 0 && registrados < total;
             const statusClr = listo ? 'var(--verde)' : enProg ? 'var(--ambar)' : total > 0 ? 'var(--rojo)' : 'var(--txt3)';
