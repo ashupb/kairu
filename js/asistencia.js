@@ -68,7 +68,7 @@ async function rAsistDirector() {
   const totalRegistradosHoy = asistHoy.length;
   const totalAlumnosHoy     = alumnos.length;
   const pctAsistHoy         = totalAlumnosHoy > 0
-    ? Math.min(100, Math.round((contadorEstados.presente + contadorEstados.tardanza + contadorEstados.justificado) / totalAlumnosHoy * 100))
+    ? Math.min(100, Math.round((contadorEstados.presente + contadorEstados.tardanza + contadorEstados.media_falta) / totalAlumnosHoy * 100))
     : 0;
 
   // Calcular estado por curso
@@ -85,7 +85,7 @@ async function rAsistDirector() {
   }).length;
 
   const contCardsHTML = totalRegistradosHoy > 0 ? `
-    <div class="metrics m4" style="margin-bottom:14px">
+    <div class="metrics" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-bottom:14px">
       <div class="mc">
         <div class="mc-v" style="color:var(--verde)">${contadorEstados.presente}</div>
         <div class="mc-l">PRESENTES</div>
@@ -95,12 +95,16 @@ async function rAsistDirector() {
         <div class="mc-l">AUSENTES</div>
       </div>
       <div class="mc">
-        <div class="mc-v" style="color:var(--ambar)">${contadorEstados.media_falta + contadorEstados.tardanza}</div>
-        <div class="mc-l">TARDANZAS/MF</div>
+        <div class="mc-v" style="color:var(--azul)">${contadorEstados.justificado}</div>
+        <div class="mc-l">JUSTIF.</div>
       </div>
       <div class="mc">
-        <div class="mc-v" style="color:var(--azul)">${pctAsistHoy}%</div>
-        <div class="mc-l">ASISTENCIA HOY</div>
+        <div class="mc-v" style="color:var(--ambar)">${contadorEstados.media_falta + contadorEstados.tardanza}</div>
+        <div class="mc-l">TARD./MF</div>
+      </div>
+      <div class="mc">
+        <div class="mc-v" style="color:${pctAsistHoy>=85?'var(--verde)':pctAsistHoy>=70?'var(--ambar)':'var(--rojo)'}">${pctAsistHoy}%</div>
+        <div class="mc-l">ASISTENCIA</div>
       </div>
     </div>` : '';
 
@@ -520,9 +524,10 @@ async function rAsistDocente() {
   const hoy    = new Date().toISOString().split('T')[0];
   const miId   = USUARIO_ACTUAL.id;
 
-  const { data: asignaciones } = await sb.from('docente_cursos')
+  const { data: asignaciones } = await sb.from('asignaciones')
     .select('*, cursos(id,nombre,division,nivel), materias(id,nombre)')
-    .eq('usuario_id', miId).eq('activo', true);
+    .eq('docente_id', miId)
+    .eq('anio_lectivo', new Date().getFullYear());
 
   const asigs = asignaciones || [];
   if (!asigs.length) {
@@ -642,115 +647,6 @@ async function irListaDocente() {
   await mostrarListaCurso(cursoId, nivel, fecha, true, materiaId, HORA_SEL);
 }
 
-  document.getElementById('page-asist').innerHTML = `
-    <div class="pg-t">Asistencia</div>
-    <div class="pg-s">${formatFechaLatam(hoy)}</div>
-
-    <div class="card" style="margin-bottom:14px">
-      <div style="font-size:13px;font-weight:600;margin-bottom:12px">📋 Tomar lista</div>
-
-      <div style="margin-bottom:10px">
-        <div class="sec-lb" style="margin-top:0">Curso</div>
-        <div class="docente-cursos-list" id="doc-cursos">
-          ${Object.values(cursoMap).map(cu => `
-            <div class="doc-curso-card ${Object.values(cursoMap)[0].id===cu.id?'sel':''}"
-              data-curso="${cu.id}" data-nivel="${cu.nivel}"
-              onclick="selCursoDocente(this,'${cu.id}')">
-              <div style="font-size:16px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
-              <div style="font-size:10px;color:var(--txt3)">${cu.nivel}</div>
-            </div>`).join('')}
-        </div>
-      </div>
-
-      <div id="materias-doc" style="margin-bottom:10px">
-        <div class="sec-lb">Materia</div>
-        <div class="docente-cursos-list">
-          ${(cursoMap[Object.keys(cursoMap)[0]]?.materias||[]).map((m,i) => `
-            <div class="doc-curso-card ${i===0?'sel':''}"
-              data-materia="${m.id}"
-              onclick="selMatDoc(this)">
-              <div style="font-size:13px;font-weight:600">${m.nombre}</div>
-            </div>`).join('')}
-        </div>
-      </div>
-
-      <div style="margin-bottom:10px">
-        <div class="sec-lb">Hora de clase</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" id="horas-chips">
-          ${[1,2,3,4,5,6,7,8].map(h => `
-            <button class="hora-chip" data-hora="${h}" onclick="selHoraDoc(this)">${h}°</button>
-          `).join('')}
-        </div>
-      </div>
-
-      <button class="btn-p" style="width:100%" onclick="cargarListaDocente()">
-        Ver lista →
-      </button>
-    </div>
-
-    <div class="sec-lb">📊 Grilla de asistencias</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      ${Object.values(cursoMap).map(cu =>
-        cu.materias.map(m => `
-          <button class="btn-s" style="font-size:11px" onclick="mostrarGrillaDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division} · ${m.nombre}')">
-            📊 ${cu.nombre}${cu.division} · ${m.nombre}
-          </button>`).join('')
-      ).join('')}
-    </div>
-
-    <div id="lista-docente"></div>`;
-
-  // Guardar mapa de cursos globalmente
-  window._docCursoMap = cursoMap;
-  window._docCursoSel = Object.keys(cursoMap)[0];
-  window._docMatSel   = null;
-  HORA_SEL = null;
-
-
-function selCursoDocente(btn, cursoId) {
-  document.querySelectorAll('.doc-curso-card[data-curso]').forEach(b => b.classList.remove('sel'));
-  btn.classList.add('sel');
-  window._docCursoSel = cursoId;
-
-  // Actualizar materias
-  const cu = window._docCursoMap[cursoId];
-  const div = document.getElementById('materias-doc');
-  div.innerHTML = `
-    <div class="sec-lb">Materia</div>
-    <div class="docente-cursos-list">
-      ${(cu?.materias||[]).map((m,i) => `
-        <div class="doc-curso-card ${i===0?'sel':''}"
-          data-materia="${m.id}"
-          onclick="selMatDoc(this)">
-          <div style="font-size:13px;font-weight:600">${m.nombre}</div>
-        </div>`).join('')}
-    </div>`;
-  window._docMatSel = cu?.materias?.[0]?.id || null;
-}
-
-function selMatDoc(btn) {
-  document.querySelectorAll('.doc-curso-card[data-materia]').forEach(b => b.classList.remove('sel'));
-  btn.classList.add('sel');
-  window._docMatSel = btn.dataset.materia;
-}
-
-function selHoraDoc(btn) {
-  document.querySelectorAll('.hora-chip').forEach(b => b.classList.remove('on'));
-  btn.classList.add('on');
-  HORA_SEL = parseInt(btn.dataset.hora);
-}
-
-async function cargarListaDocente() {
-  const cursoId   = window._docCursoSel;
-  const materiaId = window._docMatSel;
-  if (!cursoId)   { alert('Elegí un curso.'); return; }
-  if (!materiaId) { alert('Elegí una materia.'); return; }
-  if (!HORA_SEL)  { alert('Elegí la hora de clase.'); return; }
-
-  const hoy   = new Date().toISOString().split('T')[0];
-  const curso = window._docCursoMap[cursoId];
-  await mostrarListaCurso(cursoId, curso?.nivel||'secundario', hoy, true, materiaId, HORA_SEL);
-}
 
 async function mostrarGrillaDocente(cursoId, nivel, materiaId, titulo) {
   const c = document.getElementById('page-asist');

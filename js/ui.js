@@ -98,8 +98,14 @@ async function abrirNotif(id, tabla, referenciaId) {
   document.getElementById('notif-panel').style.display = 'none';
   const destino = { problematicas:'prob', reuniones:'reuniones', objetivos:'obj', eventos_institucionales:'agenda' }[tabla] || 'dash';
   goPage(destino);
-  if (tabla === 'eventos_institucionales' && referenciaId) {
-    setTimeout(() => { if (typeof verEvento === 'function') verEvento(referenciaId); }, 600);
+  if (referenciaId) {
+    if (tabla === 'eventos_institucionales') {
+      setTimeout(() => { if (typeof verEvento === 'function') verEvento(referenciaId); }, 600);
+    } else if (tabla === 'problematicas') {
+      setTimeout(() => { if (typeof togProb === 'function') togProb('pr-' + referenciaId); }, 800);
+    } else if (tabla === 'objetivos') {
+      setTimeout(() => { if (typeof _abrirDetalleObj === 'function') _abrirDetalleObj(referenciaId); }, 800);
+    }
   }
   cargarNotificaciones();
 }

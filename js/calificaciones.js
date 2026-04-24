@@ -113,9 +113,10 @@ async function rNotasDocente() {
   const instId = USUARIO_ACTUAL.institucion_id;
   const miId   = USUARIO_ACTUAL.id;
 
-  const { data: asigs } = await sb.from('docente_cursos')
+  const { data: asigs } = await sb.from('asignaciones')
     .select('*, cursos(id,nombre,division,nivel), materias(id,nombre)')
-    .eq('usuario_id', miId).eq('activo', true);
+    .eq('docente_id', miId)
+    .eq('anio_lectivo', new Date().getFullYear());
 
   if (!asigs?.length) {
     c.innerHTML = `<div class="pg-t">Calificaciones</div><div class="empty-state">Sin cursos asignados.</div>`;

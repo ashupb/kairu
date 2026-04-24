@@ -63,6 +63,27 @@ const HORAS_OPTS = (() => {
   return opts;
 })();
 
+// ─── FILTRO POR ROL ───────────────────────────────────
+const _ROL_A_GRUPO = {
+  docente:          'docentes',
+  preceptor:        'preceptores',
+  directivo_nivel:  'equipo_directivo',
+  eoe:              'equipo_directivo',
+};
+
+function _eventoEsParaMi(e) {
+  const rol     = USUARIO_ACTUAL.rol;
+  const miId    = USUARIO_ACTUAL.id;
+  const miNivel = USUARIO_ACTUAL.nivel;
+  const miGrupo = _ROL_A_GRUPO[rol];
+
+  if (!e.nivel || e.nivel === 'todos') return true;
+  if (miNivel && e.nivel.split(',').map(n => n.trim()).includes(miNivel)) return true;
+  if ((e.convocados_ids || []).includes(miId)) return true;
+  if (miGrupo && (e.convocatoria_grupos || []).includes(miGrupo)) return true;
+  return false;
+}
+
 // ─── RENDER PRINCIPAL ─────────────────────────────────
 async function rAgenda() {
   const c = document.getElementById('page-agenda');
@@ -124,10 +145,16 @@ async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaT
     .order('hora', { nullsFirst: false })
     .order('nombre');
 
+  const rolActual = USUARIO_ACTUAL.rol;
+  const esDirector = rolActual === 'director_general' || rolActual === 'directivo_nivel';
+
   _agendaEventosSem = (eventos || []).filter(e => {
-    if (AGENDA_NIVEL === 'todos') return true;
-    if (!e.nivel || e.nivel === 'todos') return true;
-    return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
+    if (esDirector) {
+      if (AGENDA_NIVEL === 'todos') return true;
+      if (!e.nivel || e.nivel === 'todos') return true;
+      return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
+    }
+    return _eventoEsParaMi(e);
   });
 
   if (AGENDA_DIA_SEL < AGENDA_SEMANA_INICIO || AGENDA_DIA_SEL > sabado) {
@@ -204,10 +231,14 @@ async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaTogg
 
   const { data: eventos } = await query;
 
+  const esDirectorMes = rol === 'director_general' || rol === 'directivo_nivel';
   const eventosFiltrados = (eventos || []).filter(e => {
-    if (AGENDA_NIVEL === 'todos') return true;
-    if (!e.nivel || e.nivel === 'todos') return true;
-    return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
+    if (esDirectorMes) {
+      if (AGENDA_NIVEL === 'todos') return true;
+      if (!e.nivel || e.nivel === 'todos') return true;
+      return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
+    }
+    return _eventoEsParaMi(e);
   });
 
   c.innerHTML = `

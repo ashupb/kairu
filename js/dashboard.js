@@ -298,7 +298,7 @@ async function rDashDirector() {
   const asistContador = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
   asistHoy.forEach(a => { if (asistContador[a.estado] !== undefined) asistContador[a.estado]++; });
   const pctAsist = totalAlumnos > 0
-    ? Math.min(100, Math.round((asistContador.presente + asistContador.tardanza + asistContador.justificado) / totalAlumnos * 100))
+    ? Math.min(100, Math.round((asistContador.presente + asistContador.tardanza + asistContador.media_falta) / totalAlumnos * 100))
     : 0;
   const asistCardHTML = asistHoy.length > 0 ? `
     <div class="card" style="margin-bottom:14px;border-left:4px solid var(--verde)">
