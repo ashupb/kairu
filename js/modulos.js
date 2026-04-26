@@ -17,6 +17,7 @@ const TENDENCIA_OBJ = {
   mejorando:  { label:'Mejorando',  icon:'↑', color:'var(--verde)' },
   estable:    { label:'Estable',    icon:'→', color:'var(--ambar)' },
   empeorando: { label:'Empeorando', icon:'↓', color:'var(--rojo)'  },
+  sin_datos:  { label:'Sin datos',  icon:'—', color:'var(--txt3)'  },
 };
 const ESTADO_OBJ = {
   activo:    { label:'Activo',    tag:'tg'  },
@@ -155,22 +156,24 @@ async function _rObjDetalle(objId) {
   const obj = _objCache.find(o => o.id === objId);
   if (!obj) { _objVista='lista'; _rObjLista(); return; }
 
-  const [incsRes, hitosRes] = await Promise.all([
+  const [incsRes, hitosRes, tendRes] = await Promise.all([
     sb.from('objetivo_incidentes')
       .select('*, reg:usuarios!objetivo_incidentes_registrado_por_fkey(nombre_completo), alm:alumnos!objetivo_incidentes_alumno_id_fkey(nombre,apellido)')
       .eq('objetivo_id', objId).order('created_at', { ascending: false }),
     sb.from('objetivo_hitos')
       .select('*, reg:usuarios!objetivo_hitos_registrado_por_fkey(nombre_completo)')
       .eq('objetivo_id', objId).order('created_at', { ascending: true }),
+    sb.rpc('calcular_tendencia_obj', { p_objetivo_id: objId }),
   ]);
 
   const respNombre = obj.responsable_texto || '—';
-  const incs  = incsRes.data  || [];
-  const hitos = hitosRes.data || [];
-  const cat   = CAT_OBJ[obj.categoria]       || CAT_OBJ.institucional;
-  const tnd   = TENDENCIA_OBJ[obj.tendencia] || TENDENCIA_OBJ.estable;
-  const est   = ESTADO_OBJ[obj.estado]       || ESTADO_OBJ.activo;
-  const prog  = obj.progreso ?? obj.cumplimiento ?? 0;
+  const incs     = incsRes.data  || [];
+  const hitos    = hitosRes.data || [];
+  const tendData = tendRes.data  || null;
+  const cat      = CAT_OBJ[obj.categoria]       || CAT_OBJ.institucional;
+  const tnd      = TENDENCIA_OBJ[obj.tendencia] || TENDENCIA_OBJ.estable;
+  const est      = ESTADO_OBJ[obj.estado]       || ESTADO_OBJ.activo;
+  const prog     = obj.progreso ?? obj.cumplimiento ?? 0;
   const esActivo = ['activo','en_riesgo'].includes(obj.estado);
 
   const hitosHTML = hitos.length ? hitos.map(h => `
@@ -179,16 +182,20 @@ async function _rObjDetalle(objId) {
       <div>
         <div style="font-size:11px;font-weight:600${h.logrado?';text-decoration:line-through;color:var(--txt2)':''}">${h.titulo}</div>
         ${h.descripcion?`<div style="font-size:10px;color:var(--txt2)">${h.descripcion}</div>`:''}
-        <div style="font-size:10px;color:var(--txt3)">${h.reg?.nombre_completo||'—'} · ${formatFechaCorta(h.created_at)}</div>
+        <div style="font-size:10px;color:var(--txt3)">${h.reg?.nombre_completo||'—'} · ${formatFechaCorta(h.created_at?.split('T')[0])}</div>
       </div>
     </div>`).join('') : '<div style="font-size:11px;color:var(--txt2)">Sin hitos registrados.</div>';
 
+  // Cursos únicos para filtro
+  const cursosUnicos = [...new Set(incs.filter(i => i.curso_texto).map(i => i.curso_texto))].sort();
+  const cursoFilterOpts = cursosUnicos.map(ct => `<option value="${ct}">${ct}</option>`).join('');
+
   const incsHTML = incs.length ? incs.map(i => {
-    const nom     = i.alm ? `${i.alm.apellido}, ${i.alm.nombre}` : (i.descripcion_alumno || null);
-    const inicAl  = nom ? nom.split(/[\s,]+/).filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase() : null;
-    const desc    = i.descripcion || null;
+    const nom    = i.alm ? `${i.alm.apellido}, ${i.alm.nombre}` : (i.descripcion_alumno || null);
+    const inicAl = nom ? nom.split(/[\s,]+/).filter(Boolean).slice(0,2).map(p=>p[0]).join('').toUpperCase() : null;
+    const desc   = i.descripcion || null;
     return `
-      <div style="padding:10px 0;border-bottom:1px solid var(--brd)">
+      <div data-inc-curso="${i.curso_texto||''}" style="padding:10px 0;border-bottom:1px solid var(--brd)">
         ${nom ? `
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px">
           <div style="width:26px;height:26px;border-radius:50%;background:var(--rojo-l);color:var(--rojo);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0">${inicAl}</div>
@@ -201,7 +208,7 @@ async function _rObjDetalle(objId) {
         ${desc ? `<div style="font-size:11px;color:var(--txt2);margin-bottom:4px;font-style:italic">"${desc}"</div>` : ''}
         <div style="font-size:11px;color:var(--txt);font-weight:500">${i.accion_tomada}</div>
         ${i.medida?`<div style="font-size:10px;color:var(--ambar);margin-top:2px">⚠ Medida: ${i.medida}</div>`:''}
-        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${i.reg?.nombre_completo||'—'} · ${formatFechaCorta(i.created_at)}</div>
+        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${i.reg?.nombre_completo||'—'} · ${formatFechaCorta(i.created_at?.split('T')[0])}</div>
       </div>`}).join('') : '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Sin incidentes registrados.</div>';
 
   c.innerHTML = `
@@ -231,6 +238,7 @@ async function _rObjDetalle(objId) {
       <div style="font-size:11px;font-weight:600;margin-bottom:4px">Nota de cierre</div>
       <div style="font-size:11px;color:var(--txt2)">${obj.conclusion}</div>
     </div>`:''}
+    ${_renderTendenciaWidget(obj, tendData)}
     ${_renderGraficoIncs(incs)}
     <div style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -240,6 +248,13 @@ async function _rObjDetalle(objId) {
           ${_objPuedeEditar()&&obj.categoria==='conductual'&&esActivo?`<button class="btn-s" style="font-size:11px" onclick="_importarTardanzas('${objId}')">Importar tardanzas</button>`:''}
         </div>
       </div>
+      ${cursosUnicos.length > 1 ? `
+      <div style="margin-bottom:10px">
+        <select style="font-size:11px;padding:5px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf);color:var(--txt)"
+          onchange="_filtrarIncsObjUI(this.value)">
+          <option value="">Todos los cursos</option>${cursoFilterOpts}
+        </select>
+      </div>` : ''}
       ${incsHTML}
       ${_objPuedeRegistrarInc()&&esActivo?`<button class="btn-p" style="font-size:11px;width:100%;margin-top:10px" onclick="_abrirFormInc('${objId}')">+ Registrar incidente</button>`:''}
     </div>
@@ -256,6 +271,58 @@ async function _rObjDetalle(objId) {
       ${esActivo?`<button class="btn-p" style="font-size:11px" onclick="_abrirCierreObj('${objId}')">Cerrar objetivo</button>`:''}
       ${!esActivo?`<button class="btn-s" style="font-size:11px" onclick="_reabrirObj('${objId}')">Reabrir</button>`:''}
     </div>`:''}`;
+}
+
+function _renderTendenciaWidget(obj, tendData) {
+  if (!tendData) return '';
+  const freqLabel = { semanal:'Semanal', quincenal:'Quincenal', mensual:'Mensual' }[obj.frecuencia_medicion || 'mensual'] || 'Mensual';
+  const tnd       = TENDENCIA_OBJ[tendData.tendencia] || TENDENCIA_OBJ.estable;
+  const sinDatos  = tendData.tendencia === 'sin_datos';
+  const varPct    = tendData.variacion_pct;
+  const varStr    = varPct === null ? '—' : (varPct > 0 ? '+' : '') + varPct + '%';
+  const varClr    = sinDatos ? 'var(--txt3)'
+    : varPct < 0 ? 'var(--verde)'
+    : varPct > 0 ? 'var(--rojo)'
+    : 'var(--ambar)';
+  const fmtD = iso => iso ? iso.slice(8,10) + '/' + iso.slice(5,7) : '—';
+  const pa = tendData.periodo_actual   || {};
+  const pp = tendData.periodo_anterior || {};
+
+  return `
+    <div class="card" style="margin-bottom:12px;border-left:3px solid ${tnd.color}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700">Medición de tendencia</div>
+        <span style="font-size:10px;color:var(--txt3)">${freqLabel} · umbral ±${obj.umbral_riesgo||10}%</span>
+      </div>
+      ${sinDatos ? `
+        <div style="font-size:11px;color:var(--txt3);font-style:italic">Sin incidentes en el período anterior — se necesitan datos de al menos dos períodos para calcular la tendencia.</div>
+      ` : `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div style="background:var(--bg);border-radius:var(--rad);padding:8px 10px;text-align:center">
+            <div style="font-size:9px;color:var(--txt3);text-transform:uppercase;font-weight:600;letter-spacing:.04em;margin-bottom:2px">Período actual</div>
+            <div style="font-size:10px;color:var(--txt2);margin-bottom:4px">${fmtD(pa.inicio)} → ${fmtD(pa.fin)}</div>
+            <div style="font-size:22px;font-weight:700;color:var(--txt)">${pa.count ?? 0}</div>
+            <div style="font-size:9px;color:var(--txt3)">incidentes</div>
+          </div>
+          <div style="background:var(--bg);border-radius:var(--rad);padding:8px 10px;text-align:center">
+            <div style="font-size:9px;color:var(--txt3);text-transform:uppercase;font-weight:600;letter-spacing:.04em;margin-bottom:2px">Período anterior</div>
+            <div style="font-size:10px;color:var(--txt2);margin-bottom:4px">${fmtD(pp.inicio)} → ${fmtD(pp.fin)}</div>
+            <div style="font-size:22px;font-weight:700;color:var(--txt)">${pp.count ?? 0}</div>
+            <div style="font-size:9px;color:var(--txt3)">incidentes</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;padding-top:8px;border-top:1px solid var(--brd)">
+          <span style="font-size:20px;font-weight:700;color:${varClr}">${varStr}</span>
+          <span style="font-size:12px;font-weight:600;color:${tnd.color}">${tnd.icon} ${tnd.label}</span>
+        </div>
+      `}
+    </div>`;
+}
+
+function _filtrarIncsObjUI(cursoTxt) {
+  document.querySelectorAll('[data-inc-curso]').forEach(el => {
+    el.style.display = (!cursoTxt || el.dataset.incCurso === cursoTxt) ? '' : 'none';
+  });
 }
 
 function _renderGraficoIncs(incs) {
@@ -361,6 +428,22 @@ async function _abrirFormObj(objId) {
       </div>
       <div><label class="lbl">Progreso actual (%)</label>
         <input type="number" id="fo-prog" min="0" max="100" value="${prog}"></div>
+      <div style="background:var(--bg);border-radius:var(--rad);padding:10px 12px">
+        <div style="font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Configuración de tendencia</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div><label class="lbl">Frecuencia</label>
+            <select id="fo-freq" style="width:100%">
+              <option value="mensual"   ${(obj?.frecuencia_medicion||'mensual')==='mensual'  ?'selected':''}>Mensual</option>
+              <option value="quincenal" ${obj?.frecuencia_medicion==='quincenal'?'selected':''}>Quincenal</option>
+              <option value="semanal"   ${obj?.frecuencia_medicion==='semanal'  ?'selected':''}>Semanal</option>
+            </select></div>
+          <div><label class="lbl">Umbral mejora (%)</label>
+            <input type="number" id="fo-umbral-m" min="1" max="100" value="${obj?.umbral_mejora??10}" style="width:100%"></div>
+          <div><label class="lbl">Umbral riesgo (%)</label>
+            <input type="number" id="fo-umbral-r" min="1" max="100" value="${obj?.umbral_riesgo??10}" style="width:100%"></div>
+        </div>
+        <div style="font-size:10px;color:var(--txt3);margin-top:6px">Bajó más del umbral mejora → verde · Subió más del umbral riesgo → rojo</div>
+      </div>
     </div>`;
   const btns = `
     <button class="btn-s" onclick="_cerrarModalObj('modal-form-obj')">Cancelar</button>
@@ -382,16 +465,19 @@ async function _guardarFormObj(objId) {
   const responsable_texto = respChks.map(c => c.dataset.nombre).join(', ') || null;
   const payload = {
     nombre,
-    categoria:        document.getElementById('fo-cat')?.value   || null,
-    nivel:            document.getElementById('fo-nivel')?.value  || null,
-    descripcion:      document.getElementById('fo-desc')?.value   || null,
-    meta_descripcion: document.getElementById('fo-meta')?.value   || null,
-    responsable_ids:  responsable_ids.length ? responsable_ids : null,
+    categoria:           document.getElementById('fo-cat')?.value    || null,
+    nivel:               document.getElementById('fo-nivel')?.value   || null,
+    descripcion:         document.getElementById('fo-desc')?.value    || null,
+    meta_descripcion:    document.getElementById('fo-meta')?.value    || null,
+    responsable_ids:     responsable_ids.length ? responsable_ids : null,
     responsable_texto,
-    fecha_inicio:     document.getElementById('fo-inicio')?.value || null,
-    fecha_cierre:     document.getElementById('fo-cierre')?.value || null,
-    progreso: Math.min(100, Math.max(0, parseInt(document.getElementById('fo-prog')?.value)||0)),
-    updated_at: new Date().toISOString(),
+    fecha_inicio:        document.getElementById('fo-inicio')?.value  || null,
+    fecha_cierre:        document.getElementById('fo-cierre')?.value  || null,
+    progreso:            Math.min(100, Math.max(0, parseInt(document.getElementById('fo-prog')?.value)||0)),
+    frecuencia_medicion: document.getElementById('fo-freq')?.value    || 'mensual',
+    umbral_mejora:       Math.min(100, Math.max(1, parseInt(document.getElementById('fo-umbral-m')?.value)||10)),
+    umbral_riesgo:       Math.min(100, Math.max(1, parseInt(document.getElementById('fo-umbral-r')?.value)||10)),
+    updated_at:          new Date().toISOString(),
   };
   const btn = document.querySelector('#modal-form-obj .btn-p');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
@@ -547,6 +633,7 @@ async function _guardarInc(objId) {
     registrado_por:     USUARIO_ACTUAL.id,
     alumno_id:          alumnoId,
     descripcion_alumno: descAlumno || null,
+    curso_id:           cursoId   || null,
     curso_texto:        cursoTexto,
     accion_tomada:      accion,
     medida:             document.getElementById('inc-medida')?.value.trim() || null,
@@ -591,19 +678,7 @@ async function _guardarInc(objId) {
 }
 
 async function _actualizarTendenciaObj(objId) {
-  const hace30 = new Date(); hace30.setDate(hace30.getDate()-30);
-  const hace60 = new Date(); hace60.setDate(hace60.getDate()-60);
-  const d30 = hace30.toISOString().slice(0,10);
-  const d60 = hace60.toISOString().slice(0,10);
-  const [r1, r2] = await Promise.all([
-    sb.from('objetivo_incidentes').select('id', { count:'exact', head:true }).eq('objetivo_id', objId).gte('created_at', d30),
-    sb.from('objetivo_incidentes').select('id', { count:'exact', head:true }).eq('objetivo_id', objId).gte('created_at', d60).lt('created_at', d30),
-  ]);
-  const rec = r1.count||0, ant = r2.count||0;
-  const tendencia = rec > ant+1 ? 'empeorando' : rec < ant-1 ? 'mejorando' : 'estable';
-  const upd = { tendencia, updated_at: new Date().toISOString() };
-  if (tendencia==='empeorando') upd.estado = 'en_riesgo';
-  await sb.from('objetivos').update(upd).eq('id', objId);
+  await sb.rpc('actualizar_tendencia_obj', { p_objetivo_id: objId });
 }
 
 function _abrirFormHito(objId) {
