@@ -144,16 +144,18 @@ function renderNivelPanel(nivel, problematicasFull) {
 
   return `
     <div class="nivel-panel" style="border-top:3px solid ${nc.color}">
-      <div style="font-size:12px;font-weight:700;color:${nc.color};margin-bottom:10px">${nc.label}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:${nc.color}">${nc.label}</div>
+        <button class="btn-s" style="font-size:9px;padding:3px 10px" onclick="goPage('prob')">Ir →</button>
+      </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
         <div class="ns"><div class="ns-v" style="color:var(--rojo)">${urgentes.length}</div><div class="ns-l">Urgentes</div></div>
         <div class="ns"><div class="ns-v" style="color:var(--ambar)">${seguimiento.length}</div><div class="ns-l">Seguimiento</div></div>
         <div class="ns"><div class="ns-v">${probsNivel.length}</div><div class="ns-l">Total</div></div>
       </div>
       ${urgentes.length ? `
-        <div style="margin-top:8px;padding:7px 10px;background:var(--rojo-l);border-radius:var(--rad);font-size:11px;color:var(--rojo);display:flex;justify-content:space-between;align-items:center">
-          <span>⚠️ ${urgentes.length} situación${urgentes.length > 1 ? 'es' : ''} urgente${urgentes.length > 1 ? 's' : ''}</span>
-          <button class="btn-d" style="font-size:9px;padding:3px 8px" onclick="goPage('prob')">Ver →</button>
+        <div style="margin-top:8px;padding:7px 10px;background:var(--rojo-l);border-radius:var(--rad);font-size:11px;color:var(--rojo)">
+          ⚠️ ${urgentes.length} situación${urgentes.length > 1 ? 'es' : ''} urgente${urgentes.length > 1 ? 's' : ''}
         </div>` : ''}
     </div>`;
 }
@@ -332,10 +334,10 @@ async function rDashDirector() {
     ${asistCardHTML}
 
     <div class="metrics m4" style="margin-bottom:14px">
-      <div class="mc"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('leg')"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div></div>
-      <div class="mc"><div class="mc-v" style="color:var(--rojo)">${probs.length}</div><div class="mc-l">SITUACIONES</div></div>
-      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${alertas.length}</div><div class="mc-l">ALERTAS</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probs.length}</div><div class="mc-l">SITUACIONES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--ambar)">${alertas.length}</div><div class="mc-l">ALERTAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
 
     ${renderProximasActividades(eventosSem, sem.hoy, null)}
@@ -413,10 +415,10 @@ async function rDashDirectivo() {
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
 
     <div class="metrics m4" style="margin-bottom:14px">
-      <div class="mc"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('leg')"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div></div>
-      <div class="mc"><div class="mc-v" style="color:var(--rojo)">${probsNivel.length}</div><div class="mc-l">SITUACIONES</div></div>
-      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${alertas.length}</div><div class="mc-l">ALERTAS</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probsNivel.length}</div><div class="mc-l">SITUACIONES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--ambar)">${alertas.length}</div><div class="mc-l">ALERTAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
 
     ${renderProximasActividades(eventosSem, sem.hoy, nivel)}
@@ -662,9 +664,9 @@ async function rDashDocente() {
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()}</div>
 
     <div class="metrics m3" style="margin-bottom:14px">
-      <div class="mc"><div class="mc-v" style="color:${listaColor}">${listasPendCount}</div><div class="mc-l">LISTAS PENDIENTES</div></div>
-      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${totalSituaciones}</div><div class="mc-l">SITUACIONES</div></div>
-      <div class="mc"><div class="mc-v">${cursos.length}</div><div class="mc-l">MIS CURSOS</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${listaColor}">${listasPendCount}</div><div class="mc-l">LISTAS PENDIENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--ambar)">${totalSituaciones}</div><div class="mc-l">SITUACIONES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v">${cursos.length}</div><div class="mc-l">MIS CURSOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
 
     ${renderProximasActividades(eventosSem, sem.hoy, null)}
@@ -831,10 +833,10 @@ async function rDashPreceptor() {
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
 
     <div class="metrics m4" style="margin-bottom:14px">
-      <div class="mc"><div class="mc-v" style="color:${asistColor}">${asistPct}%</div><div class="mc-l">ASISTENCIA HOY</div></div>
-      <div class="mc"><div class="mc-v" style="color:${pendColor}">${pendientesHoy.length}</div><div class="mc-l">LISTAS PENDIENTES</div></div>
-      <div class="mc"><div class="mc-v" style="color:var(--rojo)">${urgentesNivel}</div><div class="mc-l">URGENTES</div></div>
-      <div class="mc"><div class="mc-v" style="color:var(--ambar)">${alertasAlumnos.length}</div><div class="mc-l">ALERTAS ASIST.</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${asistColor}">${asistPct}%</div><div class="mc-l">ASISTENCIA HOY</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${pendColor}">${pendientesHoy.length}</div><div class="mc-l">LISTAS PENDIENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${urgentesNivel}</div><div class="mc-l">URGENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:var(--ambar)">${alertasAlumnos.length}</div><div class="mc-l">ALERTAS ASIST.</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
 
     ${renderProximasActividades(eventosSem, sem.hoy, nivel)}

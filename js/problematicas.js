@@ -923,19 +923,59 @@ async function cargarProbAlumno(alumnoId, contenedorId) {
     const estCls = p.estado === 'abierta' ? 'tr' : p.estado === 'en_seguimiento' ? 'ta' : 'tg';
     const estLbl = { abierta:'Sin atender', en_seguimiento:'En seguimiento', cerrada:'Cerrada', resuelta:'Cerrada', derivada:'Derivada' }[p.estado] || p.estado;
     return `
-      <div style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--brd)">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;font-weight:600">${labelTipoProb(p.tipo)}</div>
-          <div style="font-size:10px;color:var(--txt2);margin-top:1px">${formatFechaLatam(p.created_at?.split('T')[0])}</div>
-          ${p.motivo_cierre ? `<div style="font-size:10px;color:var(--txt3);margin-top:1px">${p.motivo_cierre}</div>` : ''}
+      <div style="border-bottom:1px solid var(--brd)">
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;cursor:pointer" onclick="togDetProbLegajo('${p.id}')">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;font-weight:600">${labelTipoProb(p.tipo)}</div>
+            <div style="font-size:10px;color:var(--txt2);margin-top:1px">${formatFechaLatam(p.created_at?.split('T')[0])}</div>
+            ${p.descripcion ? `<div style="font-size:10px;color:var(--txt3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${p.descripcion}</div>` : ''}
+            ${p.motivo_cierre ? `<div style="font-size:10px;color:var(--txt3);margin-top:1px">${p.motivo_cierre}</div>` : ''}
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
+            <span class="tag ${urgTag}" style="font-size:9px">Urg. ${p.urgencia}</span>
+            <span class="tag ${estCls}" style="font-size:9px">${estLbl}</span>
+            ${p.confidencial ? '<span class="tag td" style="font-size:9px">Conf.</span>' : ''}
+            <span style="font-size:9px;color:var(--verde);font-weight:600;margin-top:2px">Ver ↓</span>
+          </div>
         </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
-          <span class="tag ${urgTag}" style="font-size:9px">Urg. ${p.urgencia}</span>
-          <span class="tag ${estCls}" style="font-size:9px">${estLbl}</span>
-          ${p.confidencial ? '<span class="tag td" style="font-size:9px">Conf.</span>' : ''}
-        </div>
+        <div id="prob-leg-det-${p.id}" style="display:none"></div>
       </div>`;
   }).join('');
+}
+
+async function togDetProbLegajo(probId) {
+  const det = document.getElementById('prob-leg-det-' + probId);
+  if (!det) return;
+  if (det.style.display !== 'none') { det.style.display = 'none'; return; }
+  det.style.display = 'block';
+  det.innerHTML = '<div style="padding:8px 0 8px 10px"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div></div>';
+
+  const { data: intvs } = await sb
+    .from('intervenciones')
+    .select('*, usr:usuarios!intervenciones_registrado_por_fkey(nombre_completo)')
+    .eq('problematica_id', probId)
+    .order('created_at', { ascending: true });
+
+  const dotColor = t => t === 'Caso cerrado' ? 'var(--verde)' : t === 'Caso reabierto' ? 'var(--ambar)' : 'var(--azul)';
+  const invsHTML = (intvs || []).length
+    ? intvs.map(iv => `
+        <div class="tl-it">
+          <div class="tl-d" style="background:${dotColor(iv.titulo)}"></div>
+          <div class="tl-f">${formatFechaCorta(iv.created_at?.split('T')[0])}</div>
+          <div style="flex:1;min-width:0">
+            <div class="tl-t">${iv.titulo}</div>
+            <div class="tl-ds">${iv.descripcion}</div>
+            ${iv.proximo_paso ? `<div style="font-size:10px;color:var(--verde);font-weight:500;margin-top:2px">→ ${iv.proximo_paso}</div>` : ''}
+            <div style="font-size:10px;color:var(--txt3);margin-top:2px">${iv.usr?.nombre_completo || '—'}</div>
+          </div>
+        </div>`).join('')
+    : '<div style="font-size:11px;color:var(--txt2);padding:4px 0">Sin intervenciones registradas.</div>';
+
+  det.innerHTML = `
+    <div style="padding:0 0 12px 10px;border-left:2px solid var(--azul);margin:0 0 4px 4px">
+      <div style="font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Bitácora de seguimiento</div>
+      ${invsHTML}
+    </div>`;
 }
 
 // ─── BACKWARD COMPAT ──────────────────────────────────
