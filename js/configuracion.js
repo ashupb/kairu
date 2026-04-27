@@ -201,7 +201,7 @@ async function _renderInstitucion() {
       </div>
 
       <div class="acc" style="margin-top:16px">
-        <button class="btn-p" onclick="_guardarInstitucion()">Guardar cambios</button>
+        <button class="btn-p" id="adm-inst-guardar-btn" onclick="_guardarInstitucion()">Guardar cambios</button>
       </div>
     </div>
 
@@ -282,7 +282,12 @@ async function _guardarInstitucion() {
 
   if (error) { alert('Error al guardar: ' + error.message); return; }
 
-  if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.nombre = nombre;
+  if (INSTITUCION_ACTUAL) {
+    INSTITUCION_ACTUAL.nombre           = nombre;
+    INSTITUCION_ACTUAL.nivel_inicial    = nivel_inicial;
+    INSTITUCION_ACTUAL.nivel_primario   = nivel_primario;
+    INSTITUCION_ACTUAL.nivel_secundario = nivel_secundario;
+  }
   const sbInst = document.getElementById('sb-inst-nombre');
   const pgSub  = document.querySelector('#page-admin .pg-s');
   if (sbInst) sbInst.textContent = nombre;
@@ -290,6 +295,20 @@ async function _guardarInstitucion() {
   document.title = nombre + ' · Kairu';
 
   _toastOk('Cambios guardados correctamente');
+
+  const btn = document.getElementById('adm-inst-guardar-btn');
+  if (btn) {
+    const orig = btn.getAttribute('onclick');
+    btn.textContent = 'Editar';
+    btn.className = 'btn-s';
+    btn.removeAttribute('onclick');
+    btn.onclick = () => {
+      btn.textContent = 'Guardar cambios';
+      btn.className = 'btn-p';
+      btn.setAttribute('onclick', orig);
+      btn.onclick = null;
+    };
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1673,10 +1692,6 @@ async function _renderParamNivel(nivel) {
         <span><b>MB</b> = Muy bueno</span>&nbsp;·&nbsp;
         <span><b>S</b> = Sobresaliente</span>
       </div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:14px;padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
-        Evaluación cuatrimestral · Promoción automática en 1° y 2°
-      </div>
-
       <div style="font-size:12px;font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
         Segundo Ciclo — 4°, 5° y 6° grado
       </div>
@@ -1689,9 +1704,6 @@ async function _renderParamNivel(nivel) {
           <label class="adm-label">Nota mínima (recuperación)</label>
           <input type="number" id="cfg-nota-rec" value="${notaRec2}" min="1" max="10">
         </div>
-      </div>
-      <div style="font-size:11px;color:var(--txt2);padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
-        Evaluación cuatrimestral · Instancias de recuperación en diciembre y marzo
       </div>`;
 
   } else {
@@ -1745,7 +1757,7 @@ async function _renderParamNivel(nivel) {
       </div>
       ${htmlEvaluacion}
       <div class="acc" style="margin-top:14px">
-        <button class="btn-p" onclick="_guardarConfigAsistencia('${nivel}','${cfgId}')">Guardar configuración</button>
+        <button class="btn-p" id="cfg-save-btn" onclick="_guardarConfigAsistencia('${nivel}','${cfgId}')">Guardar configuración</button>
       </div>
     </div>
 
@@ -1895,6 +1907,19 @@ async function _guardarConfigAsistencia(nivel, existingId) {
     }
     await _renderParamNivel(nivel);
     _toastOk('Configuración guardada');
+    const saveBtn = document.getElementById('cfg-save-btn');
+    if (saveBtn) {
+      const orig = saveBtn.getAttribute('onclick');
+      saveBtn.textContent = 'Editar';
+      saveBtn.className = 'btn-s';
+      saveBtn.removeAttribute('onclick');
+      saveBtn.onclick = () => {
+        saveBtn.textContent = 'Guardar configuración';
+        saveBtn.className = 'btn-p';
+        saveBtn.setAttribute('onclick', orig);
+        saveBtn.onclick = null;
+      };
+    }
   } catch (e) {
     alert('Error al guardar: ' + e.message);
   }
@@ -1988,11 +2013,16 @@ async function _agregarDim() {
   const { data: cfg } = await sb.from('config_asistencia')
     .select('id, dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').maybeSingle();
   const nuevas = [...(cfg?.dimensiones_informe || _DIMS_INICIAL_DEFAULT), nombre];
+  let error;
   if (cfg?.id) {
-    await sb.from('config_asistencia').update({ dimensiones_informe: nuevas }).eq('id', cfg.id);
+    ({ error } = await sb.from('config_asistencia').update({ dimensiones_informe: nuevas }).eq('id', cfg.id));
   } else {
-    await sb.from('config_asistencia').insert([{ institucion_id: instId, nivel: 'inicial', dimensiones_informe: nuevas }]);
+    ({ error } = await sb.from('config_asistencia').insert([{
+      institucion_id: instId, nivel: 'inicial', dimensiones_informe: nuevas,
+      umbral_alerta_1: 10, umbral_alerta_2: 20, umbral_alerta_3: 30, justificadas_cuentan: false,
+    }]));
   }
+  if (error) { alert('Error al guardar dimensión: ' + error.message); return; }
   if (inp) inp.value = '';
   await _renderParamNivel('inicial');
 }
@@ -2002,11 +2032,16 @@ async function _quitarDim(idx) {
   const { data: cfg } = await sb.from('config_asistencia')
     .select('id, dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').maybeSingle();
   const dims = (cfg?.dimensiones_informe || _DIMS_INICIAL_DEFAULT).filter((_, i) => i !== idx);
+  let error;
   if (cfg?.id) {
-    await sb.from('config_asistencia').update({ dimensiones_informe: dims }).eq('id', cfg.id);
+    ({ error } = await sb.from('config_asistencia').update({ dimensiones_informe: dims }).eq('id', cfg.id));
   } else {
-    await sb.from('config_asistencia').insert([{ institucion_id: instId, nivel: 'inicial', dimensiones_informe: dims }]);
+    ({ error } = await sb.from('config_asistencia').insert([{
+      institucion_id: instId, nivel: 'inicial', dimensiones_informe: dims,
+      umbral_alerta_1: 10, umbral_alerta_2: 20, umbral_alerta_3: 30, justificadas_cuentan: false,
+    }]));
   }
+  if (error) { alert('Error al quitar dimensión: ' + error.message); return; }
   await _renderParamNivel('inicial');
 }
 
