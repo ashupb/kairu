@@ -1599,15 +1599,102 @@ async function _renderParamNivel(nivel) {
     sb.from('periodos_evaluativos').select('*').eq('institucion_id', instId).eq('nivel', nivel).order('fecha_inicio'),
   ]);
 
-  const cfg        = cfgRes.data    || {};
-  const tiposEval  = tiposEvalRes.data    || [];
-  const tiposJust  = tiposJustRes.data    || [];
+  const cfg         = cfgRes.data       || {};
+  const tiposEval   = tiposEvalRes.data  || [];
+  const tiposJust   = tiposJustRes.data  || [];
   const tiposEvento = tiposEventoRes.data || [];
-  const periodos   = periodosRes.data     || [];
-  const cfgId      = cfg.id || '';
+  const periodos    = periodosRes.data   || [];
+  const cfgId       = cfg.id || '';
+
+  // ── Sección evaluación diferenciada por nivel ───────
+  let htmlEvaluacion = '';
+
+  if (nivel === 'inicial') {
+    const DIMS_DEFAULT = ['Lenguaje y comunicación','Desarrollo motor','Socialización','Desarrollo cognitivo','Autonomía'];
+    const dims = cfg.dimensiones_informe || DIMS_DEFAULT;
+    htmlEvaluacion = `
+      <div style="font-size:12px;color:var(--txt2);margin:14px 0 10px;padding:10px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${color}">
+        El nivel inicial trabaja con <strong>informes narrativos</strong> por dimensiones de desarrollo.
+        No se aplican calificaciones numéricas ni conceptuales.
+      </div>
+      <div class="card-t" style="color:${color};margin:0 0 8px">Dimensiones de desarrollo evaluadas</div>
+      <div id="lista-dims-inicial">${_renderListaDims(dims)}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input type="text" id="new-dim-inicial" placeholder="Ej: Exploración del entorno" style="flex:1;font-size:12px">
+        <button class="btn-s" onclick="_agregarDim()">Agregar</button>
+      </div>`;
+
+  } else if (nivel === 'primario') {
+    const VALS_CONC = ['D','R','B','MB','S'];
+    const aprob1    = cfg.aprobacion_ciclo1 || 'B';
+    const notaMin2  = cfg.nota_minima       ?? 7;
+    const notaRec2  = cfg.nota_recuperacion ?? 4;
+    htmlEvaluacion = `
+      <div class="card-t" style="color:${color};margin-top:16px">Calificaciones</div>
+
+      <div style="font-size:12px;font-weight:600;margin:10px 0 8px;padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
+        Primer Ciclo — 1°, 2° y 3° grado
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Escala</label>
+          <div style="font-size:12px;padding:6px 8px;background:var(--surf2);border-radius:5px;color:var(--txt)">Conceptual (D · R · B · MB · S)</div>
+        </div>
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Aprobación mínima</label>
+          <select id="cfg-aprobacion-ciclo1">
+            ${VALS_CONC.map(v => `<option value="${v}" ${aprob1 === v ? 'selected' : ''}>${v}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:14px;padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
+        Evaluación cuatrimestral · Promoción automática en 1° y 2°
+      </div>
+
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
+        Segundo Ciclo — 4°, 5° y 6° grado
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Nota mínima (cursada regular)</label>
+          <input type="number" id="cfg-nota-min" value="${notaMin2}" min="1" max="10">
+        </div>
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Nota mínima (recuperación)</label>
+          <input type="number" id="cfg-nota-rec" value="${notaRec2}" min="1" max="10">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--txt2);padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
+        Evaluación cuatrimestral · Instancias de recuperación en diciembre y marzo
+      </div>`;
+
+  } else {
+    // secundario — comportamiento existente
+    htmlEvaluacion = `
+      <div class="card-t" style="color:${color};margin-top:14px">Calificaciones</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Nota mínima aprobación</label>
+          <input type="number" id="cfg-nota-min" value="${cfg.nota_minima ?? 7}" min="1" max="10">
+        </div>
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Escala</label>
+          <select id="cfg-escala">
+            <option value="numerica"   ${(cfg.escala || 'numerica') === 'numerica'   ? 'selected' : ''}>Numérica (1–10)</option>
+            <option value="conceptual" ${cfg.escala === 'conceptual' ? 'selected' : ''}>Conceptual</option>
+          </select>
+        </div>
+      </div>`;
+  }
+
+  const _fmtP = iso => {
+    if (!iso) return '—';
+    const d = new Date(iso + 'T12:00:00');
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  };
 
   cont.innerHTML = `
-    <!-- ASISTENCIA Y CALIFICACIONES -->
+    <!-- ASISTENCIA Y EVALUACIÓN -->
     <div class="card" style="border-top:3px solid ${color}">
       <div class="card-t" style="color:${color}">Asistencia</div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
@@ -1630,23 +1717,9 @@ async function _renderParamNivel(nivel) {
           <div class="tog${cfg.justificadas_cuentan ? ' on' : ''}" id="tog-justif" onclick="_togAdm('tog-justif')"><div class="tog-thumb"></div></div>
         </div>
       </div>
-
-      <div class="card-t" style="color:${color};margin-top:14px">Calificaciones</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div class="adm-form-row" style="margin:0">
-          <label class="adm-label">Nota mínima aprobación</label>
-          <input type="number" id="cfg-nota-min" value="${cfg.nota_minima ?? 7}" min="1" max="10">
-        </div>
-        <div class="adm-form-row" style="margin:0">
-          <label class="adm-label">Escala</label>
-          <select id="cfg-escala">
-            <option value="numerica"   ${(cfg.escala || 'numerica') === 'numerica'   ? 'selected' : ''}>Numérica (1–10)</option>
-            <option value="conceptual" ${cfg.escala === 'conceptual' ? 'selected' : ''}>Conceptual</option>
-          </select>
-        </div>
-      </div>
-      <div class="acc" style="margin-top:14px" id="param-cfg-acc-${nivel}">
-        <button class="btn-p" id="param-cfg-btn-${nivel}" onclick="_guardarConfigAsistencia('${nivel}','${cfgId}')">Guardar configuración</button>
+      ${htmlEvaluacion}
+      <div class="acc" style="margin-top:14px">
+        <button class="btn-p" onclick="_guardarConfigAsistencia('${nivel}','${cfgId}')">Guardar configuración</button>
       </div>
     </div>
 
@@ -1690,13 +1763,7 @@ async function _renderParamNivel(nivel) {
     <div class="card">
       <div class="card-t">Períodos evaluativos</div>
       <div id="lista-periodos">
-        ${periodos.length ? periodos.map(p => {
-          const fmtFecha = iso => {
-            if (!iso) return '—';
-            const d = new Date(iso + 'T12:00:00');
-            return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
-          };
-          return `
+        ${periodos.length ? periodos.map(p => `
           <div style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:12px 14px;margin-bottom:8px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
               <div style="font-size:13px;font-weight:600">${_esc(p.nombre)}</div>
@@ -1708,20 +1775,19 @@ async function _renderParamNivel(nivel) {
                 <div class="adm-label">Inicio</div>
                 <input type="date" value="${p.fecha_inicio || ''}"
                   onchange="_actualizarPeriodo('${p.id}','fecha_inicio',this.value)">
-                ${p.fecha_inicio ? `<div style="font-size:10px;color:var(--verde);margin-top:3px">${fmtFecha(p.fecha_inicio)}</div>` : ''}
+                ${p.fecha_inicio ? `<div style="font-size:10px;color:var(--verde);margin-top:3px">${_fmtP(p.fecha_inicio)}</div>` : ''}
               </div>
               <div>
                 <div class="adm-label">Fin</div>
                 <input type="date" value="${p.fecha_fin || ''}"
                   onchange="_actualizarPeriodo('${p.id}','fecha_fin',this.value)">
-                ${p.fecha_fin ? `<div style="font-size:10px;color:var(--verde);margin-top:3px">${fmtFecha(p.fecha_fin)}</div>` : ''}
+                ${p.fecha_fin ? `<div style="font-size:10px;color:var(--verde);margin-top:3px">${_fmtP(p.fecha_fin)}</div>` : ''}
               </div>
             </div>
-          </div>`;
-        }).join('') : '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin períodos definidos</div>'}
+          </div>`).join('') : '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin períodos definidos</div>'}
       </div>
       <div style="display:flex;gap:8px;margin-top:10px">
-        <input type="text" id="new-periodo-${nivel}" placeholder="Ej: 1° Bimestre" style="flex:1">
+        <input type="text" id="new-periodo-${nivel}" placeholder="Ej: 1° Cuatrimestre" style="flex:1">
         <button class="btn-s" onclick="_agregarPeriodo('${nivel}')">Agregar período</button>
       </div>
     </div>`;
@@ -1760,18 +1826,30 @@ async function _guardarTipoEdit(id, tabla, nivel, listaId) {
 }
 
 async function _guardarConfigAsistencia(nivel, existingId) {
-  const u1                 = parseInt(document.getElementById('cfg-u1')?.value) || 10;
-  const u2                 = parseInt(document.getElementById('cfg-u2')?.value) || 20;
-  const u3                 = parseInt(document.getElementById('cfg-u3')?.value) || 30;
+  const u1                   = parseInt(document.getElementById('cfg-u1')?.value) || 10;
+  const u2                   = parseInt(document.getElementById('cfg-u2')?.value) || 20;
+  const u3                   = parseInt(document.getElementById('cfg-u3')?.value) || 30;
   const justificadas_cuentan = document.getElementById('tog-justif')?.classList.contains('on');
-  const nota_minima        = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
-  const escala             = document.getElementById('cfg-escala')?.value || 'numerica';
 
   const datos = {
     institucion_id: USUARIO_ACTUAL.institucion_id, nivel,
     umbral_alerta_1: u1, umbral_alerta_2: u2, umbral_alerta_3: u3,
-    justificadas_cuentan, nota_minima, escala,
+    justificadas_cuentan,
   };
+
+  if (nivel === 'inicial') {
+    datos.escala      = null;
+    datos.nota_minima = null;
+  } else if (nivel === 'primario') {
+    datos.escala_ciclo1     = 'conceptual';
+    datos.aprobacion_ciclo1 = document.getElementById('cfg-aprobacion-ciclo1')?.value || 'B';
+    datos.escala            = 'numerica';
+    datos.nota_minima       = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
+    datos.nota_recuperacion = parseInt(document.getElementById('cfg-nota-rec')?.value) || 4;
+  } else {
+    datos.nota_minima = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
+    datos.escala      = document.getElementById('cfg-escala')?.value || 'numerica';
+  }
 
   try {
     if (existingId) {
@@ -1781,18 +1859,9 @@ async function _guardarConfigAsistencia(nivel, existingId) {
       const { error } = await sb.from('config_asistencia').insert([datos]);
       if (error) throw error;
     }
-    const btn = document.getElementById('param-cfg-btn-' + nivel);
-    if (btn) {
-      btn.textContent = 'Editar configuración';
-      btn.className   = 'btn-s';
-      btn.onclick     = () => {
-        btn.textContent = 'Guardar configuración';
-        btn.className   = 'btn-p';
-        btn.onclick     = () => _guardarConfigAsistencia(nivel, existingId || btn.dataset.cfgId || '');
-      };
-    }
+    await _renderParamNivel(nivel);
   } catch (e) {
-    alert('Error: ' + e.message);
+    alert('Error al guardar: ' + e.message);
   }
 }
 
@@ -1841,6 +1910,52 @@ async function _agregarPeriodo(nivel) {
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
   await _renderParamNivel(nivel);
+}
+
+// ── Dimensiones de desarrollo (Nivel Inicial) ─────────
+const _DIMS_INICIAL_DEFAULT = [
+  'Lenguaje y comunicación','Desarrollo motor','Socialización',
+  'Desarrollo cognitivo','Autonomía',
+];
+
+function _renderListaDims(dims) {
+  if (!dims || !dims.length) return '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin dimensiones definidas</div>';
+  return dims.map((d, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--brd)">
+      <div style="flex:1;font-size:12px">${_esc(d)}</div>
+      <button onclick="_quitarDim(${i})"
+        style="background:none;border:none;cursor:pointer;font-size:15px;color:var(--txt3);padding:0 2px;line-height:1" title="Quitar">×</button>
+    </div>`).join('');
+}
+
+async function _agregarDim() {
+  const inp    = document.getElementById('new-dim-inicial');
+  const nombre = inp?.value?.trim();
+  if (!nombre) return;
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { data: cfg } = await sb.from('config_asistencia')
+    .select('id, dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').maybeSingle();
+  const nuevas = [...(cfg?.dimensiones_informe || _DIMS_INICIAL_DEFAULT), nombre];
+  if (cfg?.id) {
+    await sb.from('config_asistencia').update({ dimensiones_informe: nuevas }).eq('id', cfg.id);
+  } else {
+    await sb.from('config_asistencia').insert([{ institucion_id: instId, nivel: 'inicial', dimensiones_informe: nuevas }]);
+  }
+  if (inp) inp.value = '';
+  await _renderParamNivel('inicial');
+}
+
+async function _quitarDim(idx) {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { data: cfg } = await sb.from('config_asistencia')
+    .select('id, dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').maybeSingle();
+  const dims = (cfg?.dimensiones_informe || _DIMS_INICIAL_DEFAULT).filter((_, i) => i !== idx);
+  if (cfg?.id) {
+    await sb.from('config_asistencia').update({ dimensiones_informe: dims }).eq('id', cfg.id);
+  } else {
+    await sb.from('config_asistencia').insert([{ institucion_id: instId, nivel: 'inicial', dimensiones_informe: dims }]);
+  }
+  await _renderParamNivel('inicial');
 }
 
 // ══════════════════════════════════════════════════════

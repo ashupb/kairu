@@ -80,8 +80,25 @@ Los usuarios `docente` y `preceptor` tienen acceso a asistencia y calificaciones
 | `intervenciones` | Bitácora de seguimiento de problematicas |
 | `notificaciones` | Notificaciones por usuario (`usuario_id`, `tipo`, `referencia_tabla`, `referencia_id`, `leida`) |
 | `eventos_institucionales` | Eventos de agenda con `nivel`, `convocados_ids[]`, `convocatoria_grupos[]` |
-| `config_asistencia` | Configuración de asistencia por nivel e institución |
+| `config_asistencia` | Configuración por nivel e institución — ver columnas abajo |
 | `tipos_justificacion` | Tipos de justificación de ausencia |
+
+### config_asistencia — columnas relevantes
+
+| Columna | Nivel | Descripción |
+|---|---|---|
+| `umbral_alerta_1/2/3` | todos | % de inasistencias para alertas |
+| `justificadas_cuentan` | todos | si justificadas cuentan para regularidad |
+| `escala` | primario (ciclo 2), secundario | `'numerica'` o `'conceptual'` |
+| `nota_minima` | primario (ciclo 2), secundario | nota mínima de aprobación |
+| `nota_recuperacion` | primario (ciclo 2) | nota mínima en instancias de recuperación (default 4) |
+| `escala_ciclo1` | primario | siempre `'conceptual'` (1°-3° grado) |
+| `aprobacion_ciclo1` | primario | valor mínimo aprobatorio: D/R/**B**/MB/S (default B) |
+| `dimensiones_informe` | inicial | jsonb array con dimensiones de desarrollo para informes narrativos |
+
+**Inicial**: no usa escala ni nota_minima (null). Usa informes narrativos con `dimensiones_informe`.
+**Primario primer ciclo** (1°-3°): escala conceptual, evaluación cuatrimestral, promoción automática en 1° y 2°.
+**Primario segundo ciclo** (4°-6°): escala numérica, evaluación cuatrimestral, recuperación dic/mar.
 
 ### Estados de asistencia
 ```
