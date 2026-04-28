@@ -975,9 +975,10 @@ async function _generarResumenIA(alumnoId) {
   try {
     // Queries secuenciales para loguear cada error por separado
     const asistRes = await sb.from('asistencia')
-      .select('estado')
+      .select('estado,fecha,hora_clase')
       .eq('alumno_id', alumnoId)
-      .limit(60);
+      .order('fecha', { ascending: false })
+      .limit(90);
     if (asistRes.error) console.error('[IA] asistencia:', asistRes.error);
 
     const notasRes = await sb.from('calificaciones')
@@ -1007,6 +1008,14 @@ async function _generarResumenIA(alumnoId) {
       probGrupales = pg || [];
     }
 
+    // Intervenciones EOE del alumno
+    const eoeRes = await sb.from('intervenciones_eoe')
+      .select('tipo,descripcion,fecha')
+      .eq('alumno_id', alumnoId)
+      .order('fecha', { ascending: false })
+      .limit(5);
+    if (eoeRes.error) console.error('[IA] eoe:', eoeRes.error);
+
     const obsRes = await sb.from('observaciones_legajo')
       .select('texto,privada,created_at')
       .eq('alumno_id', alumnoId)
@@ -1014,11 +1023,13 @@ async function _generarResumenIA(alumnoId) {
       .limit(5);
     if (obsRes.error) console.error('[IA] observaciones:', obsRes.error);
 
-    // Calcular % asistencia
-    const asistencia = asistRes.data || [];
-    const total      = asistencia.length;
-    const presentes  = asistencia.filter(r => ['presente','tardanza','media_falta'].includes(r.estado)).length;
-    const pctAsist   = total ? Math.round(presentes / total * 100) : null;
+    // Calcular % asistencia — misma lógica que _tabAsistencia (días únicos sin hora_clase)
+    const asistencia  = asistRes.data || [];
+    const diasUnicos  = [...new Set(asistencia.filter(r => !r.hora_clase).map(r => r.fecha))];
+    const ausDias     = [...new Set(asistencia.filter(r => !r.hora_clase && r.estado === 'ausente').map(r => r.fecha))];
+    const diasTotal   = diasUnicos.length;
+    const diasAusentes= ausDias.length;
+    const pctAsist    = diasTotal ? Math.round(((diasTotal - diasAusentes) / diasTotal) * 100) : null;
 
     // Agrupar notas por materia
     const porMateria = {};
@@ -1043,8 +1054,11 @@ async function _generarResumenIA(alumnoId) {
       nivel:               _legCursoSel?.nivel || '',
       semaforo:            _legSemMap[alumnoId] || 'verde',
       asistencia_pct:      pctAsist,
+      dias_total:          diasTotal || null,
+      dias_ausentes:       diasAusentes || null,
       calificaciones:      resumenNotas,
       situaciones_activas: todasSituaciones,
+      intervenciones_eoe:  (eoeRes.data || []).map(e => `${e.tipo || 'Intervención'}: ${e.descripcion} (${e.fecha})`),
       observaciones:       (obsRes.data || []).filter(o => !o.privada).map(o => o.texto),
     };
 

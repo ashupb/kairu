@@ -6,19 +6,54 @@ const corsHeaders = {
 };
 
 function construirPromptLegajo(p: any): string {
-  return `Sos un asistente especializado en gestión escolar argentina. 
-Generá un resumen narrativo formal del siguiente alumno para uso interno del equipo docente.
+  const asistenciaTexto = (p.asistencia_pct !== null && p.asistencia_pct !== undefined)
+    ? `${p.asistencia_pct}% de asistencia${p.dias_total ? ` (${p.dias_ausentes ?? 0} inasistencias en ${p.dias_total} días hábiles)` : ''}`
+    : 'Sin registros de asistencia cargados.';
 
-Alumno: ${p.nombre}
-Curso: ${p.curso}
-Nivel: ${p.nivel}
-Asistencia: ${p.porcentaje_asistencia}% (${p.dias_ausente} días ausente de ${p.dias_total})
-Calificaciones: ${JSON.stringify(p.calificaciones)}
-Intervenciones EOE: ${p.intervenciones || "Sin intervenciones registradas"}
-Observaciones previas: ${p.observaciones || "Sin observaciones"}
+  const calificacionesTexto = Array.isArray(p.calificaciones) && p.calificaciones.length
+    ? p.calificaciones.map((c: any) => `• ${c.materia}: promedio ${c.promedio}`).join('\n')
+    : 'Sin calificaciones registradas.';
 
-Redactá un resumen en 3 párrafos: situación académica, situación de asistencia, y observaciones generales. 
-Tono formal, objetivo, en español rioplatense. Máximo 200 palabras.`;
+  const situacionesTexto = Array.isArray(p.situaciones_activas) && p.situaciones_activas.length
+    ? p.situaciones_activas.map((s: any) => `• ${s.titulo} — urgencia ${s.urgencia}`).join('\n')
+    : 'Sin situaciones problemáticas activas.';
+
+  const eoeTexto = Array.isArray(p.intervenciones_eoe) && p.intervenciones_eoe.length
+    ? p.intervenciones_eoe.join('\n')
+    : 'Sin intervenciones EOE registradas.';
+
+  const obsTexto = Array.isArray(p.observaciones) && p.observaciones.length
+    ? p.observaciones.join(' | ')
+    : 'Sin observaciones registradas.';
+
+  const alertaTexto = p.semaforo === 'rojo' ? 'ALERTA CRÍTICA'
+    : p.semaforo === 'amarillo' ? 'Requiere atención'
+    : 'Sin alertas';
+
+  return `Sos un asistente especializado en gestión escolar argentina.
+Generá un informe de trazabilidad del siguiente alumno para el equipo docente.
+Comenzá el informe con el título exacto: "Resumen del estudiante ${p.alumno} de ${p.curso}"
+
+DATOS:
+Alumno: ${p.alumno} | Curso: ${p.curso} (${p.nivel}) | Estado de alerta: ${alertaTexto}
+
+ASISTENCIA:
+${asistenciaTexto}
+
+CALIFICACIONES:
+${calificacionesTexto}
+
+SITUACIONES PROBLEMÁTICAS ACTIVAS:
+${situacionesTexto}
+
+INTERVENCIONES EOE:
+${eoeTexto}
+
+OBSERVACIONES:
+${obsTexto}
+
+Redactá el informe en 3 o 4 párrafos cubriendo: rendimiento académico, asistencia y regularidad, situaciones problemáticas e intervenciones (si existen), y una síntesis con recomendación.
+Tono formal y objetivo, español rioplatense. Usá los datos provistos — no inventes información. Si un dato no está disponible, mencionalo brevemente. No uses asteriscos ni markdown. Máximo 300 palabras.`;
 }
 
 function construirPromptObservacion(p: any): string {

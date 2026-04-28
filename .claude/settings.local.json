@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(supabase functions *)",
+      "Bash(where npx *)",
+      "Bash(npx supabase *)"
+    ]
+  }
+}
