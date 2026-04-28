@@ -159,7 +159,7 @@ async function rNotasDocente() {
   const miId   = USUARIO_ACTUAL.id;
 
   const { data: asigs } = await sb.from('asignaciones')
-    .select('*, cursos(id,nombre,division,nivel), materias(id,nombre)')
+    .select('tipo_docente, cursos(id,nombre,division,nivel), materias(id,nombre)')
     .eq('docente_id', miId)
     .eq('anio_lectivo', new Date().getFullYear());
 
@@ -168,36 +168,77 @@ async function rNotasDocente() {
     return;
   }
 
+  // Grado: accede a todas las materias del nivel. Especial: solo su materia asignada.
+  const gradoAsigs = asigs.filter(a => a.tipo_docente === 'grado');
+  const especAsigs = asigs.filter(a => a.tipo_docente !== 'grado');
+
+  // Para maestras de grado: obtener todas las materias del nivel
+  let materiasPorNivel = {};
+  if (gradoAsigs.length) {
+    const nivelesGrado = [...new Set(gradoAsigs.map(a => a.cursos?.nivel).filter(Boolean))];
+    const { data: allMats } = await sb.from('materias')
+      .select('id,nombre,nivel').eq('institucion_id', instId).eq('activo', true)
+      .in('nivel', nivelesGrado);
+    (allMats || []).forEach(m => {
+      if (!materiasPorNivel[m.nivel]) materiasPorNivel[m.nivel] = [];
+      materiasPorNivel[m.nivel].push(m);
+    });
+  }
+
   const cursoMap = {};
-  asigs.forEach(a => {
+
+  gradoAsigs.forEach(a => {
     const cu = a.cursos;
-    if (!cursoMap[cu.id]) cursoMap[cu.id] = { ...cu, materias: [] };
-    cursoMap[cu.id].materias.push(a.materias);
+    cursoMap[cu.id] = { ...cu, esGrado: true, materias: materiasPorNivel[cu.nivel] || [] };
+  });
+
+  especAsigs.forEach(a => {
+    const cu = a.cursos;
+    if (!cursoMap[cu.id]) cursoMap[cu.id] = { ...cu, esGrado: false, materias: [] };
+    if (!cursoMap[cu.id].esGrado) cursoMap[cu.id].materias.push(a.materias);
   });
 
   c.innerHTML = `
     <div class="pg-t">Calificaciones</div>
     <div class="pg-s">Seleccioná curso y materia</div>
     <div class="sec-lb">Mis clases</div>
-    ${Object.values(cursoMap).map(cu =>
-      cu.materias.map(m => `
+    ${Object.values(cursoMap).map(cu => {
+      if (cu.esGrado) {
+        const labelNivel = cu.nivel === 'inicial' ? 'sala' : 'grado';
+        return `
+          <div class="card" style="margin-bottom:8px;padding:14px 16px;border-left:3px solid var(--verde)">
+            <div style="font-size:15px;font-weight:700;font-family:'Lora',serif;margin-bottom:8px">
+              ${cu.nombre}${cu.division}
+              <span style="font-size:11px;font-weight:400;color:var(--txt2)">— Maestra/o de ${labelNivel}</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              ${cu.materias.map(m => `
+                <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;
+                  padding:7px 10px;background:var(--surf2);border-radius:var(--rad)"
+                  onclick="verNotasCursoDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division}','${m.nombre.replace(/'/g,"\\'")}')">
+                  <div style="font-size:12px;font-weight:500">${m.nombre}</div>
+                  <span style="color:var(--verde)">→</span>
+                </div>`).join('')}
+            </div>
+          </div>`;
+      }
+      return cu.materias.map(m => `
         <div class="card" style="display:flex;align-items:center;justify-content:space-between;
           padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--verde)"
-          onclick="verNotasCursoDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division}','${m.nombre}')">
+          onclick="verNotasCursoDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division}','${m.nombre.replace(/'/g,"\\'")}')">
           <div>
             <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
             <div style="font-size:12px;color:var(--txt2)">${m.nombre}</div>
           </div>
           <span style="font-size:22px;color:var(--verde)">→</span>
-        </div>`).join('')
-    ).join('')}
+        </div>`).join('');
+    }).join('')}
     <div class="sec-lb" style="margin-top:14px">Situación de mis alumnos</div>
     <div id="sit-docente-global" style="text-align:center;padding:20px;color:var(--txt3);font-size:11px">
       <div class="spinner" style="margin:0 auto 8px"></div>Calculando situación...
     </div>`;
 
   window._notasCursoMap = cursoMap;
-  // Cargar situación global de forma diferida
   _cargarSituacionDocenteGlobal(cursoMap);
 }
 

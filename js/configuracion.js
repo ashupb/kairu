@@ -1338,6 +1338,69 @@ async function _desactivarMateria(materiaId) {
 // ══════════════════════════════════════════════════════
 // SECCIÓN: ASIGNACIONES
 // ══════════════════════════════════════════════════════
+
+// UI para inicial/primario: maestra de grado + docentes especiales
+function _buildAsigFilasNivel(materias, docentes, asigns, cursoNivel) {
+  const labelNivel = cursoNivel === 'inicial' ? 'sala' : 'grado';
+  const gradoAsig  = asigns.find(a => a.tipo_docente === 'grado');
+  const especMap   = {};
+  asigns.filter(a => a.tipo_docente !== 'grado').forEach(a => { if (a.materia_id) especMap[a.materia_id] = a.docente_id; });
+  const nomMap = {};
+  docentes.forEach(d => { nomMap[d.id] = d.nombre_completo; });
+
+  if (!_admAsigModoEdicion) {
+    return `
+      <div class="card">
+        <div style="font-size:10px;font-weight:600;color:var(--verde);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Maestra/o de ${labelNivel}</div>
+        <div style="padding:8px 0;border-bottom:2px solid var(--brd);margin-bottom:14px">
+          <span style="font-size:12px;color:${gradoAsig ? 'var(--txt2)' : 'var(--txt3)'}">
+            ${gradoAsig ? _esc(nomMap[gradoAsig.docente_id] || '') : '— Sin asignar —'}
+          </span>
+        </div>
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Docentes especiales</div>
+        ${materias.map(m => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
+            <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
+            <span style="font-size:12px;color:${especMap[m.id] ? 'var(--txt2)' : 'var(--txt3)'}">
+              ${especMap[m.id] ? _esc(nomMap[especMap[m.id]] || '') : '— Sin asignar —'}
+            </span>
+          </div>`).join('')}
+        <div class="acc" style="margin-top:12px">
+          <button class="btn-s" onclick="_admAsigModoEdicion=true;_renderAsigContent()">Editar asignaciones</button>
+        </div>
+      </div>`;
+  }
+
+  const gradoOptHtml = docentes.map(d =>
+    `<option value="${d.id}" ${d.id === gradoAsig?.docente_id ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`
+  ).join('');
+
+  return `
+    <div class="card">
+      <div style="font-size:10px;font-weight:600;color:var(--verde);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Maestra/o de ${labelNivel}</div>
+      <div style="padding:8px 0;border-bottom:2px solid var(--brd);margin-bottom:14px">
+        <div style="font-size:11px;color:var(--txt2);margin-bottom:6px">Docente responsable del aula — toma asistencia y califica todas las áreas</div>
+        <select id="asig-grado" style="width:100%;max-width:320px">
+          <option value="">— Sin asignar —</option>
+          ${gradoOptHtml}
+        </select>
+      </div>
+      <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;margin-top:8px">Docentes especiales</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:8px">Solo califican su materia específica</div>
+      ${materias.map(m => `
+        <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
+          <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
+          <select id="asig-${m.id}" style="max-width:220px">
+            <option value="">— Sin asignar —</option>
+            ${docentes.map(d => `<option value="${d.id}" ${d.id === especMap[m.id] ? 'selected' : ''}>${_esc(d.nombre_completo)}</option>`).join('')}
+          </select>
+        </div>`).join('')}
+      <div class="acc" style="margin-top:12px">
+        <button class="btn-p" onclick="_guardarAsignaciones()">Guardar asignaciones</button>
+      </div>
+    </div>`;
+}
+
 let _admAsigCursoSel       = null;
 let _admAsigVistaPor       = 'curso';
 let _admAsigDocenteSel     = null;
@@ -1472,14 +1535,23 @@ async function _renderAsigContent() {
 
     const { data: asigns } = await sb.from('asignaciones')
       .select('*').eq('curso_id', _admAsigCursoSel || '').eq('anio_lectivo', _admAsigAnioLectivo);
-    const asigMap = {};
-    (asigns || []).forEach(a => { asigMap[a.materia_id] = a.docente_id; });
 
     const materiasCurso = cursoSel ? materias.filter(m => m.nivel === cursoSel.nivel) : [];
     const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
+    const esNivel       = cursoSel?.nivel === 'inicial' || cursoSel?.nivel === 'primario';
 
     window._admAsigMateriaIds     = materiasCurso.map(m => m.id);
     window._admAsigDocentesCurso  = docentesCurso;
+    window._admAsigCursoNivel     = cursoSel?.nivel;
+
+    let asigContent;
+    if (esNivel) {
+      asigContent = _buildAsigFilasNivel(materiasCurso, docentesCurso, asigns || [], cursoSel.nivel);
+    } else {
+      const asigMap = {};
+      (asigns || []).forEach(a => { if (a.materia_id) asigMap[a.materia_id] = a.docente_id; });
+      asigContent = _buildAsigFilas(materiasCurso, docentesCurso, asigMap);
+    }
 
     cont.innerHTML = `
       <div class="adm-form-row">
@@ -1488,7 +1560,7 @@ async function _renderAsigContent() {
           ${cursos.map(c => `<option value="${c.id}" ${c.id === _admAsigCursoSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[c.nivel] || c.nivel} · ${_esc(c.nombre)}${c.division || ''}</option>`).join('')}
         </select>
       </div>
-      ${_buildAsigFilas(materiasCurso, docentesCurso, asigMap)}`;
+      ${asigContent}`;
   } else {
     const { data: asigns } = await sb.from('asignaciones')
       .select('*').eq('docente_id', _admAsigDocenteSel || '').eq('anio_lectivo', _admAsigAnioLectivo);
@@ -1541,22 +1613,57 @@ function _asigEditarFila(materiaId) {
 async function _guardarAsignaciones() {
   const cursoId    = _admAsigVistaPor === 'docente' ? _admAsigDocenteCursoSel : _admAsigCursoSel;
   const materiaIds = window._admAsigMateriaIds || [];
-  if (!cursoId || !materiaIds.length) { alert('Seleccioná un curso con materias disponibles.'); return; }
+  const cursoNivel = window._admAsigCursoNivel;
+  if (!cursoId) { alert('Seleccioná un curso.'); return; }
 
-  const upserts = [];
-  materiaIds.forEach(mId => {
-    const docenteId = document.getElementById('asig-' + mId)?.value;
-    if (docenteId) upserts.push({ curso_id: cursoId, materia_id: mId, docente_id: docenteId, anio_lectivo: _admAsigAnioLectivo });
-  });
+  const esNivel = cursoNivel === 'inicial' || cursoNivel === 'primario';
 
   try {
-    const { error: delErr } = await sb.from('asignaciones').delete()
-      .eq('curso_id', cursoId).eq('anio_lectivo', _admAsigAnioLectivo).in('materia_id', materiaIds);
-    if (delErr) throw delErr;
-    if (upserts.length) {
-      const { error: insErr } = await sb.from('asignaciones').insert(upserts);
-      if (insErr) throw insErr;
+    if (esNivel) {
+      // 1. Guardar maestra de grado
+      await sb.from('asignaciones').delete()
+        .eq('curso_id', cursoId).eq('anio_lectivo', _admAsigAnioLectivo).eq('tipo_docente', 'grado');
+      const gradoId = document.getElementById('asig-grado')?.value;
+      if (gradoId) {
+        const { error } = await sb.from('asignaciones').insert([{
+          curso_id: cursoId, materia_id: null, docente_id: gradoId,
+          anio_lectivo: _admAsigAnioLectivo, tipo_docente: 'grado',
+        }]);
+        if (error) throw error;
+      }
+
+      // 2. Guardar docentes especiales
+      if (materiaIds.length) {
+        const { error: delErr } = await sb.from('asignaciones').delete()
+          .eq('curso_id', cursoId).eq('anio_lectivo', _admAsigAnioLectivo)
+          .eq('tipo_docente', 'especial').in('materia_id', materiaIds);
+        if (delErr) throw delErr;
+        const upserts = materiaIds
+          .map(mId => ({ mId, dId: document.getElementById('asig-' + mId)?.value }))
+          .filter(x => x.dId)
+          .map(x => ({ curso_id: cursoId, materia_id: x.mId, docente_id: x.dId, anio_lectivo: _admAsigAnioLectivo, tipo_docente: 'especial' }));
+        if (upserts.length) {
+          const { error: insErr } = await sb.from('asignaciones').insert(upserts);
+          if (insErr) throw insErr;
+        }
+      }
+    } else {
+      // Secundario: flujo original
+      if (!materiaIds.length) { alert('Seleccioná un curso con materias disponibles.'); return; }
+      const upserts = [];
+      materiaIds.forEach(mId => {
+        const docenteId = document.getElementById('asig-' + mId)?.value;
+        if (docenteId) upserts.push({ curso_id: cursoId, materia_id: mId, docente_id: docenteId, anio_lectivo: _admAsigAnioLectivo, tipo_docente: 'especial' });
+      });
+      const { error: delErr } = await sb.from('asignaciones').delete()
+        .eq('curso_id', cursoId).eq('anio_lectivo', _admAsigAnioLectivo).in('materia_id', materiaIds);
+      if (delErr) throw delErr;
+      if (upserts.length) {
+        const { error: insErr } = await sb.from('asignaciones').insert(upserts);
+        if (insErr) throw insErr;
+      }
     }
+
     _admAsigModoEdicion = false;
     await _renderAsigContent();
   } catch (e) {

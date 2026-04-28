@@ -462,7 +462,7 @@ function editarListaHistorica() {
   mostrarListaCurso(cursoId, nivel, fecha, true);
 }
 
-async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso) {
+async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = null) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
@@ -480,7 +480,7 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso) {
 
   c.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      <button onclick="rAsistPreceptor()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+      <button onclick="${volverFn || 'rAsistPreceptor'}()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
       <div>
         <div class="pg-t">Grilla · ${nombreCurso}</div>
         <div class="pg-s">${fechas.length} días registrados</div>
@@ -539,7 +539,7 @@ async function rAsistDocente() {
   const miId   = USUARIO_ACTUAL.id;
 
   const { data: asignaciones } = await sb.from('asignaciones')
-    .select('*, cursos(id,nombre,division,nivel), materias(id,nombre)')
+    .select('tipo_docente, cursos(id,nombre,division,nivel), materias(id,nombre)')
     .eq('docente_id', miId)
     .eq('anio_lectivo', new Date().getFullYear());
 
@@ -549,38 +549,94 @@ async function rAsistDocente() {
     return;
   }
 
-  const cursoMap = {};
-  asigs.forEach(a => {
+  // Grado (inicial/primario): toman lista completa del curso sin hora
+  const gradoAsigs  = asigs.filter(a => a.tipo_docente === 'grado');
+  // Especial en secundario: toman lista por hora/materia
+  const clasesAsigs = asigs.filter(a => a.tipo_docente !== 'grado' && a.cursos?.nivel === 'secundario');
+  // Especial en inicial/primario: NO toman asistencia (la toma la maestra de grado)
+
+  if (!gradoAsigs.length && !clasesAsigs.length) {
+    c.innerHTML = `
+      <div class="pg-t">Asistencia</div>
+      <div class="empty-state">
+        Tus asignaciones son como docente especial en inicial o primaria.
+        La asistencia la registra la maestra de sala o grado.
+      </div>`;
+    return;
+  }
+
+  // Listas ya tomadas hoy para cursos de grado
+  const gradoCursoIds = gradoAsigs.map(a => a.cursos?.id).filter(Boolean);
+  let gradoTomadas = new Set();
+  if (gradoCursoIds.length) {
+    const { data: agHoy } = await sb.from('asistencia')
+      .select('curso_id').eq('fecha', hoy).is('hora_clase', null).in('curso_id', gradoCursoIds);
+    gradoTomadas = new Set((agHoy||[]).map(a => a.curso_id));
+  }
+
+  // Listas ya tomadas hoy para clases por hora
+  const { data: asistHoy } = await sb.from('asistencia')
+    .select('curso_id,materia_id').eq('fecha', hoy).eq('registrado_por', miId);
+  const clasesTomadas = new Set((asistHoy||[]).map(a => `${a.curso_id}_${a.materia_id}`));
+
+  const cursoMapClases = {};
+  clasesAsigs.forEach(a => {
     const cu = a.cursos;
-    if (!cursoMap[cu.id]) cursoMap[cu.id] = { ...cu, materias:[] };
-    cursoMap[cu.id].materias.push(a.materias);
+    if (!cursoMapClases[cu.id]) cursoMapClases[cu.id] = { ...cu, materias:[] };
+    cursoMapClases[cu.id].materias.push(a.materias);
   });
 
-  // Ver qué listas ya tomó hoy (por curso+materia)
-  const { data: asistHoy } = await sb.from('asistencia')
-    .select('curso_id, materia_id, hora_clase')
-    .eq('fecha', hoy)
-    .eq('registrado_por', miId);
-
-  const tomadas = new Set((asistHoy||[]).map(a => `${a.curso_id}_${a.materia_id}`));
-
-  // Resumen del día (basado en preceptor)
   const resumenHTML = await buildResumenDia(instId, hoy);
 
   c.innerHTML = `
     <div class="pg-t">Asistencia</div>
     <div class="pg-s">${formatFechaLatam(hoy)}</div>
 
+    ${gradoAsigs.length ? `
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:12px">🏫 Mis cursos</div>
+      <div class="curso-grid-asist">
+        ${gradoAsigs.map(a => {
+          const cu     = a.cursos;
+          const tomada = gradoTomadas.has(cu.id);
+          return `
+            <div class="curso-card-asist"
+              onclick="mostrarListaCurso('${cu.id}','${cu.nivel}','${hoy}',true,null,null,'rAsistDocente')">
+              <div class="cca-top">
+                <div class="cca-badge" style="background:${tomada?'var(--verde-l)':'var(--rojo-l)'};color:${tomada?'var(--verde)':'var(--rojo)'}">
+                  ${cu.nombre}${cu.division}
+                </div>
+                <span>${tomada?'✅':'⏳'}</span>
+              </div>
+              <div style="font-size:10px;color:var(--txt2);margin-top:6px">
+                ${tomada?'Lista registrada':'Tomar lista →'}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+      <div style="margin-top:12px">
+        <div class="sec-lb" style="margin-top:0;margin-bottom:6px">Cargar lista de otro día</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${renderFechaInput('fecha-grado-hist', diaHabilMasReciente(hoy), {wrapStyle:'flex:1;min-width:140px', onchange:"validarFechaHabilCustom('fecha-grado-hist')"})}
+          ${gradoAsigs.length > 1 ? `
+          <select id="curso-grado-hist" class="sel-estilizado" style="flex:1;min-width:140px">
+            ${gradoAsigs.map(a => `<option value="${a.cursos.id}|${a.cursos.nivel}">${a.cursos.nombre}${a.cursos.division}</option>`).join('')}
+          </select>` : `<input type="hidden" id="curso-grado-hist" value="${gradoAsigs[0].cursos.id}|${gradoAsigs[0].cursos.nivel}">`}
+          <button class="btn-s" style="font-size:11px" onclick="editarListaGrado()">Ver lista →</button>
+        </div>
+      </div>
+    </div>` : ''}
+
+    ${clasesAsigs.length ? `
     <div class="card" style="margin-bottom:14px">
       <div style="font-size:13px;font-weight:600;margin-bottom:12px">📋 Tomar lista</div>
-
       <div style="margin-bottom:10px">
         <div class="sec-lb" style="margin-top:0">Mis clases</div>
         <div class="docente-cursos-list">
-          ${Object.values(cursoMap).map(cu =>
+          ${Object.values(cursoMapClases).map(cu =>
             cu.materias.map(m => {
               const key    = `${cu.id}_${m.id}`;
-              const tomada = tomadas.has(key);
+              const tomada = clasesTomadas.has(key);
               return `
                 <div class="doc-curso-card ${tomada?'tomada':''}"
                   data-curso="${cu.id}" data-materia="${m.id}" data-nivel="${cu.nivel}"
@@ -595,7 +651,6 @@ async function rAsistDocente() {
           ).join('')}
         </div>
       </div>
-
       <div id="sel-hora-doc" style="display:none;margin-bottom:10px">
         <div class="sec-lb">Hora de clase</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap" id="horas-chips">
@@ -604,33 +659,53 @@ async function rAsistDocente() {
           `).join('')}
         </div>
       </div>
-
       <div id="sel-fecha-doc" style="display:none;margin-bottom:10px">
         <div class="sec-lb">Fecha (podés cargar días anteriores)</div>
         ${renderFechaInput('fecha-doc', diaHabilMasReciente(hoy), {onchange:"validarFechaHabilCustom('fecha-doc')"})}
       </div>
-
       <button class="btn-p" id="btn-ir-lista-doc" style="width:100%;display:none" onclick="irListaDocente()">
         Ver lista →
       </button>
-    </div>
+    </div>` : ''}
 
-    <div class="sec-lb">📊 Grilla de asistencias</div>
+    ${gradoAsigs.length ? `
+    <div class="sec-lb">📊 Grilla (mis cursos)</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-      ${Object.values(cursoMap).map(cu =>
+      ${gradoAsigs.map(a => {
+        const cu = a.cursos;
+        return `<button class="btn-s" style="font-size:11px"
+          onclick="mostrarGrillaPreceptor('${cu.id}','${cu.nivel}','${cu.nombre}${cu.division}','rAsistDocente')">
+          📊 ${cu.nombre}${cu.division}
+        </button>`;
+      }).join('')}
+    </div>` : ''}
+
+    ${clasesAsigs.length ? `
+    <div class="sec-lb">📊 Grilla (mis clases)</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      ${Object.values(cursoMapClases).map(cu =>
         cu.materias.map(m => `
-          <button class="btn-s" style="font-size:11px" onclick="mostrarGrillaDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division} · ${m.nombre}')">
+          <button class="btn-s" style="font-size:11px"
+            onclick="mostrarGrillaDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division} · ${m.nombre}')">
             📊 ${cu.nombre}${cu.division} · ${m.nombre}
           </button>`).join('')
       ).join('')}
-    </div>
+    </div>` : ''}
 
     ${resumenHTML}`;
 
-  window._docCursoMap = cursoMap;
+  window._docCursoMap = cursoMapClases;
   window._docCursoSel = null;
   window._docMatSel   = null;
   HORA_SEL = null;
+}
+
+function editarListaGrado() {
+  const fecha = getFechaInput('fecha-grado-hist');
+  const val   = document.getElementById('curso-grado-hist')?.value;
+  if (!fecha || !val) return;
+  const [cursoId, nivel] = val.split('|');
+  mostrarListaCurso(cursoId, nivel, fecha, true, null, null, 'rAsistDocente');
 }
 
 function selClaseDocente(btn, cursoId, materiaId, nivel) {
@@ -730,7 +805,7 @@ async function mostrarGrillaDocente(cursoId, nivel, materiaId, titulo) {
 // ═══════════════════════════════════════════════════════
 // LISTA COMPARTIDA (preceptor + director)
 // ═══════════════════════════════════════════════════════
-async function mostrarListaCurso(cursoId, nivel, fecha, editable, materiaId = null, horaClase = null) {
+async function mostrarListaCurso(cursoId, nivel, fecha, editable, materiaId = null, horaClase = null, volverFn = null) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
@@ -760,7 +835,7 @@ async function mostrarListaCurso(cursoId, nivel, fecha, editable, materiaId = nu
 
   const titulo = `${curso?.nombre}${curso?.division}${horaClase ? ' · '+horaClase+'° hora' : ''}`;
 
-  const volver = horaClase ? 'rAsistDocente' : `rAsistPreceptor`;
+  const volver = volverFn || (horaClase ? 'rAsistDocente' : 'rAsistPreceptor');
 
   c.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
