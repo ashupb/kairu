@@ -90,7 +90,7 @@ function mostrarFormReu() {
       <input type="text" id="reu-titulo" placeholder="Ej: Reunión de equipo docente" style="margin-bottom:8px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
         <div><div class="sec-lb">Fecha</div>
-          <input type="date" id="reu-fecha" style="width:100%;border:1px solid var(--brd);border-radius:var(--rad);padding:8px;background:var(--surf);color:var(--txt)">
+          ${renderFechaInput('reu-fecha', '')}
         </div>
         <div><div class="sec-lb">Hora</div>
           <input type="time" id="reu-hora" style="width:100%;border:1px solid var(--brd);border-radius:var(--rad);padding:8px;background:var(--surf);color:var(--txt)">
@@ -109,7 +109,7 @@ function mostrarFormReu() {
 
 async function guardarReu() {
   const titulo = document.getElementById('reu-titulo')?.value.trim();
-  const fecha  = document.getElementById('reu-fecha')?.value;
+  const fecha  = getFechaInput('reu-fecha');
   const hora   = document.getElementById('reu-hora')?.value;
   const lugar  = document.getElementById('reu-lugar')?.value.trim();
   const desc   = document.getElementById('reu-desc')?.value.trim();
