@@ -3,7 +3,7 @@
 // =====================================================
 
 let AGENDA_SEMANA_INICIO = _lunesDeHoy();
-let AGENDA_DIA_SEL       = new Date().toISOString().split('T')[0];
+let AGENDA_DIA_SEL       = hoyISO();
 let AGENDA_NIVEL         = 'todos';
 let AGENDA_VISTA         = 'semana';   // 'semana' | 'mes'
 let AGENDA_MES           = new Date().getMonth();
@@ -100,7 +100,7 @@ async function rAgenda() {
   USUARIOS_INST = usuariosRes.data || [];
 
   const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = hoyISO();
 
   const filtroTabsHTML = (rol === 'director_general' || rol === 'directivo_nivel') ? `
     <div class="nivel-tabs-ag" style="margin-bottom:14px">
@@ -281,7 +281,7 @@ function buildCalGrid(eventos, primerDia, ultimoDia) {
     evPorDia[d].sort((a,b) => (!a.hora?1:!b.hora?-1:a.hora.localeCompare(b.hora)));
   });
 
-  const hoyISO = new Date().toISOString().split('T')[0];
+  const _hoyStr = hoyISO();
   const inicioSemana = primerDia.getDay();
   const totalDias    = ultimoDia.getDate();
 
@@ -295,7 +295,7 @@ function buildCalGrid(eventos, primerDia, ultimoDia) {
 
   for (let dia = 1; dia <= totalDias; dia++) {
     const fechaStr = isoFecha(AGENDA_ANIO, AGENDA_MES + 1, dia);
-    const esHoy = fechaStr === hoyISO;
+    const esHoy = fechaStr === _hoyStr;
     const evs   = evPorDia[fechaStr] || [];
     html += `<div class="cal-cell-ag${esHoy?' hoy':''}">
       <div class="cal-dia-num-ag${esHoy?' hoy':''}">${dia}</div>
@@ -770,7 +770,7 @@ async function guardarEvento(eventoId) {
       // Notificar a convocados Y responsables
       const fechaStr = data.fecha_inicio ? (() => {
         const d = new Date(data.fecha_inicio + 'T12:00:00');
-        return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+        return `${d.getDate()}/${d.getMonth()+1}/${String(d.getFullYear()).slice(2)}`;
       })() : '';
       const toNotif = [...new Set([...convocados, ...responsables])];
       if (toNotif.length) {
@@ -824,7 +824,7 @@ function setAgendaVista(v) {
 
 function irHoy() {
   AGENDA_SEMANA_INICIO = _lunesDeHoy();
-  AGENDA_DIA_SEL = new Date().toISOString().split('T')[0];
+  AGENDA_DIA_SEL = hoyISO();
   rAgenda();
 }
 
@@ -920,7 +920,7 @@ async function verAgendaCursos() {
   const instId = USUARIO_ACTUAL.institucion_id;
   const rol    = USUARIO_ACTUAL.rol;
   const miId   = USUARIO_ACTUAL.id;
-  const hoy    = new Date().toISOString().split('T')[0];
+  const hoy    = hoyISO();
 
   // Filtrar cursos según rol
   let cursos = [];
@@ -996,7 +996,7 @@ async function agregarEventoCurso() {
   const instId = USUARIO_ACTUAL.institucion_id;
   const miId   = USUARIO_ACTUAL.id;
   const rol    = USUARIO_ACTUAL.rol;
-  const hoy    = new Date().toISOString().split('T')[0];
+  const hoy    = hoyISO();
 
   let cursos = [];
   if (rol === 'docente') {

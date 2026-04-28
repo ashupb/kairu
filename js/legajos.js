@@ -734,7 +734,7 @@ function _mostrarFormEOE(alumnoId) {
           <option>Derivación externa</option><option>Reunión de equipo</option>
           <option>Seguimiento</option><option>Otro</option>
         </select>
-        <input type="date" id="eoe-fecha" value="${new Date().toISOString().slice(0,10)}">
+        <input type="date" id="eoe-fecha" value="${hoyISO()}">
       </div>
       <textarea id="eoe-desc" rows="3" placeholder="Descripción de la intervención..."></textarea>
       <input type="text" id="eoe-deriv" placeholder="Derivación a (si aplica)" style="margin-top:8px">
@@ -754,7 +754,7 @@ async function _guardarIntervencionEOE(alumnoId) {
     tipo:           document.getElementById('eoe-tipo')?.value  || null,
     descripcion:    desc,
     derivacion:     document.getElementById('eoe-deriv')?.value || null,
-    fecha:          document.getElementById('eoe-fecha')?.value || new Date().toISOString().slice(0,10),
+    fecha:          document.getElementById('eoe-fecha')?.value || hoyISO(),
   });
   if (error) { alert('Error: ' + error.message); return; }
   await _tabEOE(document.getElementById('leg-tab-contenido'));

@@ -6,6 +6,15 @@ let TIPOS_JUST   = [];
 let CONFIG_ASIST = {};
 let HORA_SEL     = null;
 
+function validarFechaHabilInput(inputEl) {
+  const val = inputEl.value;
+  if (!val) return;
+  if (!esFechaHabil(val)) {
+    alert('No se toma asistencia los sábados ni domingos. Se seleccionó el viernes anterior.');
+    inputEl.value = diaHabilMasReciente(val);
+  }
+}
+
 const ESTADOS_ASIST = {
   presente:    { label:'Presente',    short:'P', icon:'✅', color:'var(--verde)',  bg:'var(--verde-l)', valor:0 },
   ausente:     { label:'Ausente',     short:'A', icon:'❌', color:'var(--rojo)',   bg:'var(--rojo-l)',  valor:1 },
@@ -46,7 +55,7 @@ async function rAsist() {
 async function rAsistDirector() {
   const c      = document.getElementById('page-asist');
   const instId = USUARIO_ACTUAL.institucion_id;
-  const hoy    = new Date().toISOString().split('T')[0];
+  const hoy    = hoyISO();
   const nivel  = USUARIO_ACTUAL.rol === 'directivo_nivel' ? USUARIO_ACTUAL.nivel : null;
 
   const [cursosRes, alumnosRes, asistHoyRes] = await Promise.all([
@@ -157,7 +166,7 @@ async function verCursoDirector(cursoId, nivel) {
     sb.from('cursos').select('*').eq('id', cursoId).single(),
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
     sb.from('asistencia').select('*').eq('curso_id', cursoId)
-      .gte('fecha', new Date(new Date().setMonth(new Date().getMonth()-1)).toISOString().split('T')[0])
+      .gte('fecha', (() => { const d = new Date(); d.setMonth(d.getMonth()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })())
       .order('fecha'),
   ]);
 
@@ -180,7 +189,7 @@ async function verCursoDirector(cursoId, nivel) {
   });
 
   // Stats generales
-  const hoy     = new Date().toISOString().split('T')[0];
+  const hoy     = hoyISO();
   const asistHoy = asists.filter(a => a.fecha === hoy);
   const presHoy  = asistHoy.filter(a => a.estado === 'presente').length;
   const ausHoy   = asistHoy.filter(a => a.estado === 'ausente').length;
@@ -330,8 +339,9 @@ async function mostrarGrillaDirector(cursoId, nivel) {
 async function rAsistPreceptor() {
   const c      = document.getElementById('page-asist');
   const instId = USUARIO_ACTUAL.institucion_id;
-  const hoy    = new Date().toISOString().split('T')[0];
-  const ayer   = new Date(Date.now()-86400000).toISOString().split('T')[0];
+  const hoy    = hoyISO();
+  const _dAyer = new Date(); _dAyer.setDate(_dAyer.getDate()-1);
+  const ayer   = `${_dAyer.getFullYear()}-${String(_dAyer.getMonth()+1).padStart(2,'0')}-${String(_dAyer.getDate()).padStart(2,'0')}`;
   const nivel  = USUARIO_ACTUAL.nivel || 'secundario';
 
   const cursosIds = USUARIO_ACTUAL.cursos_ids;
@@ -426,7 +436,7 @@ async function rAsistPreceptor() {
 
     <div class="sec-lb">Editar lista de otro día</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-      <input type="date" id="fecha-prec-hist" class="input-fecha" value="${hoy}" max="${hoy}" style="flex:1;min-width:140px">
+      <input type="date" id="fecha-prec-hist" class="input-fecha" value="${diaHabilMasReciente(hoy)}" max="${hoy}" onchange="validarFechaHabilInput(this)" style="flex:1;min-width:140px">
       <select id="curso-prec-hist" class="sel-estilizado" style="flex:1;min-width:140px">
         ${cursos.map(cu=>`<option value="${cu.id}|${nivel}">${cu.nombre}${cu.division}</option>`).join('')}
       </select>
@@ -525,7 +535,7 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso) {
 async function rAsistDocente() {
   const c      = document.getElementById('page-asist');
   const instId = USUARIO_ACTUAL.institucion_id;
-  const hoy    = new Date().toISOString().split('T')[0];
+  const hoy    = hoyISO();
   const miId   = USUARIO_ACTUAL.id;
 
   const { data: asignaciones } = await sb.from('asignaciones')
@@ -597,7 +607,7 @@ async function rAsistDocente() {
 
       <div id="sel-fecha-doc" style="display:none;margin-bottom:10px">
         <div class="sec-lb">Fecha (podés cargar días anteriores)</div>
-        <input type="date" id="fecha-doc" class="input-fecha" value="${hoy}" max="${hoy}">
+        <input type="date" id="fecha-doc" class="input-fecha" value="${diaHabilMasReciente(hoy)}" max="${hoy}" onchange="validarFechaHabilInput(this)">
       </div>
 
       <button class="btn-p" id="btn-ir-lista-doc" style="width:100%;display:none" onclick="irListaDocente()">

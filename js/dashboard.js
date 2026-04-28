@@ -6,7 +6,7 @@
 
 // Lunes a domingo de la semana actual
 function _semanaActual() {
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = hoyISO();
   const d   = new Date(hoy + 'T12:00:00');
   const dow = d.getDay();
   const diff = dow === 0 ? 6 : dow - 1;
@@ -370,6 +370,10 @@ async function rDashDirectivo() {
   const nivel  = USUARIO_ACTUAL.nivel || 'secundario';
   const sem    = _semanaActual();
 
+  const { data: _cursosNivel } = await sb.from('cursos')
+    .select('id').eq('institucion_id', instId).eq('nivel', nivel);
+  const cursoIdsNivel = (_cursosNivel || []).map(c => c.id);
+
   const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes] = await Promise.all([
     sb.from('problematicas')
       .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
@@ -392,10 +396,13 @@ async function rDashDirectivo() {
       .select('id,problematica:problematicas(id,tipo,urgencia,alumno:alumnos(nombre,apellido))')
       .eq('usuario_id', miId).eq('leida', false)
       .order('created_at', { ascending:false }).limit(10),
-    sb.from('alumnos').select('id', { count:'exact', head:true })
-      .eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
-    sb.from('usuarios').select('id', { count:'exact', head:true })
-      .eq('institucion_id', instId).eq('rol', 'docente').or('activo.is.null,activo.eq.true'),
+    cursoIdsNivel.length
+      ? sb.from('alumnos').select('id', { count:'exact', head:true })
+          .in('curso_id', cursoIdsNivel).or('activo.is.null,activo.eq.true')
+      : Promise.resolve({ count: 0 }),
+    cursoIdsNivel.length
+      ? sb.from('asignaciones').select('docente_id').in('curso_id', cursoIdsNivel)
+      : Promise.resolve({ data: [] }),
   ]);
 
   const probs         = probRes.data    || [];
@@ -404,7 +411,7 @@ async function rDashDirectivo() {
   const pendientes    = (respRes.data   || []).filter(r => r.eventos_institucionales);
   const alertas       = alertasRes.error ? [] : (alertasRes.data || []);
   const totalAlumnos  = alumnosRes.count  ?? 0;
-  const totalDocentes = docentesRes.count ?? 0;
+  const totalDocentes = new Set((docentesRes.data || []).map(a => a.docente_id).filter(Boolean)).size;
   const probsNivel    = probs.filter(p => p.alumno?.curso?.nivel === nivel);
 
   const nc = NIVEL_CONFIG[nivel] || NIVEL_CONFIG.todos;

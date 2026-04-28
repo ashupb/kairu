@@ -736,7 +736,7 @@ async function crearInstancia(cursoId, materiaId, periodoId, nivel) {
     TIPOS_EVAL = data || [];
   }
 
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = hoyISO();
 
   const { data: instExist } = await sb.from('instancias_evaluativas')
     .select('*, tipos_evaluacion(nombre)')

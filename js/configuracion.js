@@ -1728,7 +1728,7 @@ async function _renderParamNivel(nivel) {
   const _fmtP = iso => {
     if (!iso) return '—';
     const d = new Date(iso + 'T12:00:00');
-    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)}`;
   };
 
   cont.innerHTML = `

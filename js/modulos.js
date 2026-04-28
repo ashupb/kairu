@@ -511,7 +511,7 @@ async function _abrirFormInc(objId) {
     return `<option value="${cu.id}">${lbl}</option>`;
   }).join('');
 
-  const hoy = new Date().toISOString().slice(0,10);
+  const hoy = hoyISO();
   const html = `
     <div style="display:grid;gap:10px">
       <div style="background:var(--verde-l);border:1px solid rgba(34,153,87,0.2);border-radius:var(--rad);padding:10px 12px">

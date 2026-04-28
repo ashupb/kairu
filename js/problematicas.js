@@ -106,6 +106,13 @@ async function rProb() {
       }
       lista = lista.filter(p => !p.confidencial || p.responsable_id === USUARIO_ACTUAL.id);
     }
+    if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
+      lista = lista.filter(p => {
+        const mod = p.modalidad || 'individual';
+        if (mod === 'grupal' || mod === 'curso') return p.nivel === USUARIO_ACTUAL.nivel;
+        return p.alumno?.curso?.nivel === USUARIO_ACTUAL.nivel;
+      });
+    }
     window._probCache = lista;
 
     const abiertas = lista.filter(p => p.estado === 'abierta').length;
@@ -155,7 +162,7 @@ function renderFiltrosProb() {
         ${chip('urgencia','media','Media', 'color:var(--ambar);border-color:rgba(214,137,16,.3);background:var(--amb-l)')}
         ${chip('urgencia','baja','Baja',   'color:var(--verde);border-color:rgba(26,74,46,.3);background:var(--verde-l)')}
       </div>
-      ${(_probMigracionOk === true) ? `<div class="chip-row">
+      ${(_probMigracionOk === true && !['directivo_nivel','preceptor'].includes(USUARIO_ACTUAL.rol)) ? `<div class="chip-row">
         ${chip('nivel','todos','Todos los niveles')}
         ${chip('nivel','inicial','Inicial')}
         ${chip('nivel','primario','Primario')}

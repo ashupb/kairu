@@ -2,7 +2,6 @@
 // MAIN.JS — Arranque y navegación
 // =====================================================
 
-let PAGE_HIST = [];
 let CUR_PAGE  = 'dash';
 let DARK      = false;
 let SB_OPEN   = true;
@@ -53,7 +52,6 @@ async function iniciarApp() {
 
 // ── NAVEGACIÓN ────────────────────────────────────────
 async function goPage(id) {
-  if (CUR_PAGE !== id) PAGE_HIST.push(CUR_PAGE);
   CUR_PAGE = id;
   EX = null;
 
@@ -62,9 +60,6 @@ async function goPage(id) {
   if (pg) pg.classList.add('on');
 
   document.getElementById('tb-title').textContent = PAGE_LABELS[id] || id;
-
-  const back = document.getElementById('tb-back');
-  back.classList.toggle('show', PAGE_HIST.length > 0);
 
   renderNav();
 
@@ -95,21 +90,6 @@ renderBottomNav();
 
 }
 
-function goBack() {
-  if (PAGE_HIST.length > 0) {
-    const prev = PAGE_HIST.pop();
-    CUR_PAGE = prev;
-    EX = null;
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('on'));
-    const pg = document.getElementById('page-' + prev);
-    if (pg) pg.classList.add('on');
-    document.getElementById('tb-title').textContent = PAGE_LABELS[prev] || prev;
-    document.getElementById('tb-back').classList.toggle('show', PAGE_HIST.length > 0);
-    renderNav();
-    const renderers = { dash:rDash,prob:rProb,obj:rObj,reuniones:rReuniones,asist:rAsist,leg:rLeg,eoe:rEOE,admin:rAdmin };
-    if (renderers[prev]) renderers[prev]();
-  }
-}
 
 // ── UI CONTROLS ───────────────────────────────────────
 function toggleSidebar() {
@@ -177,15 +157,30 @@ function promedio(arr) {
   const v = (arr || []).filter(x => x !== null && x !== undefined && x !== '');
   return v.length ? v.reduce((a, b) => a + Number(b), 0) / v.length : null;
 }
+function hoyISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function diaHabilMasReciente(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  const dia = d.getDay();
+  if (dia === 0) d.setDate(d.getDate() - 2);      // domingo → viernes
+  else if (dia === 6) d.setDate(d.getDate() - 1); // sábado → viernes
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function esFechaHabil(iso) {
+  const dia = new Date(iso + 'T12:00:00').getDay();
+  return dia >= 1 && dia <= 5;
+}
 function formatFecha(iso) {
   if (!iso) return '—';
   const d = new Date(iso + 'T12:00:00');
-  return d.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  return d.toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit' });
 }
 function formatFechaLatam(iso) {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
+  return `${d}/${m}/${y.slice(2)}`;
 }
 function formatFechaLarga(iso) {
   if (!iso) return '—';

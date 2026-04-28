@@ -131,3 +131,13 @@ Varios módulos usan una función `detectarMigracion()` que cachea si ciertas co
 
 ### Carga de scripts
 El orden de `<script>` en `index.html` importa porque todo es global. `config.js` va primero (define `sb`), `main.js` y `auth.js` después, luego los módulos.
+
+## Design System
+
+Ver `.claude/skills/kairu-design/SKILL.md` para la guía completa de:
+- Paleta de colores y variables CSS
+- Tipografía (DM Sans + DM Mono)
+- Componentes base (botones, inputs, badges, cards, sidebar, bottom nav)
+- Reglas de logo y microcopia
+
+**Usar siempre las variables CSS definidas ahí. No inventar colores ni fuentes.**

@@ -5,7 +5,7 @@
 async function rReuniones() {
   showLoading('reuniones');
   try {
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = hoyISO();
     const { data: reuniones, error } = await sb
       .from('reuniones')
       .select(`
