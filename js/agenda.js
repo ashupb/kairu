@@ -3,7 +3,7 @@
 // =====================================================
 
 let AGENDA_SEMANA_INICIO = _lunesDeHoy();
-let AGENDA_DIA_SEL       = hoyISO();
+let AGENDA_DIA_SEL       = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })();
 let AGENDA_NIVEL         = 'todos';
 let AGENDA_VISTA         = 'semana';   // 'semana' | 'mes'
 let AGENDA_MES           = new Date().getMonth();
@@ -13,24 +13,28 @@ let USUARIOS_INST        = [];
 let _agendaEventosSem    = [];
 let _agendaEventoAbierto = null;
 
+function _isoLocal(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function _lunesDeHoy() {
   const d = new Date();
   const dow = d.getDay();
   d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-  return d.toISOString().split('T')[0];
+  return _isoLocal(d);
 }
 
 function _lunesDe(iso) {
   const d = new Date(iso + 'T12:00:00');
   const dow = d.getDay();
   d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-  return d.toISOString().split('T')[0];
+  return _isoLocal(d);
 }
 
 function _addDias(iso, dias) {
   const d = new Date(iso + 'T12:00:00');
   d.setDate(d.getDate() + dias);
-  return d.toISOString().split('T')[0];
+  return _isoLocal(d);
 }
 
 const NIVEL_CONFIG = {
