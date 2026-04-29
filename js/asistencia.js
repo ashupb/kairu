@@ -350,14 +350,22 @@ async function mostrarGrillaDirector(cursoId, nivel) {
 
 // ═══════════════════════════════════════════════════════
 // PRECEPTOR
+// --- MODO: preceptor-readonly-primaria ---
+//   Primario/inicial: la asistencia la toma el docente de grado.
+//   El preceptor solo puede ver las listas (modo verificación).
+// --- MODO: secundario (sin cambios) ---
 // ═══════════════════════════════════════════════════════
 async function rAsistPreceptor() {
   const c      = document.getElementById('page-asist');
   const instId = USUARIO_ACTUAL.institucion_id;
   const hoy    = hoyISO();
+  const nivel  = USUARIO_ACTUAL.nivel || 'secundario';
+
+  // Primario/inicial: preceptor es solo lectura (asistencia la toma el docente de grado)
+  const readonly = nivel === 'primario' || nivel === 'inicial';
+
   const _dAyer = new Date(); _dAyer.setDate(_dAyer.getDate()-1);
   const ayer   = `${_dAyer.getFullYear()}-${String(_dAyer.getMonth()+1).padStart(2,'0')}-${String(_dAyer.getDate()).padStart(2,'0')}`;
-  const nivel  = USUARIO_ACTUAL.nivel || 'secundario';
 
   const cursosIds = USUARIO_ACTUAL.cursos_ids;
   let query = sb.from('cursos').select('*').eq('institucion_id', instId).eq('nivel', nivel).order('nombre');
@@ -369,16 +377,16 @@ async function rAsistPreceptor() {
     return;
   }
 
-  // Verificar si hoy y ayer son días hábiles (lunes a viernes)
-  const diaHoy  = new Date(hoy + 'T12:00:00').getDay();
+  const diaHoy   = new Date(hoy + 'T12:00:00').getDay();
   const hoyHabil = diaHoy >= 1 && diaHoy <= 5;
-  const diaAyer = new Date(ayer + 'T12:00:00').getDay(); // 0=dom, 6=sab
+  const diaAyer  = new Date(ayer + 'T12:00:00').getDay();
   const ayerHabil = diaAyer >= 1 && diaAyer <= 5;
 
   let bloqueoAyer = false;
   let cursosAyerPendientes = [];
 
-  if (ayerHabil) {
+  // En primario/inicial no hay bloqueo: la asistencia la toma el docente de grado
+  if (!readonly && ayerHabil) {
     const { data: asistAyer } = await sb.from('asistencia')
       .select('curso_id').eq('fecha', ayer).is('hora_clase', null)
       .in('curso_id', cursos.map(c => c.id));
@@ -392,17 +400,25 @@ async function rAsistPreceptor() {
     .select('curso_id').eq('fecha', hoy).is('hora_clase', null)
     .in('curso_id', cursos.map(c => c.id));
   const cursosConLista = new Set((asistHoy||[]).map(a => a.curso_id));
-  const pendientesHoy  = hoyHabil ? cursos.filter(cu => !cursosConLista.has(cu.id)) : [];
+  const pendientesHoy  = !readonly && hoyHabil ? cursos.filter(cu => !cursosConLista.has(cu.id)) : [];
   const todasHoy       = !hoyHabil || pendientesHoy.length === 0;
 
-  // Resumen del día
   const resumenHTML = await buildResumenDia(instId, hoy);
 
   c.innerHTML = `
-    <div class="pg-t">Tomar lista</div>
+    <div class="pg-t">${readonly ? 'Asistencia' : 'Tomar lista'}</div>
     <div class="pg-s">${formatFechaLatam(hoy)}</div>
 
-    ${bloqueoAyer ? `
+    ${readonly ? `
+    <div style="background:var(--azul-l);border-left:4px solid var(--azul);border-radius:var(--rad);padding:10px 14px;margin-bottom:14px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">👁️</span>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--azul)">Modo verificación</div>
+        <div style="font-size:10px;color:var(--txt2)">La asistencia la registra el docente de grado. Podés ver las listas y el historial.</div>
+      </div>
+    </div>` : ''}
+
+    ${!readonly && bloqueoAyer ? `
     <div style="background:var(--rojo-l);border:2px solid var(--rojo);border-radius:var(--rad-lg);padding:14px;margin-bottom:14px">
       <div style="font-size:13px;font-weight:700;color:var(--rojo);margin-bottom:6px">
         🔒 Debés completar las listas del día anterior
@@ -418,7 +434,7 @@ async function rAsistPreceptor() {
       </div>
     </div>` : ''}
 
-    ${!bloqueoAyer ? `
+    ${!readonly && !bloqueoAyer ? `
     <div style="background:${todasHoy?'var(--verde-l)':'var(--rojo-l)'};border-left:4px solid ${todasHoy?'var(--verde)':'var(--rojo)'};border-radius:var(--rad);padding:12px 14px;margin-bottom:14px">
       <div style="font-size:12px;font-weight:600;color:${todasHoy?'var(--verde)':'var(--rojo)'}">
         ${todasHoy ? '✅ Todas las listas de hoy registradas' : `⏳ Listas pendientes — ${formatFechaLatam(hoy)}`}
@@ -432,23 +448,38 @@ async function rAsistPreceptor() {
     <div class="sec-lb">Mis cursos</div>
     <div class="curso-grid-asist">
       ${cursos.map(cu => {
-        const listo    = cursosConLista.has(cu.id);
-        const bloqueado = bloqueoAyer && !cursosAyerPendientes.find(c=>c.id===cu.id);
+        const listo = cursosConLista.has(cu.id);
+        const onclick = readonly
+          ? `mostrarListaCurso('${cu.id}','${nivel}','${hoy}',false)`
+          : (bloqueoAyer
+            ? `mostrarListaCurso('${cu.id}','${nivel}','${ayer}',true)`
+            : `mostrarListaCurso('${cu.id}','${nivel}','${hoy}',true)`);
         return `
-          <div class="curso-card-asist" onclick="${bloqueoAyer?'mostrarListaCurso(\''+cu.id+'\',\''+nivel+'\',\''+ayer+'\',true)':'mostrarListaCurso(\''+cu.id+'\',\''+nivel+'\',\''+hoy+'\',true)'}">
+          <div class="curso-card-asist" onclick="${onclick}">
             <div class="cca-top">
-              <div class="cca-badge" style="background:${listo?'var(--verde-l)':'var(--rojo-l)'};color:${listo?'var(--verde)':'var(--rojo)'}">
+              <div class="cca-badge" style="background:${listo?'var(--verde-l)':'var(--gris-l)'};color:${listo?'var(--verde)':'var(--txt2)'}">
                 ${cu.nombre}${cu.division}
               </div>
-              <span>${listo?'✅':'⏳'}</span>
+              <span>${listo ? '✅' : (readonly ? '—' : '⏳')}</span>
             </div>
             <div style="font-size:10px;color:var(--txt2);margin-top:6px">
-              ${listo?'Lista registrada':'Tomar lista →'}
+              ${readonly
+                ? (listo ? 'Ver lista registrada' : 'Sin registros hoy')
+                : (listo ? 'Lista registrada' : 'Tomar lista →')}
             </div>
           </div>`;
       }).join('')}
     </div>
 
+    ${readonly ? `
+    <div class="sec-lb">Ver lista de otro día</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      ${renderFechaInput('fecha-prec-hist', diaHabilMasReciente(hoy), {wrapStyle:'flex:1;min-width:140px', onchange:"validarFechaHabilCustom('fecha-prec-hist')"})}
+      <select id="curso-prec-hist" class="sel-estilizado" style="flex:1;min-width:140px">
+        ${cursos.map(cu=>`<option value="${cu.id}|${nivel}">${cu.nombre}${cu.division}</option>`).join('')}
+      </select>
+      <button class="btn-s" style="font-size:11px" onclick="verListaHistoricaReadonly()">Ver →</button>
+    </div>` : `
     <div class="sec-lb">Editar lista de otro día</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
       ${renderFechaInput('fecha-prec-hist', diaHabilMasReciente(hoy), {wrapStyle:'flex:1;min-width:140px', onchange:"validarFechaHabilCustom('fecha-prec-hist')"})}
@@ -456,7 +487,7 @@ async function rAsistPreceptor() {
         ${cursos.map(cu=>`<option value="${cu.id}|${nivel}">${cu.nombre}${cu.division}</option>`).join('')}
       </select>
       <button class="btn-s" style="font-size:11px" onclick="editarListaHistorica()">Editar →</button>
-    </div>
+    </div>`}
 
     <div class="sec-lb">📊 Grilla de asistencias</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
@@ -475,6 +506,14 @@ function editarListaHistorica() {
   if (!fecha || !val) return;
   const [cursoId, nivel] = val.split('|');
   mostrarListaCurso(cursoId, nivel, fecha, true);
+}
+
+function verListaHistoricaReadonly() {
+  const fecha = getFechaInput('fecha-prec-hist');
+  const val   = document.getElementById('curso-prec-hist')?.value;
+  if (!fecha || !val) return;
+  const [cursoId, nivel] = val.split('|');
+  mostrarListaCurso(cursoId, nivel, fecha, false);
 }
 
 async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = null) {

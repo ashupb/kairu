@@ -1274,12 +1274,14 @@ async function _renderMaterias() {
   });
 
   const html = Object.entries(porNivel).map(([nivel, lista]) => {
-    const color = NIVEL_COLORS_ADM[nivel] || 'var(--gris)';
+    const color    = NIVEL_COLORS_ADM[nivel] || 'var(--gris)';
+    const showTipo = nivel !== 'secundario';
     return `
       <div class="sec-lb" style="color:${color}">${NIVEL_LABELS_ADM[nivel] || nivel}</div>
       ${lista.map(m => `
         <div class="card" style="display:flex;align-items:center;gap:10px;padding:10px 14px;margin-bottom:6px">
           <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
+          ${showTipo ? `<span class="tag ${m.tipo === 'especial' ? 'td' : 'tg'}" style="font-size:9px">${m.tipo === 'especial' ? 'especial' : 'común'}</span>` : ''}
           <button class="btn-s" onclick="_abrirModalMateria('${m.id}')">Editar</button>
           <button class="btn-d" onclick="_desactivarMateria('${m.id}')">Eliminar</button>
         </div>`).join('')}`;
@@ -1306,21 +1308,29 @@ async function _abrirModalMateria(materiaId) {
     </div>
     <div class="adm-form-row">
       <label class="adm-label">Nivel</label>
-      <select id="mmat-nivel" ${USUARIO_ACTUAL.rol === 'directivo_nivel' ? 'disabled' : ''}>
+      <select id="mmat-nivel" ${USUARIO_ACTUAL.rol === 'directivo_nivel' ? 'disabled' : ''} onchange="_mmatToggleTipo()">
         ${niveles.map(n => `<option value="${n}" ${n === nivelSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[n]}</option>`).join('')}
+      </select>
+    </div>
+    <div class="adm-form-row" id="mmat-tipo-row" ${nivelSel === 'secundario' ? 'style="display:none"' : ''}>
+      <label class="adm-label">Tipo</label>
+      <select id="mmat-tipo">
+        <option value="comun"    ${(mat?.tipo || 'comun') !== 'especial' ? 'selected' : ''}>Común (evalúa el docente de grado)</option>
+        <option value="especial" ${mat?.tipo === 'especial' ? 'selected' : ''}>Especial (tiene su propio docente)</option>
       </select>
     </div>
     `,
     async () => {
       const nombre = document.getElementById('mmat-nombre')?.value?.trim();
       const nivel  = document.getElementById('mmat-nivel')?.value;
+      const tipo   = document.getElementById('mmat-tipo')?.value || 'comun';
       if (!nombre) { alert('El nombre es requerido.'); return; }
       try {
         if (materiaId) {
-          const { error } = await sb.from('materias').update({ nombre, nivel }).eq('id', materiaId);
+          const { error } = await sb.from('materias').update({ nombre, nivel, tipo }).eq('id', materiaId);
           if (error) throw error;
         } else {
-          const { error } = await sb.from('materias').insert([{ nombre, nivel, institucion_id: USUARIO_ACTUAL.institucion_id, activo: true }]);
+          const { error } = await sb.from('materias').insert([{ nombre, nivel, tipo, institucion_id: USUARIO_ACTUAL.institucion_id, activo: true }]);
           if (error) throw error;
         }
         _cerrarModal();
@@ -1425,7 +1435,7 @@ async function _renderAsignaciones() {
   const [cursosRes, materiasRes, docentesRes] = await Promise.all([
     sb.from('cursos').select('id,nombre,division,nivel')
       .eq('institucion_id', USUARIO_ACTUAL.institucion_id).or('activo.is.null,activo.eq.true').order('nivel').order('nombre'),
-    sb.from('materias').select('id,nombre,nivel')
+    sb.from('materias').select('id,nombre,nivel,tipo')
       .eq('institucion_id', USUARIO_ACTUAL.institucion_id).eq('activo', true).order('nombre'),
     sb.from('usuarios').select('id,nombre_completo,nivel')
       .eq('institucion_id', USUARIO_ACTUAL.institucion_id).eq('rol', 'docente').eq('activo', true).order('nombre_completo'),
@@ -1546,9 +1556,11 @@ async function _renderAsigContent() {
     const { data: asigns } = await sb.from('asignaciones')
       .select('*').eq('curso_id', _admAsigCursoSel || '').eq('anio_lectivo', _admAsigAnioLectivo);
 
-    const materiasCurso = cursoSel ? materias.filter(m => m.nivel === cursoSel.nivel) : [];
-    const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
     const esNivel       = cursoSel?.nivel === 'inicial' || cursoSel?.nivel === 'primario';
+    const materiasCurso = cursoSel
+      ? materias.filter(m => m.nivel === cursoSel.nivel && (!esNivel || m.tipo === 'especial'))
+      : [];
+    const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
 
     window._admAsigMateriaIds     = materiasCurso.map(m => m.id);
     window._admAsigDocentesCurso  = docentesCurso;
@@ -1774,44 +1786,50 @@ async function _renderParamNivel(nivel) {
       </div>`;
 
   } else if (nivel === 'primario') {
-    const VALS_CONC = ['D','R','B','MB','S'];
-    const aprob1    = cfg.aprobacion_ciclo1 || 'B';
-    const notaMin2  = cfg.nota_minima       ?? 7;
-    const notaRec2  = cfg.nota_recuperacion ?? 4;
+    const escalaConc = cfg.escala_conceptual_valores || ['MB','B','R','I'];
+    const aprob1     = escalaConc.includes(cfg.aprobacion_ciclo1) ? cfg.aprobacion_ciclo1 : (escalaConc[escalaConc.length - 1] || 'MB');
+    const notaMin2   = cfg.nota_minima       ?? 7;
+    const notaRec2   = cfg.nota_recuperacion ?? 4;
+    const escala2    = cfg.escala            || 'numerica';
     htmlEvaluacion = `
       <div class="card-t" style="color:${color};margin-top:16px">Calificaciones</div>
 
       <div style="font-size:12px;font-weight:600;margin:10px 0 8px;padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
-        Primer Ciclo — 1°, 2° y 3° grado
+        Primer Ciclo — 1°, 2° y 3° grado · escala siempre conceptual
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
         <div class="adm-form-row" style="margin:0">
-          <label class="adm-label">Escala</label>
-          <div style="font-size:12px;padding:6px 8px;background:var(--surf2);border-radius:5px;color:var(--txt)">Conceptual (D · R · B · MB · S)</div>
+          <label class="adm-label">Valores de la escala (mayor → menor)</label>
+          <div id="lista-escala-conc">${_renderEscalaConc(escalaConc)}</div>
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <input type="text" id="new-escala-val" placeholder="Ej: MB" style="flex:1;font-size:11px">
+            <button class="btn-s" style="white-space:nowrap;font-size:11px;padding:4px 10px" onclick="_agregarEscalaVal()">Agregar</button>
+          </div>
         </div>
         <div class="adm-form-row" style="margin:0">
-          <label class="adm-label">Aprobación mínima</label>
+          <label class="adm-label">Valor mínimo aprobatorio</label>
           <select id="cfg-aprobacion-ciclo1">
-            ${VALS_CONC.map(v => `<option value="${v}" ${aprob1 === v ? 'selected' : ''}>${v}</option>`).join('')}
+            ${escalaConc.map(v => `<option value="${v}" ${aprob1 === v ? 'selected' : ''}>${v}</option>`).join('')}
           </select>
         </div>
-      </div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:6px;padding:8px 10px;background:var(--surf2);border-radius:var(--rad)">
-        <strong style="color:var(--txt)">Referencia de escala:</strong>&nbsp;
-        <span><b>D</b> = En inicio</span>&nbsp;·&nbsp;
-        <span><b>R</b> = En proceso</span>&nbsp;·&nbsp;
-        <span><b>B</b> = Bueno</span>&nbsp;·&nbsp;
-        <span><b>MB</b> = Muy bueno</span>&nbsp;·&nbsp;
-        <span><b>S</b> = Sobresaliente</span>
       </div>
       <div style="font-size:12px;font-weight:600;margin-bottom:8px;padding:6px 10px;background:var(--surf2);border-radius:var(--rad)">
         Segundo Ciclo — 4°, 5° y 6° grado
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
         <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Escala Ciclo 2</label>
+          <select id="cfg-escala-ciclo2">
+            <option value="numerica"   ${escala2 === 'numerica'   ? 'selected' : ''}>Numérica (1–10)</option>
+            <option value="conceptual" ${escala2 === 'conceptual' ? 'selected' : ''}>Conceptual (misma que Ciclo 1)</option>
+          </select>
+        </div>
+        <div class="adm-form-row" style="margin:0">
           <label class="adm-label">Nota mínima (cursada regular)</label>
           <input type="number" id="cfg-nota-min" value="${notaMin2}" min="1" max="10">
         </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
         <div class="adm-form-row" style="margin:0">
           <label class="adm-label">Nota mínima (recuperación)</label>
           <input type="number" id="cfg-nota-rec" value="${notaRec2}" min="1" max="10">
@@ -2028,7 +2046,7 @@ async function _guardarConfigAsistencia(nivel, existingId) {
   } else if (nivel === 'primario') {
     datos.escala_ciclo1     = 'conceptual';
     datos.aprobacion_ciclo1 = document.getElementById('cfg-aprobacion-ciclo1')?.value || 'B';
-    datos.escala            = 'numerica';
+    datos.escala            = document.getElementById('cfg-escala-ciclo2')?.value || 'numerica';
     datos.nota_minima       = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
     datos.nota_recuperacion = parseInt(document.getElementById('cfg-nota-rec')?.value) || 4;
   } else {
@@ -2170,6 +2188,56 @@ async function _agregarDim() {
   if (error) { alert('Error al guardar dimensión: ' + error.message); return; }
   if (inp) inp.value = '';
   await _renderParamNivel('inicial');
+}
+
+function _mmatToggleTipo() {
+  const nivel = document.getElementById('mmat-nivel')?.value;
+  const row   = document.getElementById('mmat-tipo-row');
+  if (row) row.style.display = nivel === 'secundario' ? 'none' : '';
+}
+
+function _renderEscalaConc(vals) {
+  if (!vals || !vals.length) return '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin valores. Agregá valores de mayor a menor.</div>';
+  return vals.map((v, i) => `
+    <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--brd)">
+      <span style="font-size:10px;color:var(--txt3);width:16px;text-align:right">${i + 1}.</span>
+      <div style="flex:1;font-size:12px;font-weight:600">${_esc(v)}</div>
+      <button onclick="_quitarEscalaVal(${i})"
+        style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--txt3);padding:0 2px;line-height:1" title="Quitar">×</button>
+    </div>`).join('');
+}
+
+async function _agregarEscalaVal() {
+  const inp = document.getElementById('new-escala-val');
+  const val = inp?.value?.trim();
+  if (!val) return;
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { data: cfg } = await sb.from('config_asistencia')
+    .select('id, escala_conceptual_valores').eq('institucion_id', instId).eq('nivel', 'primario').maybeSingle();
+  const nuevos = [...(cfg?.escala_conceptual_valores || ['MB','B','R','I']), val];
+  let error;
+  if (cfg?.id) {
+    ({ error } = await sb.from('config_asistencia').update({ escala_conceptual_valores: nuevos }).eq('id', cfg.id));
+  } else {
+    ({ error } = await sb.from('config_asistencia').insert([{
+      institucion_id: instId, nivel: 'primario', escala_conceptual_valores: nuevos,
+      umbral_alerta_1: 10, umbral_alerta_2: 20, umbral_alerta_3: 30, justificadas_cuentan: false,
+    }]));
+  }
+  if (error) { alert('Error: ' + error.message); return; }
+  if (inp) inp.value = '';
+  await _renderParamNivel('primario');
+}
+
+async function _quitarEscalaVal(idx) {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { data: cfg } = await sb.from('config_asistencia')
+    .select('id, escala_conceptual_valores').eq('institucion_id', instId).eq('nivel', 'primario').maybeSingle();
+  if (!cfg?.id) return;
+  const vals = (cfg.escala_conceptual_valores || ['MB','B','R','I']).filter((_, i) => i !== idx);
+  const { error } = await sb.from('config_asistencia').update({ escala_conceptual_valores: vals }).eq('id', cfg.id);
+  if (error) { alert('Error: ' + error.message); return; }
+  await _renderParamNivel('primario');
 }
 
 async function _quitarDim(idx) {
