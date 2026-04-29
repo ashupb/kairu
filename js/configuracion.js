@@ -1331,7 +1331,15 @@ async function _abrirModalMateria(materiaId) {
 }
 
 async function _desactivarMateria(materiaId) {
-  if (!confirm('¿Eliminar esta materia? Esta acción no se puede deshacer.')) return;
+  const { count } = await sb.from('asignaciones').select('id', { count: 'exact', head: true }).eq('materia_id', materiaId);
+  const msg = count > 0
+    ? `¿Eliminar esta materia? Tiene ${count} asignación${count !== 1 ? 'es' : ''} vinculada${count !== 1 ? 's' : ''} que también se eliminarán. Esta acción no se puede deshacer.`
+    : '¿Eliminar esta materia? Esta acción no se puede deshacer.';
+  if (!confirm(msg)) return;
+  if (count > 0) {
+    const { error: errAsig } = await sb.from('asignaciones').delete().eq('materia_id', materiaId);
+    if (errAsig) { alert('Error al eliminar asignaciones: ' + errAsig.message); return; }
+  }
   const { error } = await sb.from('materias').delete().eq('id', materiaId);
   if (error) { alert('Error: ' + error.message); return; }
   await _renderMaterias();
@@ -1684,8 +1692,7 @@ async function _renderParametros() {
 
   // Solo niveles que la institución tiene activos
   const nivelesActivos = ['inicial', 'primario', 'secundario'].filter(n => inst['nivel_' + n]);
-  // Si ninguno está configurado todavía (institución sin setup), mostrar todos
-  const nivelesBase = nivelesActivos.length ? nivelesActivos : ['inicial', 'primario', 'secundario'];
+  const nivelesBase = nivelesActivos;
 
   const niveles = USUARIO_ACTUAL.rol === 'directivo_nivel'
     ? [USUARIO_ACTUAL.nivel].filter(n => nivelesBase.includes(n))
@@ -1718,7 +1725,7 @@ async function _paramTab(nivel) {
   _paramSubTab = nivel;
   const inst = INSTITUCION_ACTUAL || {};
   const nivelesActivos = ['inicial', 'primario', 'secundario'].filter(n => inst['nivel_' + n]);
-  const nivelesBase = nivelesActivos.length ? nivelesActivos : ['inicial', 'primario', 'secundario'];
+  const nivelesBase = nivelesActivos;
   nivelesBase.forEach(n => {
     const chip = document.getElementById('param-chip-' + n);
     if (!chip) return;
@@ -1971,10 +1978,19 @@ function _renderListaTipos(lista, tabla, nivel, listaId) {
         style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--txt3);padding:0 3px;line-height:1" title="Editar nombre">✎</button>
       <button id="tipo-btn-save-${t.id}" onclick="_guardarTipoEdit('${t.id}','${tabla}','${nivel}','${listaId}')"
         style="display:none;background:none;border:none;cursor:pointer;font-size:12px;color:var(--verde);padding:0 4px;font-weight:700" title="Guardar">✓</button>
+      <button onclick="_eliminarTipo('${tabla}','${t.id}')"
+        style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--rojo);padding:0 3px;line-height:1" title="Eliminar">✕</button>
       <div class="tog${t.activo !== false ? ' on' : ''}" onclick="_togTipoActivo('${tabla}','${t.id}','${listaId}','${nivel}')">
         <div class="tog-thumb"></div>
       </div>
     </div>`).join('');
+}
+
+async function _eliminarTipo(tabla, id) {
+  if (!confirm('¿Eliminar este tipo? Esta acción no se puede deshacer.')) return;
+  const { error } = await sb.from(tabla).delete().eq('id', id);
+  if (error) { alert('No se puede eliminar: tiene registros vinculados.'); return; }
+  await _renderParamGlobal();
 }
 
 function _editarTipoInline(id) {

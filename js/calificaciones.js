@@ -312,9 +312,10 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
       : '',
   }));
 
-  const periodoLabel = Object.keys(periodosActivosPorNivel).length
-    ? PERIODOS.find(p => Object.values(periodosActivosPorNivel).includes(p.id))?.nombre || 'Período activo'
-    : 'Año en curso';
+  const nivelesConCursos = Object.keys(cursosPorNivel);
+  const periodoLabel = nivelesConCursos.length === 1
+    ? (PERIODOS.find(p => p.id === periodosActivosPorNivel[nivelesConCursos[0]])?.nombre || 'Período activo')
+    : (Object.keys(periodosActivosPorNivel).length ? 'Período activo' : 'Año en curso');
 
   contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'docg-', periodoLabel);
 }
@@ -1092,8 +1093,11 @@ async function _cargarSituacionDirectivoGlobal(cursos) {
     cursoNombre: al.cursos ? `${al.cursos.nombre}${al.cursos.division}` : '',
   }));
 
-  const primerPeriodoLabel = PERIODOS.find(p => Object.values(periodosActivosPorNivel).includes(p.id))?.nombre;
-  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'dirg-', primerPeriodoLabel || 'Año en curso');
+  const nivelesConCursos = Object.keys(cursosPorNivel);
+  const primerPeriodoLabel = nivelesConCursos.length === 1
+    ? (PERIODOS.find(p => p.id === periodosActivosPorNivel[nivelesConCursos[0]])?.nombre || 'Año en curso')
+    : 'Período activo';
+  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'dirg-', primerPeriodoLabel);
 }
 
 async function verCalifCurso(cursoId, nivel) {

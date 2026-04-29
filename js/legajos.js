@@ -62,18 +62,21 @@ async function _fetchUserNames(ids) {
 async function rLeg() {
   showLoading('leg');
   inyectarEstilosLeg();
+  const soloNivel = USUARIO_ACTUAL.rol === 'directivo_nivel' ? USUARIO_ACTUAL.nivel : null;
   try {
-    const { data, error } = await sb.from('cursos')
+    let q = sb.from('cursos')
       .select('id,nombre,division,nivel,anio,ciclo_lectivo,created_at')
-      .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-      .order('nivel').order('nombre').order('division');
+      .eq('institucion_id', USUARIO_ACTUAL.institucion_id);
+    if (soloNivel) q = q.eq('nivel', soloNivel);
+    const { data, error } = await q.order('nivel').order('nombre').order('division');
 
     // Si ciclo_lectivo no existe aún (schema viejo), reintenta sin ese campo
     if (error && (error.code === 'PGRST200' || error.message?.includes('ciclo_lectivo'))) {
-      const { data: d2, error: e2 } = await sb.from('cursos')
+      let q2 = sb.from('cursos')
         .select('id,nombre,division,nivel,anio,created_at')
-        .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-        .order('nivel').order('nombre').order('division');
+        .eq('institucion_id', USUARIO_ACTUAL.institucion_id);
+      if (soloNivel) q2 = q2.eq('nivel', soloNivel);
+      const { data: d2, error: e2 } = await q2.order('nivel').order('nombre').order('division');
       if (e2) throw e2;
       _legCursosAll = d2 || [];
     } else {

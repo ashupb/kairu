@@ -302,14 +302,15 @@ async function rDashDirector() {
   const pctAsist = totalAlumnos > 0
     ? Math.min(100, Math.round((asistContador.presente + asistContador.tardanza + asistContador.media_falta) / totalAlumnos * 100))
     : 0;
+  const _asistClr = pctAsist >= 85 ? 'var(--verde)' : pctAsist >= 70 ? 'var(--ambar)' : 'var(--rojo)';
   const asistCardHTML = asistHoy.length > 0 ? `
-    <div class="card" style="margin-bottom:14px;border-left:4px solid var(--verde)">
+    <div class="card" style="margin-bottom:14px;border-left:4px solid ${_asistClr}">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div style="font-size:12px;font-weight:600">📋 Asistencia hoy</div>
-        <div style="font-size:16px;font-weight:700;color:var(--verde)">${pctAsist}%</div>
+        <div style="font-size:16px;font-weight:700;color:${_asistClr}">${pctAsist}%</div>
       </div>
       <div style="background:var(--gris-l);border-radius:4px;height:6px;margin-bottom:10px">
-        <div style="width:${pctAsist}%;background:var(--verde);height:6px;border-radius:4px;transition:width .3s"></div>
+        <div style="width:${pctAsist}%;background:${_asistClr};height:6px;border-radius:4px;transition:width .3s"></div>
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px">
         <span style="color:var(--verde)">✅ ${asistContador.presente} presentes</span>
@@ -759,7 +760,7 @@ async function rDashPreceptor() {
     if (ayerHabil) asistAyer = results[2]?.data || [];
     if (alumnoIds.length) {
       const { data: alertasData } = await sb.from('alertas_asistencia')
-        .select('tipo_alerta,total_faltas,alumnos(nombre,apellido,cursos(nombre,division))')
+        .select('alumno_id,tipo_alerta,total_faltas,alumnos(nombre,apellido,cursos(nombre,division))')
         .in('alumno_id', alumnoIds)
         .order('tipo_alerta', { ascending: false })
         .limit(8);
@@ -818,7 +819,7 @@ async function rDashPreceptor() {
       const cu    = al?.cursos;
       const color = a.tipo_alerta >= 3 ? 'var(--rojo)' : 'var(--ambar)';
       return `
-        <div class="card" style="padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="goPage('asist')">
+        <div class="card" style="padding:10px 14px;margin-bottom:6px;border-left:3px solid ${color};display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="irAsistAlumno('${a.alumno_id}')">
           <div>
             <div style="font-size:12px;font-weight:600">${al?.apellido}, ${al?.nombre}</div>
             <div style="font-size:10px;color:var(--txt2)">${cu?.nombre}${cu?.division || ''} · ${a.total_faltas} inasistencias</div>

@@ -47,6 +47,12 @@ async function rAsist() {
   else if (rol === 'eoe')       await rAsistEOE();
 
   inyectarEstilosAsist();
+
+  if (window._pendingAlumnoId) {
+    const id = window._pendingAlumnoId;
+    window._pendingAlumnoId = null;
+    await verAlumnoAsist(id);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -297,40 +303,49 @@ async function mostrarGrillaDirector(cursoId, nivel) {
     </div>
 
     ${!fechas.length ? '<div class="empty-state">Sin registros aún</div>' : `
-    <div style="overflow-x:auto">
-      <table class="grilla-asist">
-        <thead>
-          <tr>
-            <th style="text-align:left;min-width:140px">Alumno</th>
-            ${fechas.map(f => `<th title="${f}">${formatFechaCorta(f).split(' ')[0]}<br><span style="font-weight:400">${formatFechaCorta(f).split(' ')[1]||''}</span></th>`).join('')}
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${alumnos.map(al => {
-            let total = 0;
-            const celdas = fechas.map(f => {
-              const est = asistIdx[`${al.id}_${f}`];
-              if (!est) return `<td><span class="grilla-nd">—</span></td>`;
-              const st = ESTADOS_ASIST[est];
-              total += st?.valor || 0;
-              return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}" title="${st?.label}">${st?.short}</span></td>`;
-            }).join('');
-            const colorT = total >= 10 ? 'var(--rojo)' : total >= 5 ? 'var(--ambar)' : 'var(--verde)';
-            return `<tr>
-              <td style="font-size:11px;font-weight:500;white-space:nowrap">${al.apellido}, ${al.nombre}</td>
-              ${celdas}
-              <td><span style="font-weight:700;color:${colorT}">${total}</span></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar Excel</button>
+    </div>
+    <div style="display:flex;align-items:stretch;gap:4px">
+      <button onclick="document.getElementById('gw').scrollLeft-=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">‹</button>
+      <div id="gw" style="overflow-x:auto;flex:1">
+        <table class="grilla-asist">
+          <thead>
+            <tr>
+              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--bg)">Alumno</th>
+              ${fechas.map(f => `<th title="${f}">${formatFechaCorta(f).split(' ')[0]}<br><span style="font-weight:400">${formatFechaCorta(f).split(' ')[1]||''}</span></th>`).join('')}
+              <th style="background:var(--rojo-l);color:var(--rojo)">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${alumnos.map(al => {
+              let total = 0;
+              const celdas = fechas.map(f => {
+                const est = asistIdx[`${al.id}_${f}`];
+                if (!est) return `<td><span class="grilla-nd">—</span></td>`;
+                const st = ESTADOS_ASIST[est];
+                total += st?.valor || 0;
+                return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}" title="${st?.label}">${st?.short}</span></td>`;
+              }).join('');
+              const colorT = total >= 10 ? 'var(--rojo)' : total >= 5 ? 'var(--ambar)' : 'var(--verde)';
+              return `<tr>
+                <td style="font-size:11px;font-weight:500;white-space:nowrap;position:sticky;left:0;background:var(--bg);box-shadow:2px 0 3px rgba(0,0,0,.06)">${al.apellido}, ${al.nombre}</td>
+                ${celdas}
+                <td style="background:var(--rojo-l)"><span style="font-weight:700;color:${colorT}">${total}</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <button onclick="document.getElementById('gw').scrollLeft+=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">›</button>
     </div>
     <div class="asist-leyenda" style="margin-top:12px">
       ${Object.entries(ESTADOS_ASIST).map(([k,v]) => `
         <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${v.bg};color:${v.color}">${v.short} = ${v.label}</span>
       `).join('')}
     </div>`}`;
+
+  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: `${curso?.nombre}${curso?.division||''}`, config:{} };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -488,45 +503,54 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
     </div>
 
     ${!fechas.length ? '<div class="empty-state">Sin registros aún. Tomá la primera lista.</div>' : `
-    <div style="overflow-x:auto">
-      <table class="grilla-asist">
-        <thead>
-          <tr>
-            <th style="text-align:left;min-width:130px">Alumno</th>
-            ${fechas.map(f => {
-              const d = new Date(f+'T12:00:00');
-              return `<th>${d.getDate()}/${d.getMonth()+1}</th>`;
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar Excel</button>
+    </div>
+    <div style="display:flex;align-items:stretch;gap:4px">
+      <button onclick="document.getElementById('gw').scrollLeft-=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">‹</button>
+      <div id="gw" style="overflow-x:auto;flex:1">
+        <table class="grilla-asist">
+          <thead>
+            <tr>
+              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--bg)">Alumno</th>
+              ${fechas.map(f => {
+                const d = new Date(f+'T12:00:00');
+                return `<th>${d.getDate()}/${d.getMonth()+1}</th>`;
+              }).join('')}
+              <th style="background:var(--rojo-l);color:var(--rojo)">Faltas</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${alumnos.map(al => {
+              let total = 0;
+              const celdas = fechas.map(f => {
+                const est = asistIdx[`${al.id}_${f}`];
+                if (!est) return `<td><span class="grilla-nd">—</span></td>`;
+                const st = ESTADOS_ASIST[est];
+                total += st?.valor || 0;
+                return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}">${st?.short}</span></td>`;
+              }).join('');
+              const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
+              return `<tr>
+                <td style="font-size:11px;font-weight:500;cursor:pointer;position:sticky;left:0;background:var(--bg);white-space:nowrap;box-shadow:2px 0 3px rgba(0,0,0,.06)" onclick="verAlumnoAsist('${al.id}')">
+                  ${al.apellido}, ${al.nombre}
+                </td>
+                ${celdas}
+                <td style="background:var(--rojo-l)"><span style="font-weight:700;color:${colorT}">${total}</span></td>
+              </tr>`;
             }).join('')}
-            <th>Faltas</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${alumnos.map(al => {
-            let total = 0;
-            const celdas = fechas.map(f => {
-              const est = asistIdx[`${al.id}_${f}`];
-              if (!est) return `<td><span class="grilla-nd">—</span></td>`;
-              const st = ESTADOS_ASIST[est];
-              total += st?.valor || 0;
-              return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}">${st?.short}</span></td>`;
-            }).join('');
-            const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
-            return `<tr>
-              <td style="font-size:11px;font-weight:500;cursor:pointer" onclick="verAlumnoAsist('${al.id}')">
-                ${al.apellido}, ${al.nombre}
-              </td>
-              ${celdas}
-              <td><span style="font-weight:700;color:${colorT}">${total}</span></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+      <button onclick="document.getElementById('gw').scrollLeft+=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">›</button>
     </div>
     <div class="asist-leyenda" style="margin-top:10px">
       ${Object.entries(ESTADOS_ASIST).map(([k,v]) => `
         <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${v.bg};color:${v.color}">${v.short}=${v.label}</span>
       `).join('')}
     </div>`}`;
+
+  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso, config };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -585,8 +609,6 @@ async function rAsistDocente() {
     if (!cursoMapClases[cu.id]) cursoMapClases[cu.id] = { ...cu, materias:[] };
     cursoMapClases[cu.id].materias.push(a.materias);
   });
-
-  const resumenHTML = await buildResumenDia(instId, hoy);
 
   c.innerHTML = `
     <div class="pg-t">Asistencia</div>
@@ -690,9 +712,7 @@ async function rAsistDocente() {
             📊 ${cu.nombre}${cu.division} · ${m.nombre}
           </button>`).join('')
       ).join('')}
-    </div>` : ''}
-
-    ${resumenHTML}`;
+    </div>` : ''}`;
 
   window._docCursoMap = cursoMapClases;
   window._docCursoSel = null;
@@ -763,43 +783,52 @@ async function mostrarGrillaDocente(cursoId, nivel, materiaId, titulo) {
     </div>
 
     ${!fechas.length ? '<div class="empty-state">Sin clases registradas aún.</div>' : `
-    <div style="overflow-x:auto">
-      <table class="grilla-asist">
-        <thead>
-          <tr>
-            <th style="text-align:left;min-width:130px">Alumno</th>
-            ${fechas.map(f => {
-              const d = new Date(f+'T12:00:00');
-              return `<th>${d.getDate()}/${d.getMonth()+1}</th>`;
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar Excel</button>
+    </div>
+    <div style="display:flex;align-items:stretch;gap:4px">
+      <button onclick="document.getElementById('gw').scrollLeft-=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">‹</button>
+      <div id="gw" style="overflow-x:auto;flex:1">
+        <table class="grilla-asist">
+          <thead>
+            <tr>
+              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--bg)">Alumno</th>
+              ${fechas.map(f => {
+                const d = new Date(f+'T12:00:00');
+                return `<th>${d.getDate()}/${d.getMonth()+1}</th>`;
+              }).join('')}
+              <th style="background:var(--rojo-l);color:var(--rojo)">Faltas</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${alumnos.map(al => {
+              let total = 0;
+              const celdas = fechas.map(f => {
+                const est = asistIdx[`${al.id}_${f}`];
+                if (!est) return `<td><span class="grilla-nd">—</span></td>`;
+                const st = ESTADOS_ASIST[est];
+                total += st?.valor || 0;
+                return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}">${st?.short}</span></td>`;
+              }).join('');
+              const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
+              return `<tr>
+                <td style="font-size:11px;font-weight:500;white-space:nowrap;position:sticky;left:0;background:var(--bg);box-shadow:2px 0 3px rgba(0,0,0,.06)">${al.apellido}, ${al.nombre}</td>
+                ${celdas}
+                <td style="background:var(--rojo-l)"><strong style="color:${colorT}">${total}</strong></td>
+              </tr>`;
             }).join('')}
-            <th>Faltas</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${alumnos.map(al => {
-            let total = 0;
-            const celdas = fechas.map(f => {
-              const est = asistIdx[`${al.id}_${f}`];
-              if (!est) return `<td><span class="grilla-nd">—</span></td>`;
-              const st = ESTADOS_ASIST[est];
-              total += st?.valor || 0;
-              return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}">${st?.short}</span></td>`;
-            }).join('');
-            const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
-            return `<tr>
-              <td style="font-size:11px;font-weight:500">${al.apellido}, ${al.nombre}</td>
-              ${celdas}
-              <td><strong style="color:${colorT}">${total}</strong></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
+      <button onclick="document.getElementById('gw').scrollLeft+=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">›</button>
     </div>
     <div class="asist-leyenda" style="margin-top:10px">
       ${Object.entries(ESTADOS_ASIST).map(([k,v]) => `
         <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${v.bg};color:${v.color}">${v.short}=${v.label}</span>
       `).join('')}
     </div>`}`;
+
+  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: titulo, config };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1211,6 +1240,42 @@ function inyectarEstilosAsist() {
     }
   `;
   document.head.appendChild(st);
+}
+
+// Navegar a la asistencia de un alumno desde cualquier módulo
+function irAsistAlumno(alumnoId) {
+  window._pendingAlumnoId = alumnoId;
+  goPage('asist');
+}
+
+// Descarga CSV de la grilla actualmente renderizada
+function _descargarGrillaCSV() {
+  const d = window._grillaData;
+  if (!d) return;
+  const enc = ['Alumno', ...d.fechas.map(f => {
+    const dt = new Date(f + 'T12:00:00');
+    return `${dt.getDate()}/${dt.getMonth()+1}/${dt.getFullYear()}`;
+  }), 'Faltas'];
+  const filas = d.alumnos.map(al => {
+    let total = 0;
+    const celdas = d.fechas.map(f => {
+      const est = d.asistIdx[`${al.id}_${f}`];
+      if (!est) return '-';
+      total += ESTADOS_ASIST[est]?.valor || 0;
+      return ESTADOS_ASIST[est]?.short || '-';
+    });
+    return [`"${al.apellido}, ${al.nombre}"`, ...celdas, total];
+  });
+  const csv  = '﻿' + [enc, ...filas].map(r => r.join(';')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `asistencia_${(d.nombreCurso||'curso').replace(/\s+/g,'_')}_${hoyISO()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 async function buildResumenDia(instId, fecha) {
