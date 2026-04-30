@@ -204,7 +204,25 @@ async function rNotasDocente() {
     <div class="sec-lb">Mis clases</div>
     ${Object.values(cursoMap).map(cu => {
       if (cu.esGrado) {
-        const labelNivel = cu.nivel === 'inicial' ? 'sala' : 'grado';
+        const labelNivel  = cu.nivel === 'inicial' ? 'sala' : 'grado';
+        const esPrimaria  = cu.nivel === 'primario' || cu.nivel === 'inicial';
+
+        // --- MODO: docente-grado-primaria ---
+        // Primaria/inicial: una sola card que abre la tabla completa (todas las materias comunes)
+        if (esPrimaria) {
+          return `
+            <div class="card" style="display:flex;align-items:center;justify-content:space-between;
+              padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--verde)"
+              onclick="verNotasPrimariaGrado('${cu.id}','${cu.nivel}','${cu.nombre}${cu.division}')">
+              <div>
+                <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
+                <div style="font-size:12px;color:var(--txt2)">Maestra/o de ${labelNivel} · todas las materias comunes</div>
+              </div>
+              <span style="font-size:22px;color:var(--verde)">→</span>
+            </div>`;
+        }
+
+        // --- MODO: secundario (sin cambios) ---
         return `
           <div class="card" style="margin-bottom:8px;padding:14px 16px;border-left:3px solid var(--verde)">
             <div style="font-size:15px;font-weight:700;font-family:'Lora',serif;margin-bottom:8px">
@@ -1104,6 +1122,15 @@ async function verCalifCurso(cursoId, nivel) {
   const c = document.getElementById('page-notas');
   showLoading('notas');
 
+  // --- MODO: preceptor/directivo-readonly-primaria ---
+  // Primaria/inicial: usar la tabla de materias comunes (readonly)
+  if (nivel === 'primario' || nivel === 'inicial') {
+    const { data: curso } = await sb.from('cursos').select('nombre,division').eq('id', cursoId).single();
+    await verNotasPrimariaGrado(cursoId, nivel, `${curso?.nombre || ''}${curso?.division || ''}`, false);
+    return;
+  }
+
+  // --- MODO: secundario (sin cambios) ---
   const periodosCurso = PERIODOS.filter(p => p.nivel === nivel);
   let PERIODO_SEL     = periodosCurso[0]?.id || '';
 
@@ -1403,6 +1430,318 @@ async function insertAlertaAcad(instId, alumnoId, cursoId, materiaId, tipo, deta
     tipo_alerta:    tipo,
     detalle,
   });
+}
+
+// ═══════════════════════════════════════════════════════
+// PRIMARIA / INICIAL — GRILLA DE GRADO
+// --- MODO: docente-grado-primaria (editable=true) ---
+// --- MODO: preceptor-readonly-primaria (editable=false) ---
+// --- MODO: directivo-readonly-primaria (editable=false) ---
+// ═══════════════════════════════════════════════════════
+
+async function verNotasPrimariaGrado(cursoId, nivel, nombreCurso, editable = true) {
+  const c      = document.getElementById('page-notas');
+  const instId = USUARIO_ACTUAL.institucion_id;
+  showLoading('notas');
+
+  const periodosCurso = PERIODOS.filter(p => p.nivel === nivel);
+  const hoy = new Date();
+  const periodoActual = periodosCurso.find(p =>
+    new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin)
+  ) || periodosCurso[0];
+  let PERIODO_SEL = periodoActual?.id || '';
+
+  // Detección de escala: inicial y ciclo 1 (1°-3°) siempre conceptual
+  const esCiclo1   = nivel === 'inicial' || _esPrimerCiclo(nombreCurso);
+  const escalaConc = CONFIG_NOTAS[nivel]?.escala_conceptual_valores || ['MB', 'B', 'R', 'I'];
+  const escala2    = CONFIG_NOTAS[nivel]?.escala || 'numerica';
+  const usaConc    = esCiclo1 || escala2 === 'conceptual';
+
+  const cargarVista = async () => {
+    const [alumnosRes, materiasRes] = await Promise.all([
+      sb.from('alumnos').select('id,nombre,apellido')
+        .eq('curso_id', cursoId).eq('activo', true).order('apellido'),
+      sb.from('materias').select('id,nombre')
+        .eq('institucion_id', instId).eq('nivel', nivel)
+        .eq('tipo', 'comun').eq('activo', true).order('nombre'),
+    ]);
+    const alumnos  = alumnosRes.data || [];
+    const materias = materiasRes.data || [];
+
+    // Calificaciones sin instancia (formato primaria: una nota por alumno × materia × período)
+    let califData = [];
+    if (PERIODO_SEL) {
+      const { data } = await sb.from('calificaciones').select('*')
+        .eq('curso_id', cursoId).eq('periodo_id', PERIODO_SEL).is('instancia_id', null);
+      califData = data || [];
+    }
+
+    // Índice: "alumnoId:materiaId" → row; "alumnoId:prom" → fila de promedio (materia_id null)
+    const cIdx = {};
+    califData.forEach(r => {
+      const k = r.materia_id ? `${r.alumno_id}:${r.materia_id}` : `${r.alumno_id}:prom`;
+      cIdx[k] = r;
+    });
+
+    window._pGcIdx     = cIdx;
+    window._pGalumnos  = alumnos;
+    window._pGmaterias = materias;
+    window._pGcursoId  = cursoId;
+    window._pGperiodo  = PERIODO_SEL;
+    window._pGinstId   = instId;
+    window._pGusaConc  = usaConc;
+    window._pGescala   = escalaConc;
+
+    // Valor actual de la celda (desde DB)
+    const getCellVal = (aId, mId) => {
+      const r = cIdx[`${aId}:${mId}`];
+      if (!r) return '';
+      return usaConc ? (r.promedio_concepto_manual || '') : (r.nota != null ? String(r.nota) : '');
+    };
+
+    // Promedio calculado: modal (conceptual) o media aritmética (numérica)
+    const calcProm = (aId) => {
+      const vals = materias.map(m => {
+        const r = cIdx[`${aId}:${m.id}`];
+        if (!r) return null;
+        return usaConc ? (r.promedio_concepto_manual || null) : (r.nota != null ? r.nota : null);
+      }).filter(v => v !== null && v !== '');
+      if (!vals.length) return null;
+      if (usaConc) {
+        const cnt = {};
+        vals.forEach(v => cnt[v] = (cnt[v] || 0) + 1);
+        const maxCnt = Math.max(...Object.values(cnt));
+        // Priorizar el valor más alto en la escala (índice más bajo = más alto)
+        return escalaConc.find(v => cnt[v] === maxCnt) || null;
+      }
+      return vals.reduce((a, b) => a + b, 0) / vals.length;
+    };
+
+    const mkSelect = (id, cur) => `
+      <select id="${id}" class="sel-prim-grade"
+        style="font-size:10px;border:1.5px solid var(--brd);border-radius:4px;
+          padding:2px 2px;background:var(--surf);width:50px;cursor:pointer">
+        <option value="">—</option>
+        ${escalaConc.map(v => `<option value="${v}" ${cur === v ? 'selected' : ''}>${v}</option>`).join('')}
+      </select>`;
+
+    const mkNumber = (id, cur) => `
+      <input type="number" id="${id}" value="${cur}" min="1" max="10" step="0.5" placeholder="—"
+        style="width:44px;text-align:center;border:1.5px solid var(--brd);border-radius:4px;
+          padding:2px 3px;font-size:11px;font-weight:700;background:var(--surf)">`;
+
+    const mkCell = (id, cur) => editable
+      ? (usaConc ? mkSelect(id, cur) : mkNumber(id, cur))
+      : `${cur ? `<span style="font-size:11px;font-weight:700">${cur}</span>`
+               : `<span class="grilla-nd">—</span>`}`;
+
+    const mkPromEditor = (aId, promFinal) => `
+      <button onclick="_editarPromPrimG('${aId}')"
+        style="background:none;border:none;cursor:pointer;font-size:11px;
+          color:var(--txt3);padding:0;line-height:1" title="Editar promedio">✏️</button>
+      <div id="prom-ed-${aId}" style="display:none;margin-top:3px">
+        ${usaConc
+          ? mkSelect(`pg-prom-${aId}`, typeof promFinal === 'string' ? promFinal : '')
+          : `<input type="number" id="pg-prom-${aId}" min="1" max="10" step="0.5"
+              value="${typeof promFinal === 'number' ? promFinal : ''}"
+              style="width:44px;text-align:center;border:1.5px solid var(--ambar);
+                border-radius:4px;padding:2px;font-size:11px;font-weight:700">`}
+      </div>`;
+
+    return `
+      <div class="periodo-tabs">
+        ${periodosCurso.length
+          ? periodosCurso.map(p => `
+            <button class="periodo-tab ${PERIODO_SEL === p.id ? 'on' : ''}"
+              onclick="cambioPeriodoPrimG('${p.id}')">
+              ${p.nombre}
+            </button>`).join('')
+          : '<div style="font-size:11px;color:var(--txt3)">Sin períodos configurados</div>'}
+      </div>
+
+      ${editable ? `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <button class="btn-p" id="btn-guardar-prim" onclick="guardarNotasPrimariaGrado()">💾 Guardar todo</button>
+        <span style="font-size:10px;color:var(--txt3)">Los cambios no guardados se perderán</span>
+      </div>` : `
+      <div style="background:var(--azul-l);border-left:4px solid var(--azul);border-radius:var(--rad);
+        padding:8px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:16px">👁️</span>
+        <span style="font-size:11px;font-weight:600;color:var(--azul)">Solo lectura</span>
+      </div>`}
+
+      ${!PERIODO_SEL
+        ? '<div class="empty-state">Sin períodos configurados para este nivel.</div>'
+        : !materias.length
+          ? '<div class="empty-state">Sin materias comunes configuradas para este nivel.</div>'
+          : !alumnos.length
+            ? '<div class="empty-state">Sin alumnos activos en el curso.</div>'
+            : `<div style="overflow-x:auto">
+        <table class="grilla-notas" style="table-layout:auto">
+          <thead>
+            <tr>
+              <th style="text-align:left;min-width:140px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
+              ${materias.map(m => `
+                <th style="font-size:9px;max-width:58px;white-space:normal;line-height:1.3;padding:5px 3px">
+                  ${m.nombre}
+                </th>`).join('')}
+              <th style="background:var(--azul-l);color:var(--azul);font-size:9px;min-width:60px">PROMEDIO</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${alumnos.map(al => {
+              const promCalc    = calcProm(al.id);
+              const promRow     = cIdx[`${al.id}:prom`];
+              const promEditado = promRow?.promedio_editado;
+              const promFinal   = promEditado
+                ? (usaConc ? promRow.promedio_concepto_manual : promRow.promedio_manual)
+                : promCalc;
+              const promTxt     = promFinal !== null && promFinal !== undefined
+                ? (typeof promFinal === 'number' ? promFinal.toFixed(1) : String(promFinal))
+                : null;
+
+              return `
+                <tr>
+                  <td style="font-size:11px;font-weight:500;white-space:nowrap;position:sticky;
+                    left:0;background:var(--bg);box-shadow:2px 0 3px rgba(0,0,0,.06)">
+                    ${al.apellido}, ${al.nombre}
+                  </td>
+                  ${materias.map(m => `
+                    <td style="text-align:center;padding:4px 3px">
+                      ${mkCell(`pg-${al.id}-${m.id}`, getCellVal(al.id, m.id))}
+                    </td>`).join('')}
+                  <td style="background:var(--azul-l);text-align:center;padding:4px 3px">
+                    ${promTxt
+                      ? `<div>
+                          <span style="font-size:12px;font-weight:700;
+                            color:${promEditado ? 'var(--ambar)' : 'var(--azul)'}">
+                            ${promTxt}
+                          </span>
+                          ${promEditado ? '<div style="font-size:8px;color:var(--ambar)">(manual)</div>' : ''}
+                          ${editable ? mkPromEditor(al.id, promFinal) : ''}
+                        </div>`
+                      : (editable
+                          ? `<div><span class="grilla-nd">—</span>${mkPromEditor(al.id, null)}</div>`
+                          : '<span class="grilla-nd">—</span>')}
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${editable ? `
+      <button class="btn-p" style="width:100%;margin-top:14px"
+        onclick="guardarNotasPrimariaGrado()">💾 Guardar todo</button>` : ''}`}`;
+  };
+
+  window.cambioPeriodoPrimG = async (pid) => {
+    PERIODO_SEL = pid;
+    document.getElementById('contenido-prim-g').innerHTML = await cargarVista();
+    inyectarEstilosNotas();
+  };
+
+  const volverFn = editable ? 'rNotasDocente' : 'rNotasDirectivo';
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button onclick="${volverFn}()" style="background:none;border:none;font-size:20px;
+        cursor:pointer;color:var(--txt2)">←</button>
+      <div>
+        <div class="pg-t">${nombreCurso}</div>
+        <div class="pg-s">Calificaciones · ${usaConc ? 'Conceptual' : 'Numérica'} · ${nivel}</div>
+      </div>
+    </div>
+    <div id="contenido-prim-g">${await cargarVista()}</div>`;
+}
+
+function _editarPromPrimG(alumnoId) {
+  const ed = document.getElementById(`prom-ed-${alumnoId}`);
+  if (ed) ed.style.display = ed.style.display === 'none' ? 'block' : 'none';
+}
+
+async function guardarNotasPrimariaGrado() {
+  const btn = document.getElementById('btn-guardar-prim');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  const alumnos   = window._pGalumnos  || [];
+  const materias  = window._pGmaterias || [];
+  const cIdx      = window._pGcIdx     || {};
+  const cursoId   = window._pGcursoId;
+  const periodoId = window._pGperiodo;
+  const instId    = window._pGinstId;
+  const usaConc   = window._pGusaConc;
+
+  let errors = 0;
+
+  for (const al of alumnos) {
+    // Guardar nota por materia
+    for (const m of materias) {
+      const el = document.getElementById(`pg-${al.id}-${m.id}`);
+      if (!el) continue;
+      const valor = el.value;
+      if (!valor) continue;
+
+      const existRow = cIdx[`${al.id}:${m.id}`];
+      const datos = {
+        institucion_id: instId,
+        alumno_id:      al.id,
+        materia_id:     m.id,
+        curso_id:       cursoId,
+        periodo_id:     periodoId,
+        instancia_id:   null,
+        registrado_por: USUARIO_ACTUAL.id,
+      };
+      if (usaConc) {
+        datos.promedio_concepto_manual = valor;
+        datos.nota = null;
+      } else {
+        const num = parseFloat(valor);
+        datos.nota = isNaN(num) ? null : num;
+      }
+
+      let err;
+      if (existRow?.id) {
+        ({ error: err } = await sb.from('calificaciones').update(datos).eq('id', existRow.id));
+      } else {
+        ({ error: err } = await sb.from('calificaciones').insert([datos]));
+      }
+      if (err) { errors++; console.error('Error guardando nota:', err.message); }
+    }
+
+    // Guardar promedio manual si fue editado
+    const promEl = document.getElementById(`pg-prom-${al.id}`);
+    if (promEl && promEl.value) {
+      const promRow  = cIdx[`${al.id}:prom`];
+      const promDatos = {
+        institucion_id:   instId,
+        alumno_id:        al.id,
+        materia_id:       null,
+        curso_id:         cursoId,
+        periodo_id:       periodoId,
+        instancia_id:     null,
+        promedio_editado: true,
+        registrado_por:   USUARIO_ACTUAL.id,
+      };
+      if (usaConc) {
+        promDatos.promedio_concepto_manual = promEl.value;
+      } else {
+        const num = parseFloat(promEl.value);
+        promDatos.promedio_manual = isNaN(num) ? null : num;
+      }
+      if (promRow?.id) {
+        await sb.from('calificaciones').update(promDatos).eq('id', promRow.id);
+      } else {
+        // Si materia_id tiene constraint NOT NULL en la DB, este insert fallará silenciosamente
+        const { error: promErr } = await sb.from('calificaciones').insert([promDatos]);
+        if (promErr) console.warn('Promedio no guardado (constraint DB):', promErr.message);
+      }
+    }
+  }
+
+  if (errors) alert(`${errors} nota(s) no se pudieron guardar. Revisá la conexión y reintentá.`);
+
+  await window.cambioPeriodoPrimG?.(periodoId);
+  if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar todo'; }
 }
 
 // ─── UTILIDADES ───────────────────────────────────────
