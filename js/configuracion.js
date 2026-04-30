@@ -1702,6 +1702,22 @@ let _paramSubTab = 'inicial';
 
 async function _renderParametros() {
   const sec  = document.getElementById('adm-section-content');
+
+  // Garantizar que INSTITUCION_ACTUAL tenga los campos de niveles (pueden faltar si el
+  // SELECT de auth.js fue actualizado en una versión anterior sin estos campos)
+  if (INSTITUCION_ACTUAL && INSTITUCION_ACTUAL.nivel_inicial === undefined) {
+    const { data: fresh } = await sb
+      .from('instituciones')
+      .select('nivel_inicial, nivel_primario, nivel_secundario, anio_lectivo')
+      .eq('id', USUARIO_ACTUAL.institucion_id)
+      .single();
+    if (fresh) {
+      INSTITUCION_ACTUAL.nivel_inicial    = fresh.nivel_inicial;
+      INSTITUCION_ACTUAL.nivel_primario   = fresh.nivel_primario;
+      INSTITUCION_ACTUAL.nivel_secundario = fresh.nivel_secundario;
+    }
+  }
+
   const inst = INSTITUCION_ACTUAL || {};
 
   // Solo niveles que la institución tiene activos
@@ -1938,18 +1954,44 @@ async function _renderParamGlobal() {
   if (!cont) return;
   const instId = USUARIO_ACTUAL.institucion_id;
 
-  const [tiposEvalRes, tiposJustRes, tiposEventoRes] = await Promise.all([
+  // Invalidar cache de tipos de instancia usado en calificaciones.js
+  window._tiposInstanciaCache = null;
+
+  const [tiposEvalRes, tiposJustRes, tiposEventoRes, tiposInstRes] = await Promise.all([
     sb.from('tipos_evaluacion').select('*').eq('institucion_id', instId).order('nombre'),
     sb.from('tipos_justificacion').select('*').eq('institucion_id', instId).order('nombre'),
     sb.from('tipos_evento').select('*').eq('institucion_id', instId).order('nombre'),
+    sb.from('tipos_instancia_evaluativa').select('*').eq('institucion_id', instId).eq('activo', true).order('created_at'),
   ]);
 
   const tiposEval   = tiposEvalRes.data  || [];
   const tiposJust   = tiposJustRes.data  || [];
   const tiposEvento = tiposEventoRes.data || [];
+  let   tiposInst   = tiposInstRes.data  || [];
+
+  // Sembrar valores por defecto si la institución no tiene tipos configurados aún
+  if (!tiposInst.length && !tiposInstRes.error) {
+    const defaults = ['Evaluación escrita','Trabajo práctico','Exposición oral','Evaluación integradora','Trabajo en clase'];
+    const rows = defaults.map(nombre => ({ nombre, institucion_id: instId, activo: true, orden: 0 }));
+    const { data: seeded } = await sb.from('tipos_instancia_evaluativa').insert(rows).select('*');
+    tiposInst = seeded || [];
+  }
 
   cont.innerHTML = `
     <div class="sec-lb" style="margin-top:18px">Configuración general (todos los niveles)</div>
+
+    <!-- TIPOS INSTANCIA EVALUATIVA -->
+    <div class="card">
+      <div class="card-t">Tipos de instancia evaluativa</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Disponibles al cargar notas en todos los niveles</div>
+      <div id="lista-tipos-inst">
+        ${_renderListaTipos(tiposInst, 'tipos_instancia_evaluativa', 'global', 'lista-tipos-inst')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-tipo-inst-global" placeholder="Ej: Exposición oral" style="flex:1">
+        <button class="btn-s" onclick="_agregarTipoInst()">Agregar</button>
+      </div>
+    </div>
 
     <!-- TIPOS EVALUACIÓN -->
     <div class="card">
@@ -1986,6 +2028,19 @@ async function _renderParamGlobal() {
         <button class="btn-s" onclick="_agregarTipo('tipos_evento','new-tipo-evento-global','global','lista-tipos-evento')">Agregar</button>
       </div>
     </div>`;
+}
+
+async function _agregarTipoInst() {
+  const inp    = document.getElementById('new-tipo-inst-global');
+  const nombre = inp?.value?.trim();
+  if (!nombre) return;
+  const { error } = await sb.from('tipos_instancia_evaluativa').insert([{
+    nombre, activo: true, orden: 0, institucion_id: USUARIO_ACTUAL.institucion_id,
+  }]);
+  if (error) { alert('Error: ' + error.message); return; }
+  if (inp) inp.value = '';
+  window._tiposInstanciaCache = null;
+  await _renderParamGlobal();
 }
 
 function _renderListaTipos(lista, tabla, nivel, listaId) {

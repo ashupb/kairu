@@ -1736,6 +1736,39 @@ async function guardarNotasPrimariaGrado() {
 // PANEL DE INSTANCIAS EVALUATIVAS (PRIMARIA / INICIAL)
 // ═══════════════════════════════════════════════════════
 
+async function _fetchTiposInstancia() {
+  if (window._tiposInstanciaCache) return window._tiposInstanciaCache;
+  const { data } = await sb.from('tipos_instancia_evaluativa')
+    .select('nombre')
+    .eq('institucion_id', INSTITUCION_ACTUAL.id)
+    .eq('activo', true)
+    .order('created_at');
+  window._tiposInstanciaCache = data || [];
+  return window._tiposInstanciaCache;
+}
+
+function _onTipoChange(sel) {
+  const wrap  = sel.closest('.panel-inst-nombre-wrap');
+  const libre = wrap?.querySelector('.panel-inst-nombre-libre');
+  if (!libre) return;
+  if (sel.value === '__otro__') {
+    libre.style.display = '';
+    libre.focus();
+  } else {
+    libre.style.display = 'none';
+    libre.value = '';
+  }
+}
+
+function _getNombreDeRow(row) {
+  const tipo = row.querySelector('.panel-inst-tipo');
+  if (tipo) {
+    if (tipo.value === '__otro__') return row.querySelector('.panel-inst-nombre-libre')?.value?.trim() || '';
+    return tipo.value;
+  }
+  return row.querySelector('.panel-inst-nombre')?.value?.trim() || '';
+}
+
 async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, editable) {
   const al = (window._pGalumnos  || []).find(a => a.id === alumnoId);
   const m  = (window._pGmaterias || []).find(x => x.id === materiaId);
@@ -1756,6 +1789,8 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
       .is('instancia_id', null).maybeSingle(),
   ]);
 
+  const tiposInst = await _fetchTiposInstancia();
+
   window._panelInst        = (instRes.data || []).map(i => ({ ...i }));
   window._panelMeta        = { alumnoId, materiaId, cursoId, periodoId, usaConc, escalaConc };
   window._panelNotaFinalRow = notaFinalRes.data;
@@ -1764,6 +1799,22 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
     ? (usaConc ? notaFinalRes.data.promedio_concepto_manual : notaFinalRes.data.nota)
     : null;
   const promSugerido = _calcPromSugerido(window._panelInst, usaConc, escalaConc);
+
+  const mkNombreControl = (val) => {
+    if (!tiposInst.length) {
+      return `<input type="text" class="panel-inst-nombre" value="${(val||'').replace(/"/g,'&quot;')}" placeholder="Ej: Evaluación escrita" style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:6px 8px;font-size:11px;background:var(--surf)">`;
+    }
+    const isOtro = val && !tiposInst.find(t => t.nombre === val);
+    return `<div class="panel-inst-nombre-wrap" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+      <select class="panel-inst-tipo" onchange="_onTipoChange(this)" style="border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+        <option value="">— Tipo —</option>
+        ${tiposInst.map(t => `<option value="${_esc(t.nombre)}"${t.nombre === val && !isOtro ? ' selected' : ''}>${_esc(t.nombre)}</option>`).join('')}
+        <option value="__otro__"${isOtro ? ' selected' : ''}>Otro...</option>
+      </select>
+      <input type="text" class="panel-inst-nombre-libre" value="${isOtro ? _esc(val||'') : ''}" placeholder="Nombre libre..."
+        style="display:${isOtro ? '' : 'none'};border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+    </div>`;
+  };
 
   const mkValorInput = (cls, val) => usaConc
     ? `<select class="${cls}" onchange="_actualizarPromSugerido()"
@@ -1787,10 +1838,7 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
   const renderInstRow = (inst, idx) => editable ? `
     <div class="panel-inst-row" data-idx="${idx}"
       style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--brd)">
-      <input type="text" class="panel-inst-nombre"
-        value="${(inst.nombre || '').replace(/"/g, '&quot;')}"
-        placeholder="Ej: Evaluación escrita"
-        style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:6px 8px;font-size:11px;background:var(--surf)">
+      ${mkNombreControl(inst.nombre || '')}
       ${mkValorInput('panel-inst-valor', usaConc ? inst.valor_conceptual : inst.valor_numerico)}
       <button onclick="_removeInstRow(${idx})"
         style="background:none;border:none;cursor:pointer;color:var(--rojo);font-size:16px;padding:2px 4px;line-height:1">✕</button>
@@ -1862,6 +1910,7 @@ function _addInstRow() {
 
   const idx        = window._panelInst.length;
   const escalaConc = meta.escalaConc;
+  const tiposInst  = window._tiposInstanciaCache || [];
   window._panelInst.push({ id: null, nombre: '', valor_numerico: null, valor_conceptual: null });
 
   const mkVal = () => meta.usaConc
@@ -1874,6 +1923,22 @@ function _addInstRow() {
         oninput="_actualizarPromSugerido()"
         style="width:54px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:12px;font-weight:700;background:var(--surf)">`;
 
+  const mkNombre = () => {
+    if (!tiposInst.length) {
+      return `<input type="text" class="panel-inst-nombre" value="" placeholder="Ej: Evaluación escrita"
+        style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:6px 8px;font-size:11px;background:var(--surf)">`;
+    }
+    return `<div class="panel-inst-nombre-wrap" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+      <select class="panel-inst-tipo" onchange="_onTipoChange(this)" style="border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+        <option value="">— Tipo —</option>
+        ${tiposInst.map(t => `<option value="${_esc(t.nombre)}">${_esc(t.nombre)}</option>`).join('')}
+        <option value="__otro__">Otro...</option>
+      </select>
+      <input type="text" class="panel-inst-nombre-libre" value="" placeholder="Nombre libre..."
+        style="display:none;border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+    </div>`;
+  };
+
   if (container.querySelector('div:only-child')?.textContent?.includes('Sin instancias')) {
     container.innerHTML = '';
   }
@@ -1883,8 +1948,7 @@ function _addInstRow() {
   row.dataset.idx = idx;
   row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--brd)';
   row.innerHTML = `
-    <input type="text" class="panel-inst-nombre" value="" placeholder="Ej: Evaluación escrita"
-      style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:6px 8px;font-size:11px;background:var(--surf)">
+    ${mkNombre()}
     ${mkVal()}
     <button onclick="_removeInstRow(${idx})"
       style="background:none;border:none;cursor:pointer;color:var(--rojo);font-size:16px;padding:2px 4px;line-height:1">✕</button>`;
@@ -1950,7 +2014,7 @@ async function guardarPanelInstancias(alumnoId, materiaId, cursoId, periodoId) {
   [...rows].forEach(row => {
     const idx    = parseInt(row.dataset.idx);
     const orig   = window._panelInst[idx] || {};
-    const nombre = row.querySelector('.panel-inst-nombre')?.value?.trim();
+    const nombre = _getNombreDeRow(row);
     const valor  = row.querySelector('.panel-inst-valor')?.value;
     if (!nombre) return;
     const entry = {

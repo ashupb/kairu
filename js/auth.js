@@ -71,7 +71,7 @@ async function login() {
     if (perfil.institucion_id) {
       const { data: inst } = await sb
         .from('instituciones')
-        .select('id, nombre, logo_url')
+        .select('id, nombre, logo_url, nivel_inicial, nivel_primario, nivel_secundario, anio_lectivo')
         .eq('id', perfil.institucion_id)
         .single();
       instData = inst;
@@ -130,7 +130,7 @@ async function verificarSesion() {
   if (perfil?.institucion_id) {
     const { data: inst } = await sb
       .from('instituciones')
-      .select('id, nombre, logo_url')
+      .select('id, nombre, logo_url, nivel_inicial, nivel_primario, nivel_secundario, anio_lectivo')
       .eq('id', perfil.institucion_id)
       .single();
     instData = inst;
