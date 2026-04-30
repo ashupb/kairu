@@ -125,6 +125,21 @@ function toggleSit(id) {
   el.style.display = visible ? 'none' : 'block';
 }
 
+function _mkMiniStat(apr, obs, crit, sin) {
+  if (apr + obs + crit === 0) return `<div style="font-size:10px;color:var(--txt3);margin-top:5px">Sin notas registradas</div>`;
+  return `<div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+    ${apr  ? `<span style="font-size:10px;font-weight:600;color:var(--verde)">🟢 ${apr}</span>`  : ''}
+    ${obs  ? `<span style="font-size:10px;font-weight:600;color:var(--ambar)">🟡 ${obs}</span>` : ''}
+    ${crit ? `<span style="font-size:10px;font-weight:600;color:var(--rojo)">🔴 ${crit}</span>` : ''}
+    ${sin  ? `<span style="font-size:10px;color:var(--txt3)">⬜ ${sin}</span>`                   : ''}
+  </div>`;
+}
+
+function _scrollGrilla(dir) {
+  const el = document.getElementById('grilla-notas-wrap');
+  if (el) el.scrollBy({ left: dir * 160, behavior: 'smooth' });
+}
+
 // ─── RENDER PRINCIPAL ─────────────────────────────────
 async function rNotas() {
   showLoading('notas');
@@ -211,14 +226,15 @@ async function rNotasDocente() {
         // Primaria/inicial: una sola card que abre la tabla completa (todas las materias comunes)
         if (esPrimaria) {
           return `
-            <div class="card" style="display:flex;align-items:center;justify-content:space-between;
+            <div class="card" style="display:flex;align-items:flex-start;justify-content:space-between;
               padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--verde)"
               onclick="verNotasPrimariaGrado('${cu.id}','${cu.nivel}','${cu.nombre}${cu.division}')">
-              <div>
+              <div style="flex:1;min-width:0">
                 <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
                 <div style="font-size:12px;color:var(--txt2)">Maestra/o de ${labelNivel} · todas las materias comunes</div>
+                <div id="card-stat-${cu.id}"></div>
               </div>
-              <span style="font-size:22px;color:var(--verde)">→</span>
+              <span style="font-size:22px;color:var(--verde);flex-shrink:0;margin-left:8px">→</span>
             </div>`;
         }
 
@@ -322,6 +338,25 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
     });
     return proms.reduce((a, b) => a + b, 0) / proms.length;
   };
+
+  // Métricas por curso para las cards
+  const cursoStatsDo = {};
+  alumnos.forEach(al => {
+    if (!cursoStatsDo[al.curso_id]) cursoStatsDo[al.curso_id] = { apr: 0, obs: 0, crit: 0, sin: 0 };
+    const prom = getPromedio(al);
+    const cu   = cursoMap[al.curso_id];
+    const min  = CONFIG_NOTAS[cu?.nivel]?.nota_minima ?? 7;
+    const rec  = CONFIG_NOTAS[cu?.nivel]?.nota_recuperacion ?? 4;
+    const st   = cursoStatsDo[al.curso_id];
+    if (prom === null) st.sin++;
+    else if (prom >= min) st.apr++;
+    else if (prom >= rec) st.obs++;
+    else st.crit++;
+  });
+  Object.entries(cursoStatsDo).forEach(([cId, st]) => {
+    const el = document.getElementById(`card-stat-${cId}`);
+    if (el) el.innerHTML = _mkMiniStat(st.apr, st.obs, st.crit, st.sin);
+  });
 
   const alumnosConCurso = alumnos.map(al => ({
     ...al,
@@ -449,11 +484,15 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
       <!-- Grilla -->
       ${!instancias.length
         ? `<div class="empty-state">Sin instancias evaluativas.<br>Creá una con el botón "Nueva instancia".</div>`
-        : `<div style="overflow-x:auto">
+        : `<div style="display:flex;justify-content:flex-end;gap:4px;margin-bottom:6px">
+            <button onclick="_scrollGrilla(-1)" style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">◀</button>
+            <button onclick="_scrollGrilla(1)"  style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">▶</button>
+          </div>
+          <div id="grilla-notas-wrap" style="overflow-x:auto">
           <table class="grilla-notas">
             <thead>
               <tr>
-                <th style="text-align:left;min-width:140px">Alumno</th>
+                <th style="text-align:left;min-width:150px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
                 ${instancias.map(inst => `
                   <th class="${inst.tipos_evaluacion?.es_recuperatorio ? 'th-recup' : ''}"
                     title="${inst.tipos_evaluacion?.nombre || ''}"
@@ -473,7 +512,7 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
                 const prom = promedios[al.id];
                 return `
                   <tr>
-                    <td style="font-size:11px;font-weight:500;white-space:nowrap;cursor:pointer"
+                    <td style="font-size:11px;font-weight:500;white-space:nowrap;cursor:pointer;position:sticky;left:0;z-index:1;background:var(--bg);box-shadow:2px 0 4px rgba(0,0,0,.06)"
                       onclick="verAlumnoNotas('${al.id}','${cursoId}','${materiaId}','${PERIODO_SEL}')">
                       ${al.apellido}, ${al.nombre}
                     </td>
@@ -505,7 +544,7 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
               }).join('')}
             </tbody>
           </table>
-        </div>`}`;
+        </div></div>`}`;
   };
 
   window.cambioPeriodoDoc = async (pid) => {
@@ -1032,14 +1071,15 @@ async function rNotasDirectivo() {
       return `
         <div class="sec-lb" style="color:${colores[n]}">${labelNivelCalif(n)}</div>
         ${cs.map(cu => `
-          <div class="card" style="display:flex;align-items:center;justify-content:space-between;
+          <div class="card" style="display:flex;align-items:flex-start;justify-content:space-between;
             padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid ${colores[n]}"
             onclick="verCalifCurso('${cu.id}','${cu.nivel}')">
-            <div>
+            <div style="flex:1;min-width:0">
               <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
               <div style="font-size:11px;color:var(--txt2)">${cu.nivel}</div>
+              <div id="card-stat-${cu.id}"></div>
             </div>
-            <span style="font-size:22px;color:${colores[n]}">→</span>
+            <span style="font-size:22px;color:${colores[n]};flex-shrink:0;margin-left:8px">→</span>
           </div>`).join('')}`;
     }).join('')}
     <div class="sec-lb" style="margin-top:14px">Situación de alumnos</div>
@@ -1105,6 +1145,25 @@ async function _cargarSituacionDirectivoGlobal(cursos) {
     });
     return proms.reduce((a, b) => a + b, 0) / proms.length;
   };
+
+  // Métricas por curso para las cards
+  const cursoStats = {};
+  alumnos.forEach(al => {
+    if (!cursoStats[al.curso_id]) cursoStats[al.curso_id] = { apr: 0, obs: 0, crit: 0, sin: 0 };
+    const prom = getPromedio(al);
+    const cu   = cursos.find(c => c.id === al.curso_id);
+    const min  = CONFIG_NOTAS[cu?.nivel]?.nota_minima ?? 7;
+    const rec  = CONFIG_NOTAS[cu?.nivel]?.nota_recuperacion ?? 4;
+    const st   = cursoStats[al.curso_id];
+    if (prom === null) st.sin++;
+    else if (prom >= min) st.apr++;
+    else if (prom >= rec) st.obs++;
+    else st.crit++;
+  });
+  Object.entries(cursoStats).forEach(([cId, st]) => {
+    const el = document.getElementById(`card-stat-${cId}`);
+    if (el) el.innerHTML = _mkMiniStat(st.apr, st.obs, st.crit, st.sin);
+  });
 
   const alumnosConCurso = alumnos.map(al => ({
     ...al,
@@ -1218,11 +1277,15 @@ async function verCalifCurso(cursoId, nivel) {
         </div>
       ${validacionPendHTML}
       ${!materias.length ? '<div class="empty-state">Sin materias configuradas</div>' : `
-      <div style="overflow-x:auto">
+      <div style="display:flex;justify-content:flex-end;gap:4px;margin-bottom:6px">
+        <button onclick="_scrollGrilla(-1)" style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">◀</button>
+        <button onclick="_scrollGrilla(1)"  style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">▶</button>
+      </div>
+      <div id="grilla-notas-wrap" style="overflow-x:auto">
         <table class="grilla-notas">
           <thead>
             <tr>
-              <th style="text-align:left;min-width:140px">Alumno</th>
+              <th style="text-align:left;min-width:150px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
               ${materias.map(m => `
                 <th style="font-size:9px;max-width:55px;white-space:normal;line-height:1.3">${m.nombre}</th>
               `).join('')}
@@ -1236,7 +1299,7 @@ async function verCalifCurso(cursoId, nivel) {
               }).length;
               return `
                 <tr class="${enRiesgo >= 2 ? 'fila-riesgo' : ''}">
-                  <td style="font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap"
+                  <td style="font-size:11px;font-weight:500;cursor:pointer;white-space:nowrap;position:sticky;left:0;z-index:1;background:var(--bg);box-shadow:2px 0 4px rgba(0,0,0,.06)"
                     onclick="verAlumnoNotas('${al.id}','${cursoId}',null,'${PERIODO_SEL}')">
                     ${al.apellido}, ${al.nombre}
                     ${enRiesgo >= 2 ? '<span class="tag tr" style="font-size:9px;margin-left:4px">Riesgo</span>' : ''}
@@ -1257,7 +1320,7 @@ async function verCalifCurso(cursoId, nivel) {
             }).join('')}
           </tbody>
         </table>
-      </div>`}`;
+      </div></div>`}`;
   };
 
   window.cambioPeriodoDir = async (pid) => {
@@ -1600,11 +1663,15 @@ async function verNotasPrimariaGrado(cursoId, nivel, nombreCurso, editable = tru
           ? '<div class="empty-state">Sin materias comunes configuradas para este nivel.</div>'
           : !alumnos.length
             ? '<div class="empty-state">Sin alumnos activos en el curso.</div>'
-            : `<div style="overflow-x:auto">
+            : `<div style="display:flex;justify-content:flex-end;gap:4px;margin-bottom:6px">
+          <button onclick="_scrollGrilla(-1)" style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">◀</button>
+          <button onclick="_scrollGrilla(1)"  style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">▶</button>
+        </div>
+        <div id="grilla-notas-wrap" style="overflow-x:auto">
         <table class="grilla-notas" style="table-layout:auto">
           <thead>
             <tr>
-              <th style="text-align:left;min-width:140px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
+              <th style="text-align:left;min-width:150px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
               ${materias.map(m => `
                 <th style="font-size:9px;max-width:58px;white-space:normal;line-height:1.3;padding:5px 3px">
                   ${m.nombre}
@@ -1652,7 +1719,7 @@ async function verNotasPrimariaGrado(cursoId, nivel, nombreCurso, editable = tru
             }).join('')}
           </tbody>
         </table>
-      </div>
+      </div></div>
       ${editable ? `
       <button class="btn-p" style="width:100%;margin-top:14px"
         onclick="guardarNotasPrimariaGrado()">💾 Guardar promedios</button>` : ''}`}`;
