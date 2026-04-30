@@ -1837,7 +1837,7 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
 
   const mkValorInput = (cls, val) => usaConc
     ? `<select class="${cls}" onchange="_actualizarPromSugerido()"
-        style="flex-shrink:0;border:1.5px solid var(--brd);border-radius:6px;padding:5px 6px;font-size:12px;background:var(--surf)">
+        style="flex-shrink:0;width:68px;border:1.5px solid var(--brd);border-radius:6px;padding:5px 4px;font-size:12px;background:var(--surf)">
         <option value="">—</option>
         ${escalaConc.map(v => `<option value="${v}" ${(val || '') === v ? 'selected' : ''}>${v}</option>`).join('')}
        </select>`
@@ -1934,7 +1934,7 @@ function _addInstRow() {
 
   const mkVal = () => meta.usaConc
     ? `<select class="panel-inst-valor" onchange="_actualizarPromSugerido()"
-        style="flex-shrink:0;border:1.5px solid var(--brd);border-radius:6px;padding:5px 6px;font-size:12px;background:var(--surf)">
+        style="flex-shrink:0;width:68px;border:1.5px solid var(--brd);border-radius:6px;padding:5px 4px;font-size:12px;background:var(--surf)">
         <option value="">—</option>
         ${escalaConc.map(v => `<option value="${v}">${v}</option>`).join('')}
        </select>`
