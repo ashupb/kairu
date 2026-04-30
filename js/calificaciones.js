@@ -377,7 +377,7 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
   const c = document.getElementById('page-notas');
   showLoading('notas');
 
-  const periodosCurso = PERIODOS.filter(p => p.nivel === nivel);
+  const periodosCurso = PERIODOS.filter(p => p.nivel === nivel).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
   const hoy = new Date();
   const periodoActual = periodosCurso.find(p =>
     new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin)
@@ -489,10 +489,10 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
             <button onclick="_scrollGrilla(1)"  style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">▶</button>
           </div>
           <div id="grilla-notas-wrap" style="overflow-x:auto">
-          <table class="grilla-notas">
+          <table class="grilla-notas" style="table-layout:auto">
             <thead>
               <tr>
-                <th style="text-align:left;min-width:150px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
+                <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
                 ${instancias.map(inst => `
                   <th class="${inst.tipos_evaluacion?.es_recuperatorio ? 'th-recup' : ''}"
                     title="${inst.tipos_evaluacion?.nombre || ''}"
@@ -1190,7 +1190,7 @@ async function verCalifCurso(cursoId, nivel) {
   }
 
   // --- MODO: secundario (sin cambios) ---
-  const periodosCurso = PERIODOS.filter(p => p.nivel === nivel);
+  const periodosCurso = PERIODOS.filter(p => p.nivel === nivel).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
   let PERIODO_SEL     = periodosCurso[0]?.id || '';
 
   const { data: curso } = await sb.from('cursos').select('*').eq('id', cursoId).single();
@@ -1282,13 +1282,14 @@ async function verCalifCurso(cursoId, nivel) {
         <button onclick="_scrollGrilla(1)"  style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">▶</button>
       </div>
       <div id="grilla-notas-wrap" style="overflow-x:auto">
-        <table class="grilla-notas">
+        <table class="grilla-notas" style="table-layout:auto">
           <thead>
             <tr>
-              <th style="text-align:left;min-width:150px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
+              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
               ${materias.map(m => `
-                <th style="font-size:9px;max-width:55px;white-space:normal;line-height:1.3">${m.nombre}</th>
+                <th style="font-size:9px;width:65px;white-space:normal;line-height:1.3">${m.nombre}</th>
               `).join('')}
+              <th style="position:sticky;right:0;z-index:2;background:var(--surf2);font-weight:700;min-width:52px">Prom.</th>
             </tr>
           </thead>
           <tbody>
@@ -1316,6 +1317,11 @@ async function verCalifCurso(cursoId, nivel) {
                         </span>
                       </td>`;
                   }).join('')}
+                  <td style="position:sticky;right:0;background:var(--bg);box-shadow:-2px 0 4px rgba(0,0,0,.06);text-align:center">
+                    ${promedioGlobal[al.id] != null
+                      ? `<span style="font-weight:700;color:${NOTA_COLOR(promedioGlobal[al.id])}">${promedioGlobal[al.id].toFixed(1)}</span>`
+                      : `<span style="color:var(--txt3)">—</span>`}
+                  </td>
                 </tr>`;
             }).join('')}
           </tbody>
@@ -1507,7 +1513,7 @@ async function verNotasPrimariaGrado(cursoId, nivel, nombreCurso, editable = tru
   const instId = USUARIO_ACTUAL.institucion_id;
   showLoading('notas');
 
-  const periodosCurso = PERIODOS.filter(p => p.nivel === nivel);
+  const periodosCurso = PERIODOS.filter(p => p.nivel === nivel).sort((a,b) => (a.nombre||'').localeCompare(b.nombre||''));
   const hoy = new Date();
   const periodoActual = periodosCurso.find(p =>
     new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin)
