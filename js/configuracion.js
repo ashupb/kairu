@@ -1378,6 +1378,7 @@ function _buildAsigFilasNivel(materias, docentes, asigns, cursoNivel) {
           </span>
         </div>
         <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Docentes especiales</div>
+        ${materias.length === 0 ? '<div style="font-size:11px;color:var(--txt3);padding:6px 0">Sin materias especiales configuradas. Editá las materias en la pestaña Materias.</div>' : ''}
         ${materias.map(m => `
           <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
             <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
@@ -1407,6 +1408,7 @@ function _buildAsigFilasNivel(materias, docentes, asigns, cursoNivel) {
       </div>
       <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;margin-top:8px">Docentes especiales</div>
       <div style="font-size:11px;color:var(--txt2);margin-bottom:8px">Solo califican su materia específica</div>
+      ${materias.length === 0 ? '<div style="font-size:11px;color:var(--txt3);padding:4px 0 10px">Sin materias especiales configuradas para este nivel. Agregálas en la pestaña Materias y marcalas como tipo "Especial".</div>' : ''}
       ${materias.map(m => `
         <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
           <div style="flex:1;font-size:12px;font-weight:500">${_esc(m.nombre)}</div>
@@ -1426,7 +1428,7 @@ let _admAsigVistaPor       = 'curso';
 let _admAsigDocenteSel     = null;
 let _admAsigDocenteCursoSel = null;
 let _admAsigAnioLectivo    = new Date().getFullYear();
-let _admAsigModoEdicion    = true;
+let _admAsigModoEdicion    = false;
 
 async function _renderAsignaciones() {
   const sec = document.getElementById('adm-section-content');
@@ -1436,7 +1438,7 @@ async function _renderAsignaciones() {
     sb.from('cursos').select('id,nombre,division,nivel')
       .eq('institucion_id', USUARIO_ACTUAL.institucion_id).or('activo.is.null,activo.eq.true').order('nivel').order('nombre'),
     sb.from('materias').select('id,nombre,nivel,tipo')
-      .eq('institucion_id', USUARIO_ACTUAL.institucion_id).eq('activo', true).order('nombre'),
+      .eq('institucion_id', USUARIO_ACTUAL.institucion_id).or('activo.is.null,activo.eq.true').order('nombre'),
     sb.from('usuarios').select('id,nombre_completo,nivel')
       .eq('institucion_id', USUARIO_ACTUAL.institucion_id).eq('rol', 'docente').eq('activo', true).order('nombre_completo'),
   ]);
@@ -1475,7 +1477,7 @@ async function _renderAsignaciones() {
 
 async function _admAsigVista(modo) {
   _admAsigVistaPor = modo;
-  _admAsigModoEdicion = true;
+  _admAsigModoEdicion = false;
   document.querySelectorAll('#adm-section-content .chip').forEach(c => {
     c.classList.toggle('on', (modo === 'curso' && c.textContent === 'Por curso') || (modo === 'docente' && c.textContent === 'Por docente'));
   });
@@ -1558,7 +1560,7 @@ async function _renderAsigContent() {
 
     const esNivel       = cursoSel?.nivel === 'inicial' || cursoSel?.nivel === 'primario';
     const materiasCurso = cursoSel
-      ? materias.filter(m => m.nivel === cursoSel.nivel && (!esNivel || m.tipo === 'especial'))
+      ? materias.filter(m => (!m.nivel || m.nivel === cursoSel.nivel) && (!esNivel || m.tipo === 'especial'))
       : [];
     const docentesCurso = cursoSel ? docentes.filter(d => !d.nivel || d.nivel === cursoSel.nivel) : docentes;
 
@@ -1998,9 +2000,6 @@ function _renderListaTipos(lista, tabla, nivel, listaId) {
         style="display:none;background:none;border:none;cursor:pointer;font-size:12px;color:var(--verde);padding:0 4px;font-weight:700" title="Guardar">✓</button>
       <button onclick="_eliminarTipo('${tabla}','${t.id}')"
         style="background:none;border:none;cursor:pointer;font-size:13px;color:var(--rojo);padding:0 3px;line-height:1" title="Eliminar">✕</button>
-      <div class="tog${t.activo !== false ? ' on' : ''}" onclick="_togTipoActivo('${tabla}','${t.id}','${listaId}','${nivel}')">
-        <div class="tog-thumb"></div>
-      </div>
     </div>`).join('');
 }
 

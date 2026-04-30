@@ -101,27 +101,28 @@ async function rAsistDirector() {
     return ids.length > 0 && ids.filter(id => asistSet.has(id)).length < ids.length;
   }).length : 0;
 
+  const pctColor = pctAsistHoy>=85?'var(--verde)':pctAsistHoy>=70?'var(--ambar)':'var(--rojo)';
   const contCardsHTML = totalRegistradosHoy > 0 ? `
-    <div class="metrics" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-bottom:14px">
-      <div class="mc">
-        <div class="mc-v" style="color:var(--verde)">${contadorEstados.presente}</div>
-        <div class="mc-l">PRESENTES</div>
+    <div class="mc-asist-grid">
+      <div class="mc-asist" style="border-top:3px solid var(--verde)">
+        <div class="mc-asist-v" style="color:var(--verde)">${contadorEstados.presente}</div>
+        <div class="mc-asist-l">Presentes</div>
       </div>
-      <div class="mc">
-        <div class="mc-v" style="color:var(--rojo)">${contadorEstados.ausente}</div>
-        <div class="mc-l">AUSENTES</div>
+      <div class="mc-asist" style="border-top:3px solid var(--rojo)">
+        <div class="mc-asist-v" style="color:var(--rojo)">${contadorEstados.ausente}</div>
+        <div class="mc-asist-l">Ausentes</div>
       </div>
-      <div class="mc">
-        <div class="mc-v" style="color:var(--azul)">${contadorEstados.justificado}</div>
-        <div class="mc-l">JUSTIF.</div>
+      <div class="mc-asist" style="border-top:3px solid var(--azul)">
+        <div class="mc-asist-v" style="color:var(--azul)">${contadorEstados.justificado}</div>
+        <div class="mc-asist-l">Justificados</div>
       </div>
-      <div class="mc">
-        <div class="mc-v" style="color:var(--ambar)">${contadorEstados.media_falta + contadorEstados.tardanza}</div>
-        <div class="mc-l">TARD./MF</div>
+      <div class="mc-asist" style="border-top:3px solid var(--ambar)">
+        <div class="mc-asist-v" style="color:var(--ambar)">${contadorEstados.media_falta + contadorEstados.tardanza}</div>
+        <div class="mc-asist-l">Tard. / M.F.</div>
       </div>
-      <div class="mc">
-        <div class="mc-v" style="color:${pctAsistHoy>=85?'var(--verde)':pctAsistHoy>=70?'var(--ambar)':'var(--rojo)'}">${pctAsistHoy}%</div>
-        <div class="mc-l">ASISTENCIA</div>
+      <div class="mc-asist" style="border-top:3px solid ${pctColor}">
+        <div class="mc-asist-v" style="color:${pctColor}">${pctAsistHoy}%</div>
+        <div class="mc-asist-l">Asistencia</div>
       </div>
     </div>` : '';
 
@@ -152,12 +153,12 @@ async function rAsistDirector() {
             const statusClr = listo ? 'var(--verde)' : enProg ? 'var(--ambar)' : total > 0 ? 'var(--rojo)' : 'var(--txt3)';
             const statusLbl = listo ? '✓ Al día' : enProg ? `${registrados}/${total}` : total > 0 ? 'Pendiente' : 'Sin alumnos';
             return `
-              <div class="curso-card-asist" onclick="verCursoDirector('${cu.id}','${cu.nivel}')">
-                <div class="cca-top">
-                  <div class="cca-badge" style="background:${NIVEL_COLORS[n]}18;color:${NIVEL_COLORS[n]}">${cu.nombre}${cu.division||''}</div>
-                  <span style="font-size:11px;font-weight:600;color:${statusClr}">${statusLbl}</span>
+              <div class="curso-card-asist" style="border-top:3px solid ${NIVEL_COLORS[n]}" onclick="verCursoDirector('${cu.id}','${cu.nivel}')">
+                <div class="cca-badge" style="background:${NIVEL_COLORS[n]}18;color:${NIVEL_COLORS[n]};display:inline-block;margin-bottom:10px">${cu.nombre}${cu.division||''}</div>
+                <div class="cca-bottom">
+                  <span style="font-size:11px;color:var(--txt2)">${total} alumno${total!==1?'s':''}</span>
+                  <span class="cca-status" style="color:${statusClr}">${statusLbl}</span>
                 </div>
-                <div style="font-size:10px;color:var(--txt2);margin-top:4px">${total} alumno${total!==1?'s':''}</div>
               </div>`;
           }).join('')}
         </div>`;
@@ -1225,12 +1226,20 @@ function inyectarEstilosAsist() {
   const st = document.createElement('style');
   st.id = 'asist-styles';
   st.textContent = `
+    /* Cards de métricas institucionales */
+    .mc-asist-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px;}
+    .mc-asist{background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad-lg);padding:14px 10px;text-align:center;}
+    .mc-asist-v{font-size:26px;font-weight:700;line-height:1.1;font-family:'DM Mono',monospace;}
+    .mc-asist-l{font-size:10px;color:var(--txt2);font-weight:600;letter-spacing:.4px;margin-top:6px;}
+    @media(max-width:520px){.mc-asist-grid{grid-template-columns:repeat(3,1fr);}}
+
     /* Grilla de cursos */
-    .curso-grid-asist{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+    .curso-grid-asist{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:14px;}
     .curso-card-asist{background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad-lg);padding:14px;cursor:pointer;transition:all .15s;}
     .curso-card-asist:hover{border-color:var(--verde);transform:translateY(-1px);}
-    .cca-top{display:flex;align-items:center;justify-content:space-between;}
-    .cca-badge{font-size:15px;font-weight:700;font-family:'Lora',serif;padding:4px 10px;border-radius:8px;}
+    .cca-badge{font-size:16px;font-weight:700;font-family:'Lora',serif;padding:4px 10px;border-radius:8px;}
+    .cca-bottom{display:flex;align-items:center;justify-content:space-between;}
+    .cca-status{font-size:11px;font-weight:600;}
 
     /* Leyenda */
     .asist-leyenda{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}

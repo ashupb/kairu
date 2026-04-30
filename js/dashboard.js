@@ -536,10 +536,10 @@ async function rDashDocente() {
 
   // Paso 1: asignaciones + eventos + pendientes (paralelo)
   const [asigsRes, eventosRes, respRes] = await Promise.all([
-    sb.from('docente_cursos')
+    sb.from('asignaciones')
       .select('curso_id,cursos(id,nombre,division,nivel)')
-      .eq('usuario_id', miId)
-      .eq('activo', true),
+      .eq('docente_id', miId)
+      .eq('anio_lectivo', INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()),
     sb.from('eventos_institucionales')
       .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
       .eq('institucion_id', instId)
