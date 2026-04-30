@@ -1957,17 +1957,21 @@ async function _renderParamGlobal() {
   // Invalidar cache de tipos de instancia usado en calificaciones.js
   window._tiposInstanciaCache = null;
 
-  const [tiposEvalRes, tiposJustRes, tiposEventoRes, tiposInstRes] = await Promise.all([
+  const [tiposEvalRes, tiposJustRes, tiposEventoRes, tiposInstRes, tiposProbRes, tiposIntervRes] = await Promise.all([
     sb.from('tipos_evaluacion').select('*').eq('institucion_id', instId).order('nombre'),
     sb.from('tipos_justificacion').select('*').eq('institucion_id', instId).order('nombre'),
     sb.from('tipos_evento').select('*').eq('institucion_id', instId).order('nombre'),
     sb.from('tipos_instancia_evaluativa').select('*').eq('institucion_id', instId).eq('activo', true).order('created_at'),
+    sb.from('tipos_problematicas').select('*').eq('institucion_id', instId).eq('activo', true).order('orden'),
+    sb.from('tipos_intervencion').select('*').eq('institucion_id', instId).eq('activo', true).order('orden'),
   ]);
 
-  const tiposEval   = tiposEvalRes.data  || [];
-  const tiposJust   = tiposJustRes.data  || [];
+  const tiposEval   = tiposEvalRes.data   || [];
+  const tiposJust   = tiposJustRes.data   || [];
   const tiposEvento = tiposEventoRes.data || [];
-  let   tiposInst   = tiposInstRes.data  || [];
+  let   tiposInst   = tiposInstRes.data   || [];
+  const tiposProb   = tiposProbRes.data   || [];
+  const tiposInterv = tiposIntervRes.data || [];
 
   // Sembrar valores por defecto si la institución no tiene tipos configurados aún
   if (!tiposInst.length && !tiposInstRes.error) {
@@ -2027,6 +2031,32 @@ async function _renderParamGlobal() {
         <input type="text" id="new-tipo-evento-global" placeholder="Nuevo tipo de evento" style="flex:1">
         <button class="btn-s" onclick="_agregarTipo('tipos_evento','new-tipo-evento-global','global','lista-tipos-evento')">Agregar</button>
       </div>
+    </div>
+
+    <!-- TIPOS PROBLEMÁTICA -->
+    <div class="card">
+      <div class="card-t">Tipos de problemática</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Opciones disponibles al registrar una nueva situación</div>
+      <div id="lista-tipos-prob">
+        ${_renderListaTipos(tiposProb, 'tipos_problematicas', 'global', 'lista-tipos-prob')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-tipo-prob-global" placeholder="Ej: Convivencia" style="flex:1">
+        <button class="btn-s" onclick="_agregarTipoProb()">Agregar</button>
+      </div>
+    </div>
+
+    <!-- TIPOS DE INTERVENCIÓN -->
+    <div class="card">
+      <div class="card-t">Tipos de intervención</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Opciones disponibles al registrar un seguimiento</div>
+      <div id="lista-tipos-interv">
+        ${_renderListaTipos(tiposInterv, 'tipos_intervencion', 'global', 'lista-tipos-interv')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-tipo-interv-global" placeholder="Ej: Reunión con familia" style="flex:1">
+        <button class="btn-s" onclick="_agregarTipoInterv()">Agregar</button>
+      </div>
     </div>`;
 }
 
@@ -2040,6 +2070,32 @@ async function _agregarTipoInst() {
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
   window._tiposInstanciaCache = null;
+  await _renderParamGlobal();
+}
+
+async function _agregarTipoProb() {
+  const inp    = document.getElementById('new-tipo-prob-global');
+  const nombre = inp?.value?.trim();
+  if (!nombre) return;
+  const { error } = await sb.from('tipos_problematicas').insert([{
+    nombre, activo: true, orden: 0, institucion_id: USUARIO_ACTUAL.institucion_id,
+  }]);
+  if (error) { alert('Error: ' + error.message); return; }
+  if (inp) inp.value = '';
+  window._tiposProbCache = null; // invalidar cache en problematicas.js
+  await _renderParamGlobal();
+}
+
+async function _agregarTipoInterv() {
+  const inp    = document.getElementById('new-tipo-interv-global');
+  const nombre = inp?.value?.trim();
+  if (!nombre) return;
+  const { error } = await sb.from('tipos_intervencion').insert([{
+    nombre, activo: true, orden: 0, institucion_id: USUARIO_ACTUAL.institucion_id,
+  }]);
+  if (error) { alert('Error: ' + error.message); return; }
+  if (inp) inp.value = '';
+  window._tiposIntervCache = null; // invalidar cache en problematicas.js
   await _renderParamGlobal();
 }
 

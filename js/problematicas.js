@@ -2,7 +2,9 @@
 // PROBLEMATICAS.JS — v3 (soporte grupal)
 // =====================================================
 
-let _probFiltros = { estado: 'activas', urgencia: 'todas', nivel: 'todos' };
+let _probFiltros     = { estado: 'activas', urgencia: 'todas', nivel: 'todos' };
+let _tiposProbCache  = null; // nombres cargados desde tipos_problematicas
+let _tiposIntervCache = null; // nombres cargados desde tipos_intervencion
 
 // ─── HELPERS ──────────────────────────────────────────
 function labelTipoProb(t) {
@@ -91,6 +93,21 @@ async function rProb() {
   showLoading('prob');
   try {
     await detectarMigracion();
+
+    // Cargar tipos dinámicos (se invalidan desde configuracion.js al editar)
+    if (!_tiposProbCache) {
+      const { data: tp } = await sb.from('tipos_problematicas')
+        .select('nombre').eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+        .eq('activo', true).order('orden');
+      _tiposProbCache = tp?.length ? tp.map(t => t.nombre) : null;
+    }
+    if (!_tiposIntervCache) {
+      const { data: ti } = await sb.from('tipos_intervencion')
+        .select('nombre').eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+        .eq('activo', true).order('orden');
+      _tiposIntervCache = ti?.length ? ti.map(t => t.nombre) : null;
+    }
+
     const q               = await getProblematicasData();
     const { data, error } = await q;
     if (error) throw error;
@@ -117,7 +134,7 @@ async function rProb() {
 
     const abiertas = lista.filter(p => p.estado === 'abierta').length;
     const enSeg    = lista.filter(p => p.estado === 'en_seguimiento').length;
-    const cerradas = lista.filter(p => p.estado === 'cerrada' || p.estado === 'resuelta' || p.estado === 'derivada').length;
+    const cerradas = lista.filter(p => p.estado === 'cerrada' || p.estado === 'derivada').length;
     const perm     = probPermisos();
 
     const c = document.getElementById('page-prob');
@@ -204,7 +221,7 @@ function renderListaProb(lista) {
     const urgCls = p.urgencia === 'alta' ? 'ua' : p.urgencia === 'media' ? 'um' : 'ub';
     const urgTag = p.urgencia === 'alta' ? 'tr' : p.urgencia === 'media' ? 'ta' : 'tg';
     const estCls = p.estado === 'abierta' ? 'tr' : p.estado === 'en_seguimiento' ? 'ta' : 'tg';
-    const estLbl = { abierta:'Sin atender', en_seguimiento:'En seguimiento', cerrada:'Cerrada', resuelta:'Cerrada', derivada:'Derivada' }[p.estado] || p.estado;
+    const estLbl = { abierta:'Sin atender', en_seguimiento:'En seguimiento', cerrada:'Cerrada', derivada:'Derivada' }[p.estado] || p.estado;
     const avBg   = esGrupal ? 'var(--azul-l)' : 'var(--rojo-l)';
     const avCl   = esGrupal ? 'var(--azul)'   : 'var(--rojo)';
 
@@ -266,7 +283,7 @@ async function cargarDetProb(probId) {
 
     if (hijas?.length) {
       const eCls = e => e === 'abierta' ? 'tr' : e === 'en_seguimiento' ? 'ta' : 'tg';
-      const eLbl = e => ({ abierta:'Sin atender', en_seguimiento:'Seguimiento', cerrada:'Cerrada', resuelta:'Cerrada', derivada:'Derivada' }[e] || e);
+      const eLbl = e => ({ abierta:'Sin atender', en_seguimiento:'Seguimiento', cerrada:'Cerrada', derivada:'Derivada' }[e] || e);
       hijasHTML = `
         <div style="font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
           Alumnos involucrados (${hijas.length})
@@ -292,18 +309,22 @@ async function cargarDetProb(probId) {
 
   const perm     = probPermisos();
   const puedeSeg = puedeAgregarSeg(prob);
-  const cerrada  = prob?.estado === 'cerrada' || prob?.estado === 'resuelta' || prob?.estado === 'derivada';
+  const cerrada  = prob?.estado === 'cerrada' || prob?.estado === 'derivada';
 
-  const dotColor = t => t === 'Caso cerrado' ? 'var(--verde)' : t === 'Caso reabierto' ? 'var(--ambar)' : 'var(--azul)';
+  const dotColor  = t => t === 'Caso cerrado' ? 'var(--verde)' : t === 'Caso reabierto' ? 'var(--ambar)' : 'var(--azul)';
+  const resultTag = r => r === 'mejoro'      ? '<span style="font-size:9px;color:var(--verde);font-weight:600;margin-top:2px;display:block">🟢 Mejoró</span>'
+    : r === 'sin_cambios' ? '<span style="font-size:9px;color:var(--ambar);font-weight:600;margin-top:2px;display:block">🟡 Sin cambios</span>'
+    : r === 'empeoro'     ? '<span style="font-size:9px;color:var(--rojo);font-weight:600;margin-top:2px;display:block">🔴 Empeoró</span>' : '';
   const invsHTML = (intvs || []).length
     ? intvs.map(iv => `
         <div class="tl-it">
           <div class="tl-d" style="background:${dotColor(iv.titulo)}"></div>
           <div class="tl-f">${formatFechaCorta(iv.created_at?.split('T')[0])}</div>
           <div style="flex:1;min-width:0">
-            <div class="tl-t">${iv.titulo}</div>
+            <div class="tl-t">${iv.titulo}${iv.tipo && iv.tipo !== 'otro' ? `<span style="font-size:9px;color:var(--txt2);font-weight:400;margin-left:5px">(${iv.tipo})</span>` : ''}</div>
             <div class="tl-ds">${iv.descripcion}</div>
             ${iv.proximo_paso ? `<div style="font-size:10px;color:var(--verde);font-weight:500;margin-top:2px">→ ${iv.proximo_paso}</div>` : ''}
+            ${iv.resultado ? resultTag(iv.resultado) : ''}
             <div style="font-size:10px;color:var(--txt3);margin-top:2px">${iv.usr?.nombre_completo || '—'}</div>
           </div>
         </div>`).join('')
@@ -322,8 +343,26 @@ async function cargarDetProb(probId) {
       ${puedeSeg && !cerrada ? `
       <div style="margin-top:12px;border-top:1px solid var(--brd);padding-top:12px">
         <div style="font-size:11px;font-weight:600;margin-bottom:8px">Agregar seguimiento${esGrupal ? ' grupal' : ''}</div>
+        ${_tiposIntervCache?.length ? `
+        <select id="tipo-seg-${probId}" style="margin-bottom:6px;font-size:12px;padding:5px 8px;border:1.5px solid var(--brd);border-radius:6px;background:var(--surf);width:100%">
+          ${_tiposIntervCache.map(t => `<option value="${t}">${t}</option>`).join('')}
+        </select>` : ''}
         <textarea id="id-${probId}" rows="2" placeholder="Describí la acción tomada..."></textarea>
         <input type="text" id="ip-${probId}" placeholder="Próximo paso (opcional)" style="margin-top:6px">
+        <div style="margin-top:8px">
+          <div style="font-size:10px;font-weight:600;color:var(--txt2);margin-bottom:4px">¿Cómo evolucionó la situación?</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+              <input type="radio" name="res-${probId}" value="mejoro"> 🟢 Mejoró
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+              <input type="radio" name="res-${probId}" value="sin_cambios"> 🟡 Sin cambios
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+              <input type="radio" name="res-${probId}" value="empeoro"> 🔴 Empeoró
+            </label>
+          </div>
+        </div>
         <div class="acc" style="margin-top:8px">
           <button class="btn-p" style="font-size:11px" onclick="guardarSeguimiento('${probId}')">Guardar</button>
         </div>
@@ -356,21 +395,25 @@ async function abrirDetalleHija(hijaId) {
   if (!hija) return;
 
   const perm    = probPermisos();
-  const cerrada = hija.estado === 'cerrada' || hija.estado === 'resuelta' || hija.estado === 'derivada';
+  const cerrada = hija.estado === 'cerrada' || hija.estado === 'derivada';
   const nom     = hija.alumno ? `${hija.alumno.apellido}, ${hija.alumno.nombre}` : '—';
   const cur     = hija.alumno?.curso ? `${hija.alumno.curso.nombre} ${hija.alumno.curso.division || ''}`.trim() : '';
   const madreId = hija.problematica_madre_id;
 
-  const dotColor = t => t === 'Caso cerrado' ? 'var(--verde)' : t === 'Caso reabierto' ? 'var(--ambar)' : 'var(--azul)';
+  const dotColor  = t => t === 'Caso cerrado' ? 'var(--verde)' : t === 'Caso reabierto' ? 'var(--ambar)' : 'var(--azul)';
+  const resultTag = r => r === 'mejoro'      ? '<span style="font-size:9px;color:var(--verde);font-weight:600;margin-top:2px;display:block">🟢 Mejoró</span>'
+    : r === 'sin_cambios' ? '<span style="font-size:9px;color:var(--ambar);font-weight:600;margin-top:2px;display:block">🟡 Sin cambios</span>'
+    : r === 'empeoro'     ? '<span style="font-size:9px;color:var(--rojo);font-weight:600;margin-top:2px;display:block">🔴 Empeoró</span>' : '';
   const invsHTML = (intvs || []).length
     ? intvs.map(iv => `
         <div class="tl-it">
           <div class="tl-d" style="background:${dotColor(iv.titulo)}"></div>
           <div class="tl-f">${formatFechaCorta(iv.created_at?.split('T')[0])}</div>
           <div style="flex:1;min-width:0">
-            <div class="tl-t">${iv.titulo}</div>
+            <div class="tl-t">${iv.titulo}${iv.tipo && iv.tipo !== 'otro' ? `<span style="font-size:9px;color:var(--txt2);font-weight:400;margin-left:5px">(${iv.tipo})</span>` : ''}</div>
             <div class="tl-ds">${iv.descripcion}</div>
             ${iv.proximo_paso ? `<div style="font-size:10px;color:var(--verde);font-weight:500;margin-top:2px">→ ${iv.proximo_paso}</div>` : ''}
+            ${iv.resultado ? resultTag(iv.resultado) : ''}
             <div style="font-size:10px;color:var(--txt3);margin-top:2px">${iv.usr?.nombre_completo || '—'}</div>
           </div>
         </div>`).join('')
@@ -397,8 +440,26 @@ async function abrirDetalleHija(hijaId) {
         ${perm.agregarSeg && !cerrada ? `
         <div style="margin-top:12px;border-top:1px solid var(--brd);padding-top:12px">
           <div style="font-size:11px;font-weight:600;margin-bottom:8px">Agregar seguimiento individual</div>
+          ${_tiposIntervCache?.length ? `
+          <select id="tipo-seg-hija-${hijaId}" style="margin-bottom:6px;font-size:12px;padding:5px 8px;border:1.5px solid var(--brd);border-radius:6px;background:var(--surf);width:100%">
+            ${_tiposIntervCache.map(t => `<option value="${t}">${t}</option>`).join('')}
+          </select>` : ''}
           <textarea id="id-hija-${hijaId}" rows="2" placeholder="Describí la acción tomada..."></textarea>
           <input type="text" id="ip-hija-${hijaId}" placeholder="Próximo paso (opcional)" style="margin-top:6px">
+          <div style="margin-top:8px">
+            <div style="font-size:10px;font-weight:600;color:var(--txt2);margin-bottom:4px">¿Cómo evolucionó la situación?</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+                <input type="radio" name="res-hija-${hijaId}" value="mejoro"> 🟢 Mejoró
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+                <input type="radio" name="res-hija-${hijaId}" value="sin_cambios"> 🟡 Sin cambios
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+                <input type="radio" name="res-hija-${hijaId}" value="empeoro"> 🔴 Empeoró
+              </label>
+            </div>
+          </div>
           <div class="acc" style="margin-top:8px">
             <button class="btn-p" style="font-size:11px" onclick="guardarSegHija('${hijaId}','${madreId}')">Guardar</button>
           </div>
@@ -413,8 +474,10 @@ async function abrirDetalleHija(hijaId) {
 }
 
 async function guardarSegHija(hijaId, madreId) {
-  const d = document.getElementById('id-hija-' + hijaId)?.value.trim();
-  const p = document.getElementById('ip-hija-' + hijaId)?.value.trim();
+  const d      = document.getElementById('id-hija-' + hijaId)?.value.trim();
+  const p      = document.getElementById('ip-hija-' + hijaId)?.value.trim();
+  const tipo   = document.getElementById('tipo-seg-hija-' + hijaId)?.value || 'otro';
+  const result = document.querySelector(`input[name="res-hija-${hijaId}"]:checked`)?.value || null;
   if (!d) { alert('Describí la acción tomada.'); return; }
   const { error } = await sb.from('intervenciones').insert({
     problematica_id: hijaId,
@@ -422,7 +485,8 @@ async function guardarSegHija(hijaId, madreId) {
     titulo:          'Seguimiento',
     descripcion:     d,
     proximo_paso:    p || null,
-    tipo:            'otro',
+    tipo,
+    resultado:       result,
   });
   if (error) { alert('Error: ' + error.message); return; }
   await sb.from('problematicas')
@@ -454,8 +518,10 @@ async function cerrarHija(hijaId, madreId) {
 
 // ─── SEGUIMIENTO ──────────────────────────────────────
 async function guardarSeguimiento(probId) {
-  const d = document.getElementById('id-' + probId)?.value.trim();
-  const p = document.getElementById('ip-' + probId)?.value.trim();
+  const d      = document.getElementById('id-' + probId)?.value.trim();
+  const p      = document.getElementById('ip-' + probId)?.value.trim();
+  const tipo   = document.getElementById('tipo-seg-' + probId)?.value || 'otro';
+  const result = document.querySelector(`input[name="res-${probId}"]:checked`)?.value || null;
   if (!d) { alert('Describí la acción tomada.'); return; }
   const { error } = await sb.from('intervenciones').insert({
     problematica_id: probId,
@@ -463,7 +529,8 @@ async function guardarSeguimiento(probId) {
     titulo:          'Seguimiento',
     descripcion:     d,
     proximo_paso:    p || null,
-    tipo:            'otro',
+    tipo,
+    resultado:       result,
   });
   if (error) { alert('Error: ' + error.message); return; }
   await sb.from('problematicas')
@@ -499,11 +566,12 @@ function selChipRow(el, rowId) {
 
 async function confirmarCierreProb(probId) {
   const el     = document.querySelector(`#motivos-${probId} .chip.on`);
-  const motivo = el?.textContent || 'Resuelta';
+  const motivo = el?.textContent?.trim();
+  if (!motivo) { alert('Seleccioná un motivo de cierre.'); return; }
   const migOk  = await detectarMigracion();
   const updatePayload = migOk
     ? { estado:'cerrada', motivo_cierre:motivo, cerrado_por:USUARIO_ACTUAL.id, cerrado_at:new Date().toISOString(), updated_at:new Date().toISOString() }
-    : { estado:'resuelta', updated_at:new Date().toISOString() };
+    : { estado:'cerrada', updated_at:new Date().toISOString() };
   const { error } = await sb.from('problematicas').update(updatePayload).eq('id', probId);
   if (error) { alert('Error: ' + error.message); return; }
   await sb.from('intervenciones').insert({
@@ -591,7 +659,7 @@ async function mostrarFormProb() {
 
         <div class="sec-lb" style="margin-top:10px">Tipo</div>
         <div class="chip-row" id="pb-tipo">
-          ${TIPOS_LABEL_PROB.map((t, i) =>
+          ${(_tiposProbCache || TIPOS_LABEL_PROB).map((t, i) =>
             `<div class="chip${i === 0 ? ' on' : ''}" onclick="selChipRow(this,'pb-tipo')">${t}</div>`
           ).join('')}
         </div>
@@ -770,8 +838,10 @@ async function guardarProb() {
   if (!desc)           { alert('Escribí una descripción.'); return; }
   if (modalidad === 'individual' && alumnos.length > 1) { alert('Para Individual seleccioná solo un alumno.'); return; }
 
-  const tipo = TIPOS_VALOR_PROB[tipoEl?.textContent?.trim()] || 'otros';
-  const urg  = urgEl?.dataset.u || 'media';
+  const tipoText   = tipoEl?.textContent?.trim() || 'Otros';
+  const tipo       = TIPOS_VALOR_PROB[tipoText] || tipoText;
+  const urg        = urgEl?.dataset.u || 'media';
+  const respIdFinal = respId || USUARIO_ACTUAL.id;
 
   const btn = document.getElementById('btn-guardar-prob');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
@@ -787,14 +857,14 @@ async function guardarProb() {
       tipo, urgencia: urg, descripcion: desc, confidencial: conf,
       estado: 'abierta', modalidad: 'individual',
     };
-    const payload = migOk ? { ...base, responsable_id: respId || null, nivel: nivel || null } : base;
+    const payload = migOk ? { ...base, responsable_id: respIdFinal, nivel: nivel || null } : base;
     const { data: nueva, error } = await sb.from('problematicas').insert(payload).select().single();
     if (error) {
       alert('Error: ' + error.message);
       if (btn) { btn.disabled = false; btn.textContent = 'Registrar y notificar'; }
       return;
     }
-    await crearAlertasProb(nueva.id, urg, nivel, alumno.id, respId);
+    await crearAlertasProb(nueva.id, urg, nivel, alumno.id, respIdFinal);
 
   } else {
     const base = {
@@ -804,7 +874,7 @@ async function guardarProb() {
       tipo, urgencia: urg, descripcion: desc, confidencial: conf,
       estado: 'abierta', modalidad,
     };
-    const madrePayload = migOk ? { ...base, responsable_id: respId || null, nivel: nivel || null } : base;
+    const madrePayload = migOk ? { ...base, responsable_id: respIdFinal, nivel: nivel || null } : base;
     const { data: madre, error: errMadre } = await sb.from('problematicas').insert(madrePayload).select().single();
     if (errMadre) {
       alert('Error: ' + errMadre.message);
@@ -822,7 +892,7 @@ async function guardarProb() {
 
     for (const alumno of alumnos) {
       const hijaBase    = { ...base, alumno_id: alumno.id, modalidad: 'individual', problematica_madre_id: madre.id };
-      const hijaPayload = migOk ? { ...hijaBase, responsable_id: respId || null, nivel: nivel || null } : hijaBase;
+      const hijaPayload = migOk ? { ...hijaBase, responsable_id: respIdFinal, nivel: nivel || null } : hijaBase;
       const { data: hija, error: errHija } = await sb.from('problematicas').insert(hijaPayload).select().single();
       if (errHija || !hija) continue;
 
@@ -836,7 +906,7 @@ async function guardarProb() {
       await sb.from('problematica_alumnos').insert({ problematica_id: madre.id, alumno_id: alumno.id });
     }
 
-    await crearAlertasProb(madre.id, urg, nivel, null, respId);
+    await crearAlertasProb(madre.id, urg, nivel, null, respIdFinal);
   }
 
   document.getElementById('modal-form-prob')?.remove();
@@ -928,7 +998,7 @@ async function cargarProbAlumno(alumnoId, contenedorId) {
   cont.innerHTML = lista.map(p => {
     const urgTag = p.urgencia === 'alta' ? 'tr' : p.urgencia === 'media' ? 'ta' : 'tg';
     const estCls = p.estado === 'abierta' ? 'tr' : p.estado === 'en_seguimiento' ? 'ta' : 'tg';
-    const estLbl = { abierta:'Sin atender', en_seguimiento:'En seguimiento', cerrada:'Cerrada', resuelta:'Cerrada', derivada:'Derivada' }[p.estado] || p.estado;
+    const estLbl = { abierta:'Sin atender', en_seguimiento:'En seguimiento', cerrada:'Cerrada', derivada:'Derivada' }[p.estado] || p.estado;
     return `
       <div style="border-bottom:1px solid var(--brd)">
         <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 0;cursor:pointer" onclick="togDetProbLegajo('${p.id}')">
@@ -963,16 +1033,20 @@ async function togDetProbLegajo(probId) {
     .eq('problematica_id', probId)
     .order('created_at', { ascending: true });
 
-  const dotColor = t => t === 'Caso cerrado' ? 'var(--verde)' : t === 'Caso reabierto' ? 'var(--ambar)' : 'var(--azul)';
+  const dotColor  = t => t === 'Caso cerrado' ? 'var(--verde)' : t === 'Caso reabierto' ? 'var(--ambar)' : 'var(--azul)';
+  const resultTag = r => r === 'mejoro'      ? '<span style="font-size:9px;color:var(--verde);font-weight:600;margin-top:2px;display:block">🟢 Mejoró</span>'
+    : r === 'sin_cambios' ? '<span style="font-size:9px;color:var(--ambar);font-weight:600;margin-top:2px;display:block">🟡 Sin cambios</span>'
+    : r === 'empeoro'     ? '<span style="font-size:9px;color:var(--rojo);font-weight:600;margin-top:2px;display:block">🔴 Empeoró</span>' : '';
   const invsHTML = (intvs || []).length
     ? intvs.map(iv => `
         <div class="tl-it">
           <div class="tl-d" style="background:${dotColor(iv.titulo)}"></div>
           <div class="tl-f">${formatFechaCorta(iv.created_at?.split('T')[0])}</div>
           <div style="flex:1;min-width:0">
-            <div class="tl-t">${iv.titulo}</div>
+            <div class="tl-t">${iv.titulo}${iv.tipo && iv.tipo !== 'otro' ? `<span style="font-size:9px;color:var(--txt2);font-weight:400;margin-left:5px">(${iv.tipo})</span>` : ''}</div>
             <div class="tl-ds">${iv.descripcion}</div>
             ${iv.proximo_paso ? `<div style="font-size:10px;color:var(--verde);font-weight:500;margin-top:2px">→ ${iv.proximo_paso}</div>` : ''}
+            ${iv.resultado ? resultTag(iv.resultado) : ''}
             <div style="font-size:10px;color:var(--txt3);margin-top:2px">${iv.usr?.nombre_completo || '—'}</div>
           </div>
         </div>`).join('')
