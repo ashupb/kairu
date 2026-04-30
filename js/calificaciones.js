@@ -1750,14 +1750,31 @@ async function _fetchTiposInstancia() {
 function _onTipoChange(sel) {
   const wrap  = sel.closest('.panel-inst-nombre-wrap');
   const libre = wrap?.querySelector('.panel-inst-nombre-libre');
+  const back  = wrap?.querySelector('.panel-inst-nombre-back');
   if (!libre) return;
   if (sel.value === '__otro__') {
+    sel.style.display = 'none';
+    if (back) back.style.display = '';
     libre.style.display = '';
     libre.focus();
   } else {
+    sel.style.display = '';
+    if (back) back.style.display = 'none';
     libre.style.display = 'none';
     libre.value = '';
   }
+}
+
+function _resetTipoOtro(btn) {
+  const wrap  = btn.closest('.panel-inst-nombre-wrap');
+  const sel   = wrap?.querySelector('.panel-inst-tipo');
+  const libre = wrap?.querySelector('.panel-inst-nombre-libre');
+  if (!sel || !libre) return;
+  sel.value = '';
+  sel.style.display = '';
+  libre.style.display = 'none';
+  libre.value = '';
+  btn.style.display = 'none';
 }
 
 function _getNombreDeRow(row) {
@@ -1802,29 +1819,31 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
 
   const mkNombreControl = (val) => {
     if (!tiposInst.length) {
-      return `<input type="text" class="panel-inst-nombre" value="${(val||'').replace(/"/g,'&quot;')}" placeholder="Ej: Evaluación escrita" style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:6px 8px;font-size:11px;background:var(--surf)">`;
+      return `<input type="text" class="panel-inst-nombre" value="${(val||'').replace(/"/g,'&quot;')}" placeholder="Ej: Evaluación escrita" style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:5px 8px;font-size:12px;background:var(--surf)">`;
     }
     const isOtro = val && !tiposInst.find(t => t.nombre === val);
-    return `<div class="panel-inst-nombre-wrap" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
-      <select class="panel-inst-tipo" onchange="_onTipoChange(this)" style="border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+    return `<div class="panel-inst-nombre-wrap" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+      <select class="panel-inst-tipo" onchange="_onTipoChange(this)" style="display:${isOtro ? 'none' : ''};border:1.5px solid var(--brd);border-radius:6px;padding:5px 8px;font-size:12px;background:var(--surf);width:100%">
         <option value="">— Tipo —</option>
         ${tiposInst.map(t => `<option value="${_esc(t.nombre)}"${t.nombre === val && !isOtro ? ' selected' : ''}>${_esc(t.nombre)}</option>`).join('')}
         <option value="__otro__"${isOtro ? ' selected' : ''}>Otro...</option>
       </select>
-      <input type="text" class="panel-inst-nombre-libre" value="${isOtro ? _esc(val||'') : ''}" placeholder="Nombre libre..."
-        style="display:${isOtro ? '' : 'none'};border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+      <input type="text" class="panel-inst-nombre-libre" value="${isOtro ? _esc(val||'') : ''}" placeholder="Escribí el nombre..."
+        style="display:${isOtro ? '' : 'none'};border:1.5px solid var(--brd);border-radius:6px;padding:5px 8px;font-size:12px;background:var(--surf);width:100%">
+      <button type="button" class="panel-inst-nombre-back" onclick="_resetTipoOtro(this)"
+        style="display:${isOtro ? '' : 'none'};font-size:9px;color:var(--txt2);background:none;border:none;cursor:pointer;padding:0;text-align:left;align-self:flex-start">← Cambiar tipo</button>
     </div>`;
   };
 
   const mkValorInput = (cls, val) => usaConc
     ? `<select class="${cls}" onchange="_actualizarPromSugerido()"
-        style="border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf)">
+        style="flex-shrink:0;border:1.5px solid var(--brd);border-radius:6px;padding:5px 6px;font-size:12px;background:var(--surf)">
         <option value="">—</option>
         ${escalaConc.map(v => `<option value="${v}" ${(val || '') === v ? 'selected' : ''}>${v}</option>`).join('')}
        </select>`
     : `<input type="number" class="${cls}" value="${val || ''}" min="1" max="10" step="0.5"
         oninput="_actualizarPromSugerido()"
-        style="width:54px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:12px;font-weight:700;background:var(--surf)">`;
+        style="flex-shrink:0;width:56px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:12px;font-weight:700;background:var(--surf)">`;
 
   const mkNotaFinalInput = (val) => usaConc
     ? `<select id="panel-nota-final"
@@ -1837,13 +1856,13 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
 
   const renderInstRow = (inst, idx) => editable ? `
     <div class="panel-inst-row" data-idx="${idx}"
-      style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--brd)">
+      style="display:flex;align-items:flex-start;gap:8px;padding:10px;background:var(--surf2);border-radius:8px;margin-bottom:6px">
       ${mkNombreControl(inst.nombre || '')}
       ${mkValorInput('panel-inst-valor', usaConc ? inst.valor_conceptual : inst.valor_numerico)}
       <button onclick="_removeInstRow(${idx})"
-        style="background:none;border:none;cursor:pointer;color:var(--rojo);font-size:16px;padding:2px 4px;line-height:1">✕</button>
+        style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--rojo);font-size:16px;padding:2px 4px;line-height:1;margin-top:2px">✕</button>
     </div>` : `
-    <div style="display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--brd)">
+    <div style="display:flex;align-items:center;padding:9px 10px;background:var(--surf2);border-radius:8px;margin-bottom:6px">
       <span style="flex:1;font-size:11px;color:var(--txt)">${inst.nombre || '—'}</span>
       <span style="font-size:12px;font-weight:700">
         ${usaConc ? (inst.valor_conceptual || '—') : (inst.valor_numerico != null ? inst.valor_numerico : '—')}
@@ -1855,7 +1874,7 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
   modal.id = 'panel-instancias';
   modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px`;
   modal.innerHTML = `
-    <div style="background:var(--surf);border-radius:16px;width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+    <div style="background:var(--surf);border-radius:16px;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18)">
       <div style="padding:18px 20px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:flex-start;justify-content:space-between">
         <div>
           <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">${nombreAlumno}</div>
@@ -1915,27 +1934,29 @@ function _addInstRow() {
 
   const mkVal = () => meta.usaConc
     ? `<select class="panel-inst-valor" onchange="_actualizarPromSugerido()"
-        style="border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf)">
+        style="flex-shrink:0;border:1.5px solid var(--brd);border-radius:6px;padding:5px 6px;font-size:12px;background:var(--surf)">
         <option value="">—</option>
         ${escalaConc.map(v => `<option value="${v}">${v}</option>`).join('')}
        </select>`
     : `<input type="number" class="panel-inst-valor" min="1" max="10" step="0.5"
         oninput="_actualizarPromSugerido()"
-        style="width:54px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:12px;font-weight:700;background:var(--surf)">`;
+        style="flex-shrink:0;width:56px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:12px;font-weight:700;background:var(--surf)">`;
 
   const mkNombre = () => {
     if (!tiposInst.length) {
       return `<input type="text" class="panel-inst-nombre" value="" placeholder="Ej: Evaluación escrita"
-        style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:6px 8px;font-size:11px;background:var(--surf)">`;
+        style="flex:1;border:1.5px solid var(--brd);border-radius:6px;padding:5px 8px;font-size:12px;background:var(--surf)">`;
     }
-    return `<div class="panel-inst-nombre-wrap" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
-      <select class="panel-inst-tipo" onchange="_onTipoChange(this)" style="border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+    return `<div class="panel-inst-nombre-wrap" style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+      <select class="panel-inst-tipo" onchange="_onTipoChange(this)" style="border:1.5px solid var(--brd);border-radius:6px;padding:5px 8px;font-size:12px;background:var(--surf);width:100%">
         <option value="">— Tipo —</option>
         ${tiposInst.map(t => `<option value="${_esc(t.nombre)}">${_esc(t.nombre)}</option>`).join('')}
         <option value="__otro__">Otro...</option>
       </select>
-      <input type="text" class="panel-inst-nombre-libre" value="" placeholder="Nombre libre..."
-        style="display:none;border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:11px;background:var(--surf);width:100%">
+      <input type="text" class="panel-inst-nombre-libre" value="" placeholder="Escribí el nombre..."
+        style="display:none;border:1.5px solid var(--brd);border-radius:6px;padding:5px 8px;font-size:12px;background:var(--surf);width:100%">
+      <button type="button" class="panel-inst-nombre-back" onclick="_resetTipoOtro(this)"
+        style="display:none;font-size:9px;color:var(--txt2);background:none;border:none;cursor:pointer;padding:0;text-align:left;align-self:flex-start">← Cambiar tipo</button>
     </div>`;
   };
 
@@ -1946,12 +1967,12 @@ function _addInstRow() {
   const row = document.createElement('div');
   row.className = 'panel-inst-row';
   row.dataset.idx = idx;
-  row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--brd)';
+  row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:10px;background:var(--surf2);border-radius:8px;margin-bottom:6px';
   row.innerHTML = `
     ${mkNombre()}
     ${mkVal()}
     <button onclick="_removeInstRow(${idx})"
-      style="background:none;border:none;cursor:pointer;color:var(--rojo);font-size:16px;padding:2px 4px;line-height:1">✕</button>`;
+      style="flex-shrink:0;background:none;border:none;cursor:pointer;color:var(--rojo);font-size:16px;padding:2px 4px;line-height:1;margin-top:2px">✕</button>`;
   container.appendChild(row);
 }
 
