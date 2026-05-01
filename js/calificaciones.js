@@ -574,7 +574,7 @@ function abrirModalNota(alumnoId, instanciaId, cursoId, materiaId, periodoId, no
     <div style="background:var(--surf);border-radius:var(--rad-lg);padding:20px;width:100%;max-width:300px">
       <div style="font-size:13px;font-weight:700;margin-bottom:14px">Nota del alumno</div>
       <div class="sec-lb">Nota (1-10)</div>
-      <input type="number" id="modal-nota-val" min="1" max="10" step="0.5"
+      <input type="number" id="modal-nota-val" min="1" max="10" step="1"
         value="${notaActual ?? ''}" placeholder="Ej: 8"
         style="margin-bottom:10px;font-size:22px;font-weight:700;text-align:center">
       <label style="display:flex;align-items:center;gap:8px;font-size:12px;margin-bottom:14px;cursor:pointer">
@@ -607,7 +607,7 @@ async function guardarNotaModal(alumnoId, instanciaId, cursoId, materiaId, perio
     curso_id:       cursoId,
     materia_id:     materiaId,
     periodo_id:     periodoId,
-    nota:           ausente ? null : nota,
+    nota:           ausente ? null : Math.round(nota),
     ausente,
     registrado_por: USUARIO_ACTUAL.id,
   }, { onConflict: 'alumno_id,instancia_id' });
@@ -672,7 +672,7 @@ async function abrirCargaBulk(cursoId, materiaId, periodoId) {
             border-bottom:${idx < alumnos.length - 1 ? '1px solid var(--brd)' : 'none'}">
             <div class="asist-av">${al.apellido[0]}${al.nombre[0]}</div>
             <div style="flex:1;font-size:12px;font-weight:500">${al.apellido}, ${al.nombre}</div>
-            <input type="number" min="1" max="10" step="0.5" placeholder="—"
+            <input type="number" min="1" max="10" step="1" placeholder="—"
               data-alumno="${al.id}"
               style="width:58px;text-align:center;border:1.5px solid var(--brd);border-radius:var(--rad);
                 padding:6px;font-size:14px;font-weight:700;background:var(--surf)">
@@ -709,7 +709,7 @@ async function guardarBulk(cursoId, materiaId, periodoId) {
       curso_id:       cursoId,
       materia_id:     materiaId,
       periodo_id:     periodoId,
-      nota:           ausente ? null : nota,
+      nota:           ausente ? null : Math.round(nota),
       ausente,
       registrado_por: USUARIO_ACTUAL.id,
     });
@@ -813,7 +813,7 @@ function recargarFormEdit() {
         <div class="asist-av">${al.apellido[0]}${al.nombre[0]}</div>
         <div style="flex:1;font-size:12px;font-weight:500">${al.apellido}, ${al.nombre}</div>
         ${calif ? '<span style="font-size:9px;color:var(--verde);margin-right:4px">●</span>' : '<span style="font-size:9px;color:var(--txt3);margin-right:4px">○</span>'}
-        <input type="number" min="1" max="10" step="0.5" placeholder="—"
+        <input type="number" min="1" max="10" step="1" placeholder="—"
           value="${nota}"
           data-alumno="${al.id}"
           style="width:58px;text-align:center;border:1.5px solid var(--brd);border-radius:var(--rad);
@@ -1241,18 +1241,7 @@ async function verCalifCurso(cursoId, nivel) {
       });
     }
 
-    // Promedio global por alumno (media de todas las materias)
-    const promedioGlobal = {};
-    alumnos.forEach(al => {
-      const vals = materias
-        .map(m => promediosMap[al.id]?.[m.id])
-        .filter(v => v !== null && v !== undefined);
-      promedioGlobal[al.id] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-    });
-    const getProm = al => promedioGlobal[al.id] ?? null;
-
     return `
-      ${renderSituacionCard(alumnos, getProm, `dir-${cursoId.slice(-4)}-${PERIODO_SEL.slice(-4)}-`, 'Situación del curso', _umbralMin(nivel, curso?.nombre) ?? 7, _umbralRec(nivel, curso?.nombre) ?? 4)}
         <div class="periodo-tabs" style="align-items:center">
             ${periodosCurso.map(p => {
               const esSel = PERIODO_SEL === p.id;
@@ -1289,7 +1278,6 @@ async function verCalifCurso(cursoId, nivel) {
               ${materias.map(m => `
                 <th style="font-size:9px;width:65px;white-space:normal;line-height:1.3">${m.nombre}</th>
               `).join('')}
-              <th style="position:sticky;right:0;z-index:2;background:var(--surf2);font-weight:700;min-width:52px">Prom.</th>
             </tr>
           </thead>
           <tbody>
@@ -1317,11 +1305,6 @@ async function verCalifCurso(cursoId, nivel) {
                         </span>
                       </td>`;
                   }).join('')}
-                  <td style="position:sticky;right:0;background:var(--bg);box-shadow:-2px 0 4px rgba(0,0,0,.06);text-align:center">
-                    ${promedioGlobal[al.id] != null
-                      ? `<span style="font-weight:700;color:${NOTA_COLOR(promedioGlobal[al.id])}">${promedioGlobal[al.id].toFixed(1)}</span>`
-                      : `<span style="color:var(--txt3)">—</span>`}
-                  </td>
                 </tr>`;
             }).join('')}
           </tbody>
@@ -1376,9 +1359,8 @@ async function rNotasEOE() {
           const color = ['riesgo_academico','multiples_reprobadas'].includes(a.tipo_alerta)
             ? 'var(--rojo)' : 'var(--ambar)';
           return `
-            <div class="card" style="margin-bottom:8px;padding:12px 14px;border-left:3px solid ${color};cursor:pointer"
-              onclick="verAlumnoNotas('${al?.id}',null,null,null)">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div class="card" id="alerta-ac-${a.id}" style="margin-bottom:8px;padding:12px 14px;border-left:3px solid ${color}">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;cursor:pointer" onclick="verAlumnoNotas('${al?.id}',null,null,null)">
                 <div>
                   <div style="font-size:12px;font-weight:600">${al?.apellido}, ${al?.nombre}</div>
                   <div style="font-size:10px;color:var(--txt2)">${cu?.nombre}${cu?.division} · ${cu?.nivel}</div>
@@ -1388,6 +1370,10 @@ async function rNotasEOE() {
               <div style="font-size:10px;color:var(--txt2);margin-top:4px">
                 ${a.detalle || ''} · ${formatFechaLatam(a.fecha)}
               </div>
+              ${USUARIO_ACTUAL.rol === 'eoe' ? `
+              <div style="margin-top:8px;border-top:1px solid var(--brd);padding-top:8px">
+                <button class="btn-s" style="font-size:11px" onclick="event.stopPropagation();_resolverAlertaAcad('${a.id}',this)">✓ Resolver</button>
+              </div>` : ''}
             </div>`;
         }).join('')}`;
 }
@@ -1483,6 +1469,19 @@ async function verificarAlertasAcademicas(alumnoId, cursoId, materiaId, periodoI
   }
   if (prom !== null && prom < notaMin) {
     await insertAlertaAcad(instId, alumnoId, cursoId, materiaId, 'promedio_bajo', `Promedio: ${prom.toFixed(1)}`);
+  }
+
+  const { data: todasCalifs } = await sb.from('calificaciones')
+    .select('materia_id, nota, ausente')
+    .eq('alumno_id', alumnoId).eq('periodo_id', periodoId).eq('curso_id', cursoId);
+
+  const materiasBajas = [...new Set(
+    (todasCalifs || []).filter(c => !c.ausente && c.nota !== null && c.nota < notaMin)
+      .map(c => c.materia_id)
+  )];
+  if (materiasBajas.length >= 2) {
+    await insertAlertaAcad(instId, alumnoId, cursoId, null,
+      'multiples_reprobadas', `${materiasBajas.length} materias con nota baja`);
   }
 }
 
@@ -1653,8 +1652,9 @@ async function verNotasPrimariaGrado(cursoId, nivel, nombreCurso, editable = tru
       </div>
 
       ${editable ? `
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <button class="btn-p" id="btn-guardar-prim" onclick="guardarNotasPrimariaGrado()">💾 Guardar promedios</button>
+        <button class="btn-s" onclick="abrirCargaMasivaMateria('${cursoId}','${PERIODO_SEL}')">📝 Cargar por materia</button>
         <span style="font-size:10px;color:var(--txt3)">Los cambios no guardados se perderán</span>
       </div>` : `
       <div style="background:var(--azul-l);border-left:4px solid var(--azul);border-radius:var(--rad);
@@ -1914,7 +1914,7 @@ async function abrirPanelInstancias(alumnoId, materiaId, cursoId, periodoId, edi
         <option value="">—</option>
         ${escalaConc.map(v => `<option value="${v}" ${(val || '') === v ? 'selected' : ''}>${v}</option>`).join('')}
        </select>`
-    : `<input type="number" class="${cls}" value="${val || ''}" min="1" max="10" step="0.5"
+    : `<input type="number" class="${cls}" value="${val || ''}" min="1" max="10" step="1"
         oninput="_actualizarPromSugerido()"
         style="flex-shrink:0;width:56px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:12px;font-weight:700;background:var(--surf)">`;
 
@@ -2011,7 +2011,7 @@ function _addInstRow() {
         <option value="">—</option>
         ${escalaConc.map(v => `<option value="${v}">${v}</option>`).join('')}
        </select>`
-    : `<input type="number" class="panel-inst-valor" min="1" max="10" step="0.5"
+    : `<input type="number" class="panel-inst-valor" min="1" max="10" step="1"
         oninput="_actualizarPromSugerido()"
         style="flex-shrink:0;width:56px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:12px;font-weight:700;background:var(--surf)">`;
 
@@ -2118,7 +2118,7 @@ async function guardarPanelInstancias(alumnoId, materiaId, cursoId, periodoId) {
       periodo_id:       periodoId,
       institucion_id:   instId,
       nombre,
-      valor_numerico:   meta.usaConc ? null : (parseFloat(valor) || null),
+      valor_numerico:   meta.usaConc ? null : (valor ? Math.round(parseFloat(valor)) : null),
       valor_conceptual: meta.usaConc ? (valor || null) : null,
     };
     if (orig.id) entry._id = orig.id;
@@ -2170,6 +2170,199 @@ async function guardarPanelInstancias(alumnoId, materiaId, cursoId, periodoId) {
   if (errors) alert(`${errors} error(s) al guardar. Revisá la conexión.`);
   document.getElementById('panel-instancias')?.remove();
   await window.cambioPeriodoPrimG?.(periodoId);
+}
+
+// ─── CARGA MASIVA POR MATERIA (PRIMARIA/INICIAL) ──────
+
+async function abrirCargaMasivaMateria(cursoId, periodoId) {
+  const materias   = window._pGmaterias || [];
+  const alumnos    = window._pGalumnos  || [];
+  const usaConc    = window._pGusaConc;
+  const escalaConc = window._pGescala || ['MB', 'B', 'R', 'I'];
+  const tiposInst  = await _fetchTiposInstancia();
+
+  if (!materias.length) { alert('Sin materias configuradas.'); return; }
+
+  const mkNombreControl = () => {
+    if (!tiposInst.length) {
+      return `<input type="text" id="cm-nombre" placeholder="Ej: Evaluación escrita"
+        style="width:100%;border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf)">`;
+    }
+    return `<div class="panel-inst-nombre-wrap" style="display:flex;flex-direction:column;gap:4px">
+      <select id="cm-tipo" class="panel-inst-tipo" onchange="_onTipoChange(this)"
+        style="border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf);width:100%">
+        <option value="">— Tipo de instancia —</option>
+        ${tiposInst.map(t => `<option value="${_esc(t.nombre)}">${_esc(t.nombre)}</option>`).join('')}
+        <option value="__otro__">Otro...</option>
+      </select>
+      <input type="text" class="panel-inst-nombre-libre" placeholder="Escribí el nombre..."
+        style="display:none;border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf);width:100%">
+      <button type="button" class="panel-inst-nombre-back" onclick="_resetTipoOtro(this)"
+        style="display:none;font-size:10px;color:var(--txt2);background:none;border:none;cursor:pointer;padding:0;text-align:left">← Cambiar tipo</button>
+    </div>`;
+  };
+
+  document.getElementById('modal-carga-masiva')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'modal-carga-masiva';
+  modal.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px`;
+  modal.innerHTML = `
+    <div style="background:var(--surf);border-radius:16px;width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.18)">
+      <div style="padding:18px 20px 14px;border-bottom:1px solid var(--brd);display:flex;align-items:flex-start;justify-content:space-between">
+        <div>
+          <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">📝 Carga por materia</div>
+          <div style="font-size:11px;color:var(--txt2)">Una instancia evaluativa · Todos los alumnos</div>
+        </div>
+        <button onclick="document.getElementById('modal-carga-masiva').remove()"
+          style="background:var(--surf2);border:none;border-radius:50%;width:28px;height:28px;cursor:pointer;font-size:14px;color:var(--txt2);display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--txt2);text-transform:uppercase;margin-bottom:6px">Materia</label>
+          <select id="cm-materia" style="width:100%;padding:8px 10px;border:1.5px solid var(--brd);border-radius:6px;font-size:12px;background:var(--surf)">
+            ${materias.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--txt2);text-transform:uppercase;margin-bottom:6px">Instancia evaluativa</label>
+          ${mkNombreControl()}
+        </div>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--txt2);text-transform:uppercase;margin-bottom:6px">Notas de alumnos</label>
+          <div class="card" style="padding:0">
+            ${alumnos.map((al, idx) => `
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+                border-bottom:${idx < alumnos.length - 1 ? '1px solid var(--brd)' : 'none'}">
+                <div style="flex:1;font-size:12px;font-weight:500">${al.apellido}, ${al.nombre}</div>
+                ${usaConc
+                  ? `<select class="cm-nota" data-alumno="${al.id}"
+                      style="width:70px;border:1.5px solid var(--brd);border-radius:6px;padding:4px 6px;font-size:12px;background:var(--surf)">
+                      <option value="">—</option>
+                      ${escalaConc.map(v => `<option value="${v}">${v}</option>`).join('')}
+                     </select>`
+                  : `<input type="number" class="cm-nota" data-alumno="${al.id}" min="1" max="10" step="1" placeholder="—"
+                      style="width:60px;text-align:center;border:1.5px solid var(--brd);border-radius:6px;padding:5px;font-size:13px;font-weight:700;background:var(--surf)">`}
+              </div>`).join('')}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="guardarCargaMasivaMateria('${cursoId}','${periodoId}')" class="btn-p" style="flex:1">💾 Guardar</button>
+          <button onclick="document.getElementById('modal-carga-masiva').remove()" class="btn-s">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function guardarCargaMasivaMateria(cursoId, periodoId) {
+  const saveBtn = document.querySelector('#modal-carga-masiva .btn-p');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Guardando...'; }
+
+  const materiaId  = document.getElementById('cm-materia')?.value;
+  const usaConc    = window._pGusaConc;
+  const escalaConc = window._pGescala || ['MB', 'B', 'R', 'I'];
+  const instId     = USUARIO_ACTUAL.institucion_id;
+
+  const tipoEl   = document.getElementById('cm-tipo');
+  const libreEl  = document.querySelector('#modal-carga-masiva .panel-inst-nombre-libre');
+  const nombreEl = document.getElementById('cm-nombre');
+  let nombre;
+  if (tipoEl) {
+    nombre = tipoEl.value === '__otro__' ? (libreEl?.value?.trim() || '') : tipoEl.value;
+  } else {
+    nombre = nombreEl?.value?.trim() || '';
+  }
+
+  if (!materiaId) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar'; }
+    alert('Seleccioná una materia.');
+    return;
+  }
+  if (!nombre) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar'; }
+    alert('Ingresá el nombre de la instancia.');
+    return;
+  }
+
+  const notaEls = document.querySelectorAll('.cm-nota');
+  const inserts  = [];
+  notaEls.forEach(el => {
+    const val = el.value;
+    if (!val) return;
+    inserts.push({
+      alumno_id:        el.dataset.alumno,
+      materia_id:       materiaId,
+      curso_id:         cursoId,
+      periodo_id:       periodoId,
+      institucion_id:   instId,
+      nombre,
+      valor_numerico:   usaConc ? null : Math.round(parseFloat(val)),
+      valor_conceptual: usaConc ? val : null,
+    });
+  });
+
+  if (!inserts.length) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar'; }
+    alert('No ingresaste ninguna nota.');
+    return;
+  }
+
+  const { error } = await sb.from('instancias_calificacion').insert(inserts);
+  if (error) {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar'; }
+    alert('Error: ' + error.message);
+    return;
+  }
+
+  // Actualizar nota final de boletín (si no fue editada manualmente)
+  const cIdx = window._pGcIdx || {};
+  for (const ins of inserts) {
+    const aId = ins.alumno_id;
+    const { data: allInsts } = await sb.from('instancias_calificacion').select('*')
+      .eq('alumno_id', aId).eq('materia_id', materiaId)
+      .eq('curso_id', cursoId).eq('periodo_id', periodoId);
+    const promSug = _calcPromSugerido(allInsts || [], usaConc, escalaConc);
+    if (promSug === null) continue;
+    const promRow = cIdx[`${aId}:${materiaId}`];
+    if (promRow?.promedio_editado) continue;
+    const datos = {
+      institucion_id: instId,
+      alumno_id:      aId,
+      materia_id:     materiaId,
+      curso_id:       cursoId,
+      periodo_id:     periodoId,
+      instancia_id:   null,
+      registrado_por: USUARIO_ACTUAL.id,
+    };
+    if (usaConc) {
+      datos.promedio_concepto_manual = String(promSug);
+      datos.nota = null;
+    } else {
+      datos.nota = typeof promSug === 'number' ? promSug : null;
+    }
+    if (promRow?.id) {
+      await sb.from('calificaciones').update(datos).eq('id', promRow.id);
+    } else {
+      await sb.from('calificaciones').insert([datos]);
+    }
+  }
+
+  document.getElementById('modal-carga-masiva')?.remove();
+  await window.cambioPeriodoPrimG?.(periodoId);
+}
+
+async function _resolverAlertaAcad(alertaId, btn) {
+  if (!confirm('¿Marcás esta alerta como resuelta?')) return;
+  btn.disabled = true;
+  btn.textContent = 'Procesando...';
+  const { error } = await sb.from('alertas_academicas').delete().eq('id', alertaId);
+  if (error) {
+    btn.disabled = false;
+    btn.textContent = '✓ Resolver';
+    alert('Error: ' + error.message);
+    return;
+  }
+  document.getElementById(`alerta-ac-${alertaId}`)?.remove();
 }
 
 // ─── UTILIDADES ───────────────────────────────────────
