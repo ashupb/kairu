@@ -1304,12 +1304,16 @@ async function verificarAlertas(alumnoIds, instId, nivel) {
 
     if (tipoAlerta > 0) {
       const { data: existente } = await sb.from('alertas_asistencia')
-        .select('id').eq('alumno_id', alumnoId).eq('tipo_alerta', tipoAlerta).maybeSingle();
+        .select('id,total_faltas').eq('alumno_id', alumnoId).eq('tipo_alerta', tipoAlerta).maybeSingle();
       if (!existente) {
         await sb.from('alertas_asistencia').insert({
           institucion_id: instId, alumno_id: alumnoId,
           tipo_alerta: tipoAlerta, total_faltas: totalFaltas,
         });
+      } else if (existente.total_faltas !== totalFaltas) {
+        await sb.from('alertas_asistencia')
+          .update({ total_faltas: totalFaltas })
+          .eq('id', existente.id);
       }
     }
   }
