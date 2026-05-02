@@ -208,7 +208,7 @@ async function _rObjDetalle(objId) {
         ${desc ? `<div style="font-size:11px;color:var(--txt2);margin-bottom:4px;font-style:italic">"${desc}"</div>` : ''}
         <div style="font-size:11px;color:var(--txt);font-weight:500">${i.accion_tomada}</div>
         ${i.medida?`<div style="font-size:10px;color:var(--ambar);margin-top:2px">⚠ Medida: ${i.medida}</div>`:''}
-        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${i.reg?.nombre_completo||'—'} · ${formatFechaCorta(i.created_at?.split('T')[0])}</div>
+        <div style="font-size:10px;color:var(--txt3);margin-top:3px">${i.reg?.nombre_completo||'—'} · ${formatFechaCorta(i.fecha || i.created_at?.split('T')[0])}</div>
       </div>`}).join('') : '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Sin incidentes registrados.</div>';
 
   c.innerHTML = `
@@ -328,7 +328,7 @@ function _filtrarIncsObjUI(cursoTxt) {
 function _renderGraficoIncs(incs) {
   if (incs.length < 3) return '';
   const grupos = {};
-  incs.forEach(i => { const mes=i.created_at.slice(0,7); grupos[mes]=(grupos[mes]||0)+1; });
+  incs.forEach(i => { const mes=(i.fecha||i.created_at).slice(0,7); grupos[mes]=(grupos[mes]||0)+1; });
   const entries = Object.entries(grupos).sort(([a],[b])=>a.localeCompare(b)).slice(-6);
   if (entries.length < 2) return '';
   const max = Math.max(...entries.map(([,v])=>v));
@@ -638,6 +638,7 @@ async function _guardarInc(objId) {
     accion_tomada:      accion,
     medida:             document.getElementById('inc-medida')?.value.trim() || null,
     descripcion:        desc,
+    fecha:              getFechaInput('inc-fecha') || hoyISO(),
   });
   if (error) {
     if (btn) { btn.disabled = false; btn.textContent = 'Registrar incidente'; }
