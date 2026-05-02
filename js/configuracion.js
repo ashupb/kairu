@@ -73,6 +73,7 @@ function _adminTabs() {
     { id: 'materias',     label: 'Materias',         roles: ['director_general', 'directivo_nivel'] },
     { id: 'asignaciones', label: 'Asignaciones',     roles: ['director_general', 'directivo_nivel'] },
     { id: 'parametros',   label: 'Parámetros',       roles: ['director_general', 'directivo_nivel'] },
+    { id: 'suplencias',   label: 'Suplencias',       roles: ['director_general', 'directivo_nivel'] },
   ];
 
   const resultado = rolBase.filter(t => t.roles.includes(r));
@@ -146,6 +147,7 @@ async function _renderAdminSection(tabId) {
     materias:     _renderMaterias,
     asignaciones: _renderAsignaciones,
     parametros:   _renderParametros,
+    suplencias:   _renderSuplencias,
   };
   if (fns[tabId]) await fns[tabId]();
 }
@@ -2395,6 +2397,217 @@ async function _quitarDim(idx) {
   }
   if (error) { alert('Error al quitar dimensión: ' + error.message); return; }
   await _renderParamNivel('inicial');
+}
+
+// ══════════════════════════════════════════════════════
+// SECCIÓN: SUPLENCIAS Y LICENCIAS
+// ══════════════════════════════════════════════════════
+async function _renderSuplencias() {
+  const sec    = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { data: usuarios, error: usrErr } = await sb.from('usuarios')
+    .select('id,nombre_completo,rol,nivel,en_licencia,activo')
+    .eq('institucion_id', instId)
+    .order('nombre_completo');
+  if (usrErr) { _admError(sec, usrErr.message); return; }
+
+  const usuariosMap = {};
+  const usuariosIds = (usuarios || []).map(u => { usuariosMap[u.id] = u; return u.id; });
+
+  let suplencias = [];
+  if (usuariosIds.length) {
+    const { data, error } = await sb.from('suplencias')
+      .select('*')
+      .in('titular_id', usuariosIds)
+      .order('created_at', { ascending: false });
+    if (error) { _admError(sec, error.message); return; }
+    suplencias = data || [];
+  }
+
+  const activas   = suplencias.filter(s => s.activo);
+  const historial = suplencias.filter(s => !s.activo);
+
+  const mkRow = (s, esActiva) => {
+    const titular  = usuariosMap[s.titular_id]  || {};
+    const suplente = usuariosMap[s.suplente_id] || {};
+    const fi = s.fecha_inicio ? new Date(s.fecha_inicio + 'T12:00:00').toLocaleDateString('es-AR') : '—';
+    const ff = s.fecha_fin    ? new Date(s.fecha_fin    + 'T12:00:00').toLocaleDateString('es-AR') : null;
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--brd)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;margin-bottom:3px">
+            ${_esc(titular.nombre_completo || 'Desconocido')}
+            <span style="color:var(--txt3);margin:0 5px;font-weight:400">cubierto por</span>
+            ${_esc(suplente.nombre_completo || 'Desconocido')}
+          </div>
+          <div style="font-size:10px;color:var(--txt2)">
+            ${ROL_LABELS_ADM[titular.rol] || titular.rol || '—'} · Desde ${fi}${ff ? ' · Hasta ' + ff : ''}
+          </div>
+          ${s.notas ? `<div style="font-size:10px;color:var(--txt3);margin-top:2px;font-style:italic">${_esc(s.notas)}</div>` : ''}
+        </div>
+        ${esActiva
+          ? `<button class="btn-d" style="flex-shrink:0" onclick="_finalizarSuplencia('${s.id}')">Finalizar</button>`
+          : `<span class="tag tr" style="flex-shrink:0">Cerrada</span>`}
+      </div>`;
+  };
+
+  sec.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:14px;font-weight:600">Licencias y suplencias</div>
+        <div style="font-size:11px;color:var(--txt2)">Gestión de reemplazos temporales de docentes y personal</div>
+      </div>
+      <button class="btn-p" onclick="_abrirModalNuevaLicencia()">+ Nueva licencia</button>
+    </div>
+
+    <div class="sec-lb">Suplencias activas${activas.length ? ' (' + activas.length + ')' : ''}</div>
+    ${activas.length
+      ? `<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">${activas.map(s => mkRow(s, true)).join('')}</div>`
+      : `<div class="empty-state" style="margin-bottom:20px">Sin suplencias activas</div>`}
+
+    <div class="sec-lb">Historial${historial.length ? ' (' + historial.length + ')' : ''}</div>
+    ${historial.length
+      ? `<div class="card" style="padding:0;overflow:hidden">${historial.map(s => mkRow(s, false)).join('')}</div>`
+      : `<div style="color:var(--txt2);font-size:12px;padding:6px 0">Sin historial de suplencias</div>`}`;
+}
+
+async function _abrirModalNuevaLicencia() {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { data: usuarios, error } = await sb.from('usuarios')
+    .select('id,nombre_completo,rol,nivel,en_licencia,activo')
+    .eq('institucion_id', instId)
+    .neq('activo', false)
+    .order('nombre_completo');
+  if (error) { alert('Error al cargar usuarios: ' + error.message); return; }
+
+  const todos  = usuarios || [];
+  const sinLic = todos.filter(u => !u.en_licencia);
+  const today  = new Date().toISOString().split('T')[0];
+
+  const opsTitular  = sinLic.map(u =>
+    `<option value="${u.id}">${_esc(u.nombre_completo)} · ${ROL_LABELS_ADM[u.rol] || u.rol}</option>`
+  ).join('');
+  const opsSuplente = todos.map(u =>
+    `<option value="${u.id}">${_esc(u.nombre_completo)} · ${ROL_LABELS_ADM[u.rol] || u.rol}</option>`
+  ).join('');
+
+  _crearModal(
+    'Registrar licencia',
+    `<div class="adm-form-row">
+      <label class="adm-label">Titular que sale de licencia</label>
+      <select id="lic-titular">
+        <option value="">— Seleccionar —</option>
+        ${opsTitular}
+      </select>
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Suplente que cubre</label>
+      <select id="lic-suplente">
+        <option value="">— Seleccionar —</option>
+        ${opsSuplente}
+      </select>
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Fecha de inicio</label>
+      <input type="date" id="lic-fecha-inicio" value="${today}">
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Fecha de fin (opcional)</label>
+      <input type="date" id="lic-fecha-fin">
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Dejar vacío si no está definida la fecha de regreso.</div>
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Motivo / notas (opcional)</label>
+      <textarea id="lic-notas" rows="2" placeholder="Ej: Licencia médica, licencia por maternidad..."
+        style="resize:vertical;font-size:12px;width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--bg);color:var(--txt);font-family:inherit"></textarea>
+    </div>`,
+    async () => { await _guardarLicencia(todos); }
+  );
+}
+
+async function _guardarLicencia(usuariosList) {
+  const titularId  = document.getElementById('lic-titular')?.value;
+  const suplenteId = document.getElementById('lic-suplente')?.value;
+  const fechaIni   = document.getElementById('lic-fecha-inicio')?.value;
+  const fechaFin   = document.getElementById('lic-fecha-fin')?.value || null;
+  const notas      = document.getElementById('lic-notas')?.value?.trim() || null;
+
+  if (!titularId)              { alert('Seleccioná el titular.'); return; }
+  if (!suplenteId)             { alert('Seleccioná el suplente.'); return; }
+  if (titularId === suplenteId){ alert('El titular y el suplente no pueden ser la misma persona.'); return; }
+  if (!fechaIni)               { alert('La fecha de inicio es requerida.'); return; }
+
+  try {
+    const { data: sup, error: supErr } = await sb.from('suplencias').insert([{
+      titular_id: titularId, suplente_id: suplenteId,
+      fecha_inicio: fechaIni, fecha_fin: fechaFin,
+      notas, creado_por: USUARIO_ACTUAL.id,
+    }]).select().single();
+    if (supErr) throw supErr;
+
+    const { error: licErr } = await sb.from('usuarios')
+      .update({ en_licencia: true }).eq('id', titularId);
+    if (licErr) throw licErr;
+
+    const titular = usuariosList.find(u => u.id === titularId);
+    if (titular?.rol === 'docente') {
+      const { data: asigs, error: asigErr } = await sb.from('asignaciones')
+        .select('curso_id,materia_id,anio_lectivo')
+        .eq('docente_id', titularId)
+        .is('suplencia_id', null);
+      if (asigErr) throw asigErr;
+
+      if (asigs?.length) {
+        const { error: insErr } = await sb.from('asignaciones').insert(
+          asigs.map(a => ({
+            docente_id: suplenteId, curso_id: a.curso_id,
+            materia_id: a.materia_id, anio_lectivo: a.anio_lectivo,
+            suplencia_id: sup.id,
+          }))
+        );
+        if (insErr) {
+          await sb.from('suplencias').delete().eq('id', sup.id);
+          await sb.from('usuarios').update({ en_licencia: false }).eq('id', titularId);
+          throw insErr;
+        }
+      }
+    }
+
+    _cerrarModal();
+    _toastOk('Licencia registrada. El suplente ya tiene acceso.');
+    await _renderSuplencias();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function _finalizarSuplencia(supId) {
+  if (!confirm('¿Finalizar esta suplencia? El titular recuperará sus permisos originales.')) return;
+
+  try {
+    const { data: sup, error: getErr } = await sb.from('suplencias')
+      .select('titular_id,fecha_fin').eq('id', supId).single();
+    if (getErr) throw getErr;
+
+    const today = new Date().toISOString().split('T')[0];
+    const { error: supErr } = await sb.from('suplencias')
+      .update({ activo: false, fecha_fin: sup.fecha_fin || today })
+      .eq('id', supId);
+    if (supErr) throw supErr;
+
+    await sb.from('asignaciones').delete().eq('suplencia_id', supId);
+
+    const { error: usrErr } = await sb.from('usuarios')
+      .update({ en_licencia: false }).eq('id', sup.titular_id);
+    if (usrErr) throw usrErr;
+
+    _toastOk('Suplencia finalizada. El titular recuperó sus accesos.');
+    await _renderSuplencias();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 // ══════════════════════════════════════════════════════
