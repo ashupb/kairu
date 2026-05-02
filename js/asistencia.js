@@ -104,7 +104,7 @@ async function rAsistDirector() {
   }).length : 0;
 
   const pctColor = pctAsistHoy === null ? 'var(--txt3)' : pctAsistHoy>=85?'var(--verde)':pctAsistHoy>=70?'var(--ambar)':'var(--rojo)';
-  const contCardsHTML = totalRegistradosHoy > 0 ? `
+  const contCardsHTML = hoyHabil && totalRegistradosHoy > 0 ? `
     <div class="mc-asist-grid">
       <div class="mc-asist" style="border-top:3px solid var(--verde)">
         <div class="mc-asist-v" style="color:var(--verde)">${contadorEstados.presente}</div>
@@ -132,7 +132,11 @@ async function rAsistDirector() {
     <div class="pg-t">Asistencia</div>
     <div class="pg-s">${formatFechaLatam(hoy)} · Estado de listas</div>
     ${contCardsHTML}
-    ${totalPendiente > 0 ? `
+    ${!hoyHabil ? `
+    <div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">📅</span>
+      <span style="font-size:12px;color:var(--txt2);font-weight:600">Día no lectivo — no se toma asistencia</span>
+    </div>` : totalPendiente > 0 ? `
     <div class="alr" style="margin-bottom:14px">
       <div class="alr-t">⏳ ${totalPendiente} curso${totalPendiente>1?'s':''} con lista pendiente hoy</div>
     </div>` : `
@@ -151,10 +155,10 @@ async function rAsistDirector() {
             const ids       = alumnosPorCurso[cu.id] || [];
             const total     = ids.length;
             const registrados = Math.min(total, ids.filter(id => asistSet.has(id)).length);
-            const listo     = total > 0 && registrados >= total;
-            const enProg    = registrados > 0 && registrados < total;
-            const statusClr = listo ? 'var(--verde)' : enProg ? 'var(--ambar)' : total > 0 ? 'var(--rojo)' : 'var(--txt3)';
-            const statusLbl = listo ? '✓ Al día' : enProg ? `${registrados}/${total}` : total > 0 ? 'Pendiente' : 'Sin alumnos';
+            const listo     = hoyHabil && total > 0 && registrados >= total;
+            const enProg    = hoyHabil && registrados > 0 && registrados < total;
+            const statusClr = !hoyHabil ? 'var(--txt3)' : listo ? 'var(--verde)' : enProg ? 'var(--ambar)' : total > 0 ? 'var(--rojo)' : 'var(--txt3)';
+            const statusLbl = !hoyHabil ? '—' : listo ? '✓ Al día' : enProg ? `${registrados}/${total}` : total > 0 ? 'Pendiente' : 'Sin alumnos';
             return `
               <div class="curso-card-asist" style="border-top:3px solid ${NIVEL_COLORS[n]}" onclick="verCursoDirector('${cu.id}','${cu.nivel}')">
                 <div class="cca-badge" style="background:${NIVEL_COLORS[n]}18;color:${NIVEL_COLORS[n]};display:inline-block;margin-bottom:10px">${cu.nombre}${cu.division||''}</div>
