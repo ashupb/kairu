@@ -176,7 +176,7 @@ async function verCursoDirector(cursoId, nivel) {
   const [cursoRes, alumnosRes, asistRes] = await Promise.all([
     sb.from('cursos').select('*').eq('id', cursoId).single(),
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
-    sb.from('asistencia').select('*').eq('curso_id', cursoId)
+    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null)
       .gte('fecha', (() => { const d = new Date(); d.setMonth(d.getMonth()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })())
       .order('fecha'),
   ]);
@@ -189,22 +189,31 @@ async function verCursoDirector(cursoId, nivel) {
   // Agrupar asistencias por fecha
   const fechas = [...new Set(asists.map(a => a.fecha))].sort();
 
-  // Calcular totales por alumno
+  // Calcular totales por alumno — solo registros diarios (hora_clase null).
+  // Registros por hora/materia (secundario) no computan para regularidad.
   const totalPorAlumno = {};
   alumnos.forEach(al => totalPorAlumno[al.id] = 0);
-  asists.forEach(a => {
+  // Deduplicar por alumno+fecha antes de sumar (defensivo contra duplicados históricos)
+  const asistDiarios = {};
+  asists.filter(a => !a.hora_clase).forEach(a => {
+    asistDiarios[`${a.alumno_id}_${a.fecha}`] = a;
+  });
+  Object.values(asistDiarios).forEach(a => {
+    if (a.estado === 'justificado' && !config.justificadas_cuentan) return;
     const val = ESTADOS_ASIST[a.estado]?.valor || 0;
-    if (a.estado !== 'justificado' || config.justificadas_cuentan) {
-      totalPorAlumno[a.alumno_id] = (totalPorAlumno[a.alumno_id] || 0) + val;
-    }
+    totalPorAlumno[a.alumno_id] = (totalPorAlumno[a.alumno_id] || 0) + val;
   });
 
-  // Stats generales
+  // Stats generales de hoy — solo registros diarios
   const hoy     = hoyISO();
-  const asistHoy = asists.filter(a => a.fecha === hoy);
-  const presHoy  = asistHoy.filter(a => a.estado === 'presente').length;
-  const ausHoy   = asistHoy.filter(a => a.estado === 'ausente').length;
-  const pctPres  = alumnos.length ? Math.round(presHoy/alumnos.length*100) : 0;
+  const asistHoy = asists.filter(a => a.fecha === hoy && !a.hora_clase);
+  // Deduplicar por alumno (por si hay duplicados del mismo día)
+  const asistHoyMap = {};
+  asistHoy.forEach(a => { asistHoyMap[a.alumno_id] = a; });
+  const asistHoyUniq = Object.values(asistHoyMap);
+  const presHoy = asistHoyUniq.filter(a => ['presente','tardanza','media_falta'].includes(a.estado)).length;
+  const ausHoy  = asistHoyUniq.filter(a => a.estado === 'ausente').length;
+  const pctPres = alumnos.length ? Math.round(presHoy/alumnos.length*100) : 0;
 
   // Alumnos en riesgo
   const enRiesgo = alumnos.filter(al => totalPorAlumno[al.id] >= (config.umbral_alerta_2 ?? 20));
@@ -281,7 +290,7 @@ async function mostrarGrillaDirector(cursoId, nivel) {
 
   const [alumnosRes, asistRes, cursoRes] = await Promise.all([
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
-    sb.from('asistencia').select('*').eq('curso_id', cursoId).order('fecha'),
+    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null).order('fecha'),
     sb.from('cursos').select('*').eq('id', cursoId).single(),
   ]);
 
@@ -1015,10 +1024,29 @@ async function guardarAsistencia(cursoId, nivel, fecha, horaClase, materiaId) {
     registrado_por:   USUARIO_ACTUAL.id,
   }));
 
-  const { error } = await sb.from('asistencia').upsert(registros, {
-    onConflict: 'alumno_id,fecha,hora_clase,materia_id',
-    ignoreDuplicates: false,
-  });
+  // Para registros diarios (hora_clase = null), PostgreSQL no aplica el
+  // UNIQUE constraint sobre columnas NULL, por lo que upsert siempre
+  // inserta filas nuevas en vez de actualizar. Solución: DELETE + INSERT.
+  let error;
+  if (!horaClase) {
+    const delRes = await sb.from('asistencia')
+      .delete()
+      .eq('curso_id', cursoId)
+      .eq('fecha', fecha)
+      .is('hora_clase', null);
+    if (delRes.error) {
+      error = delRes.error;
+    } else {
+      const insRes = await sb.from('asistencia').insert(registros);
+      error = insRes.error;
+    }
+  } else {
+    const upsRes = await sb.from('asistencia').upsert(registros, {
+      onConflict: 'alumno_id,fecha,hora_clase,materia_id',
+      ignoreDuplicates: false,
+    });
+    error = upsRes.error;
+  }
 
   if (error) {
     if (btn) { btn.disabled = false; btn.textContent = '💾 Confirmar lista'; }
@@ -1107,7 +1135,7 @@ async function verAlumnoAsist(alumnoId) {
 
   const [alumnoRes, asistRes, alertasRes] = await Promise.all([
     sb.from('alumnos').select('*, cursos(nombre,division,nivel)').eq('id', alumnoId).single(),
-    sb.from('asistencia').select('*').eq('alumno_id', alumnoId).order('fecha', {ascending:true}),
+    sb.from('asistencia').select('*').eq('alumno_id', alumnoId).is('hora_clase', null).order('fecha', {ascending:true}),
     sb.from('alertas_asistencia').select('*').eq('alumno_id', alumnoId).order('created_at', {ascending:false}),
   ]);
 
@@ -1117,9 +1145,14 @@ async function verAlumnoAsist(alumnoId) {
   const nivel   = al?.cursos?.nivel || 'secundario';
   const config  = CONFIG_ASIST[nivel] || {};
 
+  // Deduplicar por fecha: si hay registros duplicados para la misma fecha
+  // (causados por el bug anterior del upsert), tomar solo uno por día.
+  const porFecha = new Map();
+  asists.filter(a => !a.hora_clase).forEach(a => porFecha.set(a.fecha, a));
+
   let totalFaltas = 0;
   const conteo = {};
-  asists.filter(a => !a.hora_clase).forEach(a => {
+  porFecha.forEach(a => {
     conteo[a.estado] = (conteo[a.estado]||0) + 1;
     if (a.estado !== 'justificado' || config.justificadas_cuentan) {
       totalFaltas += ESTADOS_ASIST[a.estado]?.valor || 0;
@@ -1249,11 +1282,18 @@ async function verificarAlertas(alumnoIds, instId, nivel) {
   if (!config) return;
 
   for (const alumnoId of alumnoIds) {
+    // Solo contar registros diarios (hora_clase IS NULL).
+    // Los registros por hora/materia son del docente de secundario y no
+    // computan para regularidad.
     const { data: registros } = await sb.from('asistencia')
-      .select('estado').eq('alumno_id', alumnoId);
+      .select('estado,fecha').eq('alumno_id', alumnoId).is('hora_clase', null);
+
+    // Deduplicar por fecha antes de sumar (defensivo contra duplicados históricos)
+    const porFecha = new Map();
+    (registros||[]).forEach(r => porFecha.set(r.fecha, r));
 
     let totalFaltas = 0;
-    (registros||[]).forEach(r => {
+    porFecha.forEach(r => {
       if (r.estado === 'justificado' && !config.justificadas_cuentan) return;
       totalFaltas += ESTADOS_ASIST[r.estado]?.valor || 0;
     });

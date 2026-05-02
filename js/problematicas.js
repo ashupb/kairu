@@ -1189,10 +1189,13 @@ async function mostrarContextoAlumno(alumnoId) {
     const anio = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
     const [alRes, asistRes] = await Promise.all([
       sb.from('alumnos').select('curso:cursos(nivel)').eq('id', alumnoId).single(),
-      sb.from('asistencia').select('estado').eq('alumno_id', alumnoId).gte('fecha', `${anio}-01-01`),
+      sb.from('asistencia').select('estado,fecha').eq('alumno_id', alumnoId).is('hora_clase', null).gte('fecha', `${anio}-01-01`),
     ]);
     const banners   = [];
-    const registros = asistRes.data || [];
+    // Solo lista del preceptor (hora_clase null). Deduplicar por fecha.
+    const porFecha  = new Map();
+    (asistRes.data || []).forEach(r => porFecha.set(r.fecha, r));
+    const registros = [...porFecha.values()];
     const total     = registros.length;
     if (total >= 5) {
       const presentes = registros.filter(a => ['presente','tardanza','media_falta'].includes(a.estado)).length;
