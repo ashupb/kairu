@@ -366,9 +366,11 @@ async function rDashDirector() {
       <div class="dash-col-r">
         ${renderAgendaSemana(eventosSem, sem, null)}
       </div>
-    </div>`;
+    </div>
+    <div id="alertas-acad-dash" style="margin-top:4px"></div>`;
 
   inyectarEstilosDash();
+  _cargarAlertasAcadDash(instId);
 }
 
 // ─── DIRECTIVO DE NIVEL ───────────────────────────────
@@ -455,9 +457,11 @@ async function rDashDirectivo() {
       <div class="dash-col-r">
         ${renderAgendaSemana(eventosSem, sem, nivel)}
       </div>
-    </div>`;
+    </div>
+    <div id="alertas-acad-dash" style="margin-top:4px"></div>`;
 
   inyectarEstilosDash();
+  _cargarAlertasAcadDash(instId);
 }
 
 // ─── EOE ─────────────────────────────────────────────
@@ -880,9 +884,11 @@ async function rDashPreceptor() {
       </div>
     </div>
 
-    ${renderPendientesRespuesta(pendResp)}`;
+    ${renderPendientesRespuesta(pendResp)}
+    <div id="alertas-acad-dash" style="margin-top:4px"></div>`;
 
   inyectarEstilosDash();
+  _cargarAlertasAcadDash(instId);
 }
 
 // ─── ACCIONES ─────────────────────────────────────────
@@ -906,6 +912,101 @@ async function marcarAlertasProbLeidas() {
 async function marcarAlertaProbLeida(alertaId) {
   await sb.from('alertas_problematicas').update({ leida: true }).eq('id', alertaId);
   rDash();
+}
+
+// ═══════════════════════════════════════════════════════
+// ALERTAS ACADÉMICAS EN DASHBOARD (v15 — Res. 1650/2024)
+// ═══════════════════════════════════════════════════════
+
+async function _cargarAlertasAcadDash(instId) {
+  const sec = document.getElementById('alertas-acad-dash');
+  if (!sec) return;
+
+  const { data, error } = await sb.from('alertas_academicas')
+    .select('id,alumno_id,tipo,materias_ids,ciclo_lectivo,cuatrimestre,alumnos(id,nombre,apellido)')
+    .eq('institucion_id', instId)
+    .eq('resuelta', false)
+    .not('tipo', 'is', null)
+    .order('tipo').limit(50);
+
+  if (error || !data?.length) {
+    sec.innerHTML = '';
+    return;
+  }
+
+  sec.innerHTML = renderAlertasAcademicas(data);
+}
+
+function renderAlertasAcademicas(alertas) {
+  if (!alertas?.length) return '';
+
+  const TIPO_INFO = {
+    riesgo_1:             { label: 'En seguimiento (1–2 mat.)',  color: 'var(--ambar)', tag: 'ta' },
+    riesgo_2:             { label: 'Riesgo académico (3–4 mat.)', color: 'var(--rojo)',  tag: 'tr' },
+    promocion_acompanada: { label: 'Promoción acompañada',        color: 'var(--ambar)', tag: 'ta' },
+    edt_requerido:        { label: 'Requiere EDT (5+ mat.)',       color: 'var(--rojo)',  tag: 'tr' },
+    resuelta:             { label: 'Resuelta',                     color: 'var(--verde)', tag: 'tg' },
+  };
+
+  const porTipo = {};
+  alertas.forEach(a => {
+    if (!porTipo[a.tipo]) porTipo[a.tipo] = [];
+    porTipo[a.tipo].push(a);
+  });
+
+  const orden = ['edt_requerido','riesgo_2','promocion_acompanada','riesgo_1'];
+
+  const html = orden.filter(t => porTipo[t]?.length).map(tipo => {
+    const info  = TIPO_INFO[tipo] || { label: tipo, color: 'var(--txt2)', tag: 'td' };
+    const lista = porTipo[tipo];
+    return `
+      <div style="margin-bottom:12px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:${info.color};text-transform:uppercase;margin-bottom:6px">
+          ${info.label} (${lista.length})
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          ${lista.map(a => {
+            const al  = a.alumnos;
+            const nom = al ? `${al.apellido}, ${al.nombre}` : '—';
+            const n   = a.materias_ids?.length || 0;
+            return `
+              <div style="display:flex;align-items:center;gap:12px;padding:9px 14px;border-bottom:1px solid var(--brd);cursor:pointer"
+                onclick="_irLegajoDesdeAlerta('${a.alumno_id}')">
+                <div style="flex:1">
+                  <div style="font-size:12px;font-weight:500">${nom}</div>
+                  <div style="font-size:10px;color:var(--txt2)">
+                    ${n} mat. · Ciclo ${a.ciclo_lectivo || '—'}${a.cuatrimestre ? ` · C${a.cuatrimestre}` : ''}
+                  </div>
+                </div>
+                <span style="color:var(--verde);font-size:14px">→</span>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  if (!html) return '';
+  return `
+    <div class="sec-lb" style="margin-top:18px">Alertas académicas activas</div>
+    ${html}
+    <div style="font-size:10px;color:var(--txt2);margin-bottom:14px">
+      Generadas al cerrar cuatrimestre. Se resuelven desde Calificaciones → Cierre anual.
+    </div>`;
+}
+
+async function _irLegajoDesdeAlerta(alumnoId) {
+  if (!alumnoId) return;
+  window._pendingLegAlumnoId = alumnoId;
+  goPage('leg');
+  setTimeout(async () => {
+    if (window._pendingLegAlumnoId && window._legAlumnosCache?.length) {
+      const alumno = window._legAlumnosCache.find(a => a.id === window._pendingLegAlumnoId);
+      if (alumno) {
+        window._pendingLegAlumnoId = null;
+        await abrirLegajoAlumno(alumnoId);
+      }
+    }
+  }, 800);
 }
 
 // ─── ESTILOS ──────────────────────────────────────────

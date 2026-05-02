@@ -270,10 +270,17 @@ async function rNotasDocente() {
     <div class="sec-lb" style="margin-top:14px">Situación de mis alumnos</div>
     <div id="sit-docente-global" style="text-align:center;padding:20px;color:var(--txt3);font-size:11px">
       <div class="spinner" style="margin:0 auto 8px"></div>Calculando situación...
+    </div>
+    <div class="sec-lb" style="margin-top:18px">Intensificación / Recursada</div>
+    <div id="intensif-docente-sec" style="padding:8px 0">
+      <div style="text-align:center;padding:16px;color:var(--txt3);font-size:11px">
+        <div class="spinner" style="margin:0 auto 8px"></div>Verificando...
+      </div>
     </div>`;
 
   window._notasCursoMap = cursoMap;
   _cargarSituacionDocenteGlobal(cursoMap);
+  _cargarIntensifDocente(Object.keys(cursoMap));
 }
 
 async function _cargarSituacionDocenteGlobal(cursoMap) {
@@ -1085,9 +1092,31 @@ async function rNotasDirectivo() {
     <div class="sec-lb" style="margin-top:14px">Situación de alumnos</div>
     <div id="sit-dir-global" style="text-align:center;padding:20px;color:var(--txt3);font-size:11px">
       <div class="spinner" style="margin:0 auto 8px"></div>Calculando situación...
+    </div>
+    <div class="sec-lb" style="margin-top:18px">Intensificación / Recursada activa</div>
+    <div id="intensif-dir-sec" style="padding:8px 0">
+      <div style="text-align:center;padding:16px;color:var(--txt3);font-size:11px">
+        <div class="spinner" style="margin:0 auto 8px"></div>Verificando...
+      </div>
+    </div>
+    <div class="sec-lb" style="margin-top:18px">Gestión del ciclo lectivo</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      <button class="btn-s" onclick="_cerrarCuatrimestreTrayectoria(1)" style="font-size:11px">
+        🔒 Cerrar Cuatrimestre 1
+      </button>
+      <button class="btn-s" onclick="_cerrarCuatrimestreTrayectoria(2)" style="font-size:11px">
+        🔒 Cerrar Cuatrimestre 2
+      </button>
+      <button class="btn-s" onclick="_mostrarCierreAnual()" style="font-size:11px">
+        🎓 Cierre anual / Promoción
+      </button>
+    </div>
+    <div style="font-size:10px;color:var(--txt2);margin-bottom:14px">
+      El cierre de cuatrimestre genera alertas automáticas según la cantidad de materias desaprobadas (Res. 1650/2024).
     </div>`;
 
   _cargarSituacionDirectivoGlobal(filtrados);
+  _cargarIntensifDirectivo(filtrados.map(c => c.id));
 }
 
 async function _cargarSituacionDirectivoGlobal(cursos) {
@@ -2447,4 +2476,451 @@ async function reabrirPeriodo(periodoId, nombrePeriodo) {
   }).eq('id', periodoId);
 
   rNotas();
+}
+
+// ═══════════════════════════════════════════════════════
+// INTENSIFICACIÓN / TRAYECTORIAS (v15 — Res. 1650/2024)
+// ═══════════════════════════════════════════════════════
+
+const ESTADO_INTENSIF_LABEL = {
+  en_curso:          'En curso',
+  pendiente_intensif:'Pendiente de intensificación',
+  intensificando:    'Intensificando',
+  recursando:        'Recursando',
+  aprobada:          'Aprobada',
+  no_acreditada:     'No acreditada',
+  a_recursar:        'A recursar',
+};
+
+const ESTADO_INTENSIF_COLOR = {
+  en_curso:          'var(--azul)',
+  pendiente_intensif:'var(--ambar)',
+  intensificando:    'var(--ambar)',
+  recursando:        'var(--rojo)',
+  aprobada:          'var(--verde)',
+  no_acreditada:     'var(--rojo)',
+  a_recursar:        'var(--rojo)',
+};
+
+async function _cargarIntensifDocente(cursoIds) {
+  const sec = document.getElementById('intensif-docente-sec');
+  if (!sec || !cursoIds.length) return;
+
+  const anio = new Date().getFullYear();
+  const { data, error } = await sb.from('materias_estado_alumno')
+    .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,alumnos(nombre,apellido),materias(nombre)')
+    .in('curso_origen_id', cursoIds)
+    .eq('ciclo_lectivo_cursado', anio)
+    .lt('ciclo_lectivo_origen', anio)
+    .order('ciclo_lectivo_origen').order('alumnos(apellido)');
+
+  if (error || !data?.length) {
+    sec.innerHTML = '<div style="font-size:11px;color:var(--txt3);padding:6px 0">Sin materias en intensificación para tus cursos este año.</div>';
+    return;
+  }
+
+  const porCiclo = {};
+  data.forEach(r => {
+    const k = r.ciclo_lectivo_origen;
+    if (!porCiclo[k]) porCiclo[k] = [];
+    porCiclo[k].push(r);
+  });
+
+  sec.innerHTML = Object.entries(porCiclo).sort((a, b) => b[0] - a[0]).map(([ciclo, registros]) => `
+    <div style="margin-bottom:12px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--txt2);text-transform:uppercase;margin-bottom:6px">
+        Ciclo ${ciclo} — ${registros.length} materia(s)
+      </div>
+      ${registros.map(r => {
+        const clr = ESTADO_INTENSIF_COLOR[r.estado] || 'var(--txt2)';
+        return `
+        <div class="card" style="padding:12px 14px;margin-bottom:6px;border-left:3px solid ${clr};cursor:pointer"
+          onclick="verNotasIntensif('${r.id}','${_escCal(r.alumnos?.apellido)}, ${_escCal(r.alumnos?.nombre)}','${_escCal(r.materias?.nombre)}',${r.ciclo_lectivo_origen})">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start">
+            <div>
+              <div style="font-size:12px;font-weight:600">${r.alumnos?.apellido}, ${r.alumnos?.nombre}</div>
+              <div style="font-size:11px;color:var(--txt2)">${r.materias?.nombre}</div>
+            </div>
+            <div style="text-align:right">
+              <span style="font-size:10px;font-weight:600;color:${clr}">${ESTADO_INTENSIF_LABEL[r.estado] || r.estado}</span>
+              ${r.nota_intensif_1 !== null ? `<div style="font-size:10px;color:var(--txt2)">Int. 1: ${r.nota_intensif_1}</div>` : ''}
+              ${r.nota_intensif_2 !== null ? `<div style="font-size:10px;color:var(--txt2)">Int. 2: ${r.nota_intensif_2}</div>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+
+async function _cargarIntensifDirectivo(cursoIds) {
+  const sec = document.getElementById('intensif-dir-sec');
+  if (!sec || !cursoIds.length) return;
+
+  const anio = new Date().getFullYear();
+  const { data, error } = await sb.from('materias_estado_alumno')
+    .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,alumnos(nombre,apellido),materias(nombre)')
+    .in('curso_origen_id', cursoIds)
+    .eq('ciclo_lectivo_cursado', anio)
+    .not('estado', 'in', '("en_curso","aprobada")')
+    .order('ciclo_lectivo_origen').order('alumnos(apellido)');
+
+  if (error || !data?.length) {
+    sec.innerHTML = '<div style="font-size:11px;color:var(--txt3);padding:6px 0">Sin materias activas en intensificación o recursada.</div>';
+    return;
+  }
+
+  const porEstado = {};
+  data.forEach(r => {
+    if (!porEstado[r.estado]) porEstado[r.estado] = [];
+    porEstado[r.estado].push(r);
+  });
+
+  const orden = ['pendiente_intensif','intensificando','recursando','a_recursar','no_acreditada'];
+  sec.innerHTML = orden.filter(e => porEstado[e]?.length).map(estado => {
+    const lista = porEstado[estado];
+    const clr = ESTADO_INTENSIF_COLOR[estado] || 'var(--txt2)';
+    return `
+      <div style="margin-bottom:12px">
+        <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:${clr};text-transform:uppercase;margin-bottom:6px">
+          ${ESTADO_INTENSIF_LABEL[estado]} (${lista.length})
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          ${lista.map(r => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--brd);cursor:pointer"
+              onclick="verNotasIntensif('${r.id}','${_escCal(r.alumnos?.apellido)}, ${_escCal(r.alumnos?.nombre)}','${_escCal(r.materias?.nombre)}',${r.ciclo_lectivo_origen})">
+              <div>
+                <div style="font-size:12px;font-weight:500">${r.alumnos?.apellido}, ${r.alumnos?.nombre}</div>
+                <div style="font-size:10px;color:var(--txt2)">${r.materias?.nombre} · Ciclo ${r.ciclo_lectivo_origen}</div>
+              </div>
+              <span style="color:var(--verde);font-size:14px">→</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function _escCal(s) {
+  if (!s) return '';
+  return String(s).replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+async function verNotasIntensif(estadoId, alumnoNombre, materiaNombre, cicloOrigen) {
+  const c = document.getElementById('page-notas');
+  showLoading('notas');
+
+  const { data: rec, error } = await sb.from('materias_estado_alumno')
+    .select('*,periodos_intensificacion(nombre)')
+    .eq('id', estadoId).single();
+
+  if (error) { c.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`; return; }
+
+  const esDirectivo = ['director_general','directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button onclick="rNotas()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+      <div>
+        <div class="pg-t">${alumnoNombre}</div>
+        <div class="pg-s">${materiaNombre} · Ciclo ${cicloOrigen}</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
+        Estado actual
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+        <span style="font-size:13px;font-weight:600;color:${ESTADO_INTENSIF_COLOR[rec.estado]||'var(--txt)'}">
+          ${ESTADO_INTENSIF_LABEL[rec.estado] || rec.estado}
+        </span>
+        ${rec.periodos_intensificacion?.nombre
+          ? `<span style="font-size:10px;color:var(--txt2)">· Período: ${rec.periodos_intensificacion.nombre}</span>`
+          : ''}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Nota final original</label>
+          <span style="font-size:18px;font-weight:700;color:${NOTA_COLOR(rec.nota_final)}">${rec.nota_final ?? '—'}</span>
+        </div>
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Nota intensif. 1</label>
+          ${esDirectivo || USUARIO_ACTUAL.rol === 'docente'
+            ? `<input type="number" id="nota-i1" value="${rec.nota_intensif_1 ?? ''}" min="1" max="10" step="0.5"
+                style="width:80px;padding:8px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:14px;font-weight:700;text-align:center;background:var(--surf);color:var(--txt)">`
+            : `<span style="font-size:18px;font-weight:700;color:${NOTA_COLOR(rec.nota_intensif_1)}">${rec.nota_intensif_1 ?? '—'}</span>`}
+        </div>
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Nota intensif. 2</label>
+          ${esDirectivo || USUARIO_ACTUAL.rol === 'docente'
+            ? `<input type="number" id="nota-i2" value="${rec.nota_intensif_2 ?? ''}" min="1" max="10" step="0.5"
+                style="width:80px;padding:8px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:14px;font-weight:700;text-align:center;background:var(--surf);color:var(--txt)">`
+            : `<span style="font-size:18px;font-weight:700;color:${NOTA_COLOR(rec.nota_intensif_2)}">${rec.nota_intensif_2 ?? '—'}</span>`}
+        </div>
+      </div>
+
+      ${esDirectivo || USUARIO_ACTUAL.rol === 'docente' ? `
+      <div style="margin-bottom:14px">
+        <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Estado resultante</label>
+        <select id="estado-intensif" style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt)">
+          ${['pendiente_intensif','intensificando','recursando','aprobada','no_acreditada','a_recursar'].map(e => `
+            <option value="${e}" ${rec.estado === e ? 'selected' : ''}>${ESTADO_INTENSIF_LABEL[e]}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn-p" onclick="_guardarNotasIntensif('${estadoId}')" style="font-size:12px">
+        💾 Guardar
+      </button>` : ''}
+    </div>`;
+}
+
+async function _guardarNotasIntensif(estadoId) {
+  const i1     = parseFloat(document.getElementById('nota-i1')?.value);
+  const i2     = parseFloat(document.getElementById('nota-i2')?.value);
+  const estado = document.getElementById('estado-intensif')?.value;
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  const { error } = await sb.from('materias_estado_alumno').update({
+    nota_intensif_1: isNaN(i1) ? null : i1,
+    nota_intensif_2: isNaN(i2) ? null : i2,
+    estado,
+  }).eq('id', estadoId);
+
+  if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
+  if (error) { alert('Error: ' + error.message); return; }
+  alert('✅ Guardado correctamente.');
+  rNotas();
+}
+
+async function _cerrarCuatrimestreTrayectoria(cuatrimestre) {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const anio   = new Date().getFullYear();
+
+  const tipoCierre = cuatrimestre === 1 ? 'cuatrimestre_1' : 'cuatrimestre_2';
+  // Verificar si ya se cerró este cuatrimestre
+  const { data: cierreExist } = await sb.from('cierres_periodo')
+    .select('id').eq('institucion_id', instId)
+    .eq('ciclo_lectivo', anio).eq('tipo', tipoCierre).maybeSingle();
+
+  if (cierreExist) {
+    if (!confirm(`El Cuatrimestre ${cuatrimestre} ya fue cerrado. ¿Querés re-generar las alertas?`)) return;
+  } else {
+    if (!confirm(`¿Cerrar el Cuatrimestre ${cuatrimestre}? Se generarán alertas automáticas según la cantidad de materias desaprobadas.`)) return;
+  }
+
+  // Obtener cursos del nivel del usuario (o todos para director_general)
+  let qCursos = sb.from('cursos').select('id,nombre,division,nivel').eq('institucion_id', instId);
+  if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
+    qCursos = qCursos.eq('nivel', USUARIO_ACTUAL.nivel);
+  }
+  const { data: cursos } = await qCursos;
+  const cursoIds = (cursos || []).map(c => c.id);
+  if (!cursoIds.length) { alert('Sin cursos para cerrar.'); return; }
+
+  // Obtener alumnos
+  const { data: alumnos } = await sb.from('alumnos')
+    .select('id,nombre,apellido,curso_id').in('curso_id', cursoIds).or('activo.is.null,activo.eq.true');
+  if (!alumnos?.length) { alert('Sin alumnos activos.'); return; }
+
+  // Obtener períodos evaluativos del cuatrimestre
+  const periodosPorNivel = {};
+  PERIODOS.forEach(p => { periodosPorNivel[p.nivel] = periodosPorNivel[p.nivel] || []; periodosPorNivel[p.nivel].push(p); });
+
+  // Calcular materias desaprobadas por alumno (notas promedio < 7)
+  const desaprobadasPorAlumno = {};
+  const materiaDesaprobadaIds = {};
+
+  for (const cu of (cursos || [])) {
+    const alumnosCurso = alumnos.filter(a => a.curso_id === cu.id);
+    if (!alumnosCurso.length) continue;
+
+    const periodos = periodosPorNivel[cu.nivel] || [];
+    if (!periodos.length) continue;
+
+    // Para el cuatrimestre solicitado, usar los períodos correspondientes
+    // Cuatrimestre 1: primero, Cuatrimestre 2: segundo
+    const periodosQ = periodos.filter((_, i) => cuatrimestre === 1 ? i < Math.ceil(periodos.length / 2) : i >= Math.floor(periodos.length / 2));
+    const periodoIds = periodosQ.map(p => p.id);
+    if (!periodoIds.length) continue;
+
+    const { data: califs } = await sb.from('calificaciones')
+      .select('alumno_id,materia_id,nota,ausente')
+      .in('periodo_id', periodoIds).eq('curso_id', cu.id);
+
+    (califs || []).forEach(c => {
+      if (c.ausente || c.nota === null) return;
+      const k = `${c.alumno_id}_${c.materia_id}`;
+      if (!desaprobadasPorAlumno[c.alumno_id]) desaprobadasPorAlumno[c.alumno_id] = {};
+      if (!desaprobadasPorAlumno[c.alumno_id][c.materia_id]) desaprobadasPorAlumno[c.alumno_id][c.materia_id] = [];
+      desaprobadasPorAlumno[c.alumno_id][c.materia_id].push(c.nota);
+    });
+  }
+
+  // Generar alertas
+  let alertasGeneradas = 0;
+  for (const alumno of alumnos) {
+    const materiasAlumno = desaprobadasPorAlumno[alumno.id] || {};
+    const matsBajas = Object.entries(materiasAlumno)
+      .filter(([_, notas]) => notas.reduce((a, b) => a + b, 0) / notas.length < 7)
+      .map(([matId]) => matId);
+    const n = matsBajas.length;
+    if (!n) continue;
+
+    let tipo;
+    if (n <= 2)      tipo = 'riesgo_1';
+    else if (n <= 4) tipo = 'riesgo_2';
+    else             tipo = 'edt_requerido';
+
+    // Verificar si ya existe alerta para este alumno/cuatrimestre
+    const { data: existe } = await sb.from('alertas_academicas')
+      .select('id').eq('alumno_id', alumno.id)
+      .eq('ciclo_lectivo', anio).eq('cuatrimestre', cuatrimestre)
+      .not('tipo', 'is', null).maybeSingle();
+
+    if (existe) {
+      await sb.from('alertas_academicas').update({
+        tipo, materias_ids: matsBajas, leida: false, resuelta: false,
+      }).eq('id', existe.id);
+    } else {
+      await sb.from('alertas_academicas').insert({
+        institucion_id: instId,
+        alumno_id:      alumno.id,
+        tipo,
+        materias_ids:   matsBajas,
+        ciclo_lectivo:  anio,
+        cuatrimestre,
+        leida:          false,
+        resuelta:       false,
+      });
+    }
+    alertasGeneradas++;
+  }
+
+  // Registrar cierre
+  if (!cierreExist) {
+    await sb.from('cierres_periodo').insert({
+      institucion_id: instId, ciclo_lectivo: anio,
+      tipo: tipoCierre, cerrado_por: USUARIO_ACTUAL.id,
+    });
+  }
+
+  alert(`✅ Cuatrimestre ${cuatrimestre} cerrado.\n${alertasGeneradas} alumno(s) con alertas generadas.`);
+  rNotas();
+}
+
+async function _mostrarCierreAnual() {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const anio   = new Date().getFullYear();
+  const c      = document.getElementById('page-notas');
+  showLoading('notas');
+
+  // Cursos secundarios (la promoción automática aplica a secundaria)
+  let qCursos = sb.from('cursos').select('id,nombre,division,nivel').eq('institucion_id', instId).eq('nivel', 'secundario');
+  if (USUARIO_ACTUAL.rol === 'directivo_nivel') qCursos = qCursos.eq('nivel', USUARIO_ACTUAL.nivel || 'secundario');
+  const { data: cursos } = await qCursos;
+  const cursoIds = (cursos || []).map(cu => cu.id);
+
+  if (!cursoIds.length) {
+    c.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <button onclick="rNotas()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+        <div class="pg-t">Cierre anual / Promoción</div>
+      </div>
+      <div class="empty-state">Sin cursos de nivel secundario para gestionar.</div>`;
+    return;
+  }
+
+  const { data: alumnos } = await sb.from('alumnos')
+    .select('id,nombre,apellido,curso_id').in('curso_id', cursoIds).or('activo.is.null,activo.eq.true');
+
+  // Obtener alertas del ciclo lectivo actual para calcular estado
+  const { data: alertas } = await sb.from('alertas_academicas')
+    .select('alumno_id,tipo,materias_ids')
+    .in('alumno_id', (alumnos || []).map(a => a.id))
+    .eq('ciclo_lectivo', anio).eq('resuelta', false).not('tipo', 'is', null);
+
+  const alertasPorAlumno = {};
+  (alertas || []).forEach(al => {
+    if (!alertasPorAlumno[al.alumno_id]) alertasPorAlumno[al.alumno_id] = al;
+    else if ((al.materias_ids?.length || 0) > (alertasPorAlumno[al.alumno_id].materias_ids?.length || 0)) {
+      alertasPorAlumno[al.alumno_id] = al;
+    }
+  });
+
+  const cursoMap = Object.fromEntries((cursos || []).map(cu => [cu.id, cu]));
+
+  const PROMO_TIPO = {
+    promovido:             { label: 'Promovido automáticamente', color: 'var(--verde)',  tag: 'tg' },
+    promocion_acompanada:  { label: 'Promoción acompañada',      color: 'var(--ambar)', tag: 'ta' },
+    edt_requerido:         { label: 'EDT requerido',             color: 'var(--rojo)',  tag: 'tr' },
+  };
+
+  const clasificados = (alumnos || []).map(al => {
+    const alerta = alertasPorAlumno[al.id];
+    const n      = alerta?.materias_ids?.length || 0;
+    let decision = n === 0 ? 'promovido' : n <= 2 ? 'promovido' : n <= 4 ? 'promocion_acompanada' : 'edt_requerido';
+    return { ...al, decision, materias_n: n, curso: cursoMap[al.curso_id] };
+  });
+
+  const grupos = {
+    promovido:            clasificados.filter(a => a.decision === 'promovido'),
+    promocion_acompanada: clasificados.filter(a => a.decision === 'promocion_acompanada'),
+    edt_requerido:        clasificados.filter(a => a.decision === 'edt_requerido'),
+  };
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button onclick="rNotas()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+      <div>
+        <div class="pg-t">Cierre anual ${anio}</div>
+        <div class="pg-s">Promoción y trayectorias — Res. 1650/2024</div>
+      </div>
+    </div>
+
+    <div style="background:var(--azul-l);border-left:4px solid var(--azul);border-radius:var(--rad);padding:10px 14px;margin-bottom:16px;font-size:11px;color:var(--azul)">
+      <strong>Reglas de promoción:</strong> ≤2 desaprobadas → automática · 3–4 → decisión del equipo directivo · 5+ → interviene el EDT
+    </div>
+
+    ${Object.entries(grupos).filter(([, lista]) => lista.length).map(([tipo, lista]) => {
+      const info = PROMO_TIPO[tipo];
+      return `
+        <div class="sec-lb" style="color:${info.color}">${info.label} (${lista.length})</div>
+        <div class="card" style="padding:0;margin-bottom:14px;overflow:hidden">
+          ${lista.map(al => `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--brd)">
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:600">${al.apellido}, ${al.nombre}</div>
+                <div style="font-size:10px;color:var(--txt2)">${al.curso?.nombre || ''}${al.curso?.division || ''} · ${al.materias_n} mat. desaprobada(s)</div>
+              </div>
+              ${tipo === 'promocion_acompanada' ? `
+                <select onchange="_confirmarPromocionAlumno('${al.id}',this.value)"
+                  style="font-size:11px;padding:5px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf);color:var(--txt)">
+                  <option value="">— Decisión —</option>
+                  <option value="promovido">Promover</option>
+                  <option value="no_promovido">No promover</option>
+                </select>` : `
+                <span class="tag ${info.tag}" style="font-size:9px">${tipo === 'promovido' ? 'Promovido' : 'EDT'}</span>`}
+            </div>`).join('')}
+        </div>`;
+    }).join('')}
+
+    <div style="margin-top:8px;font-size:11px;color:var(--txt3)">
+      La promoción efectiva (actualizar curso_id del alumno) se realiza desde Configuración → Alumnos al inicio del próximo ciclo lectivo.
+    </div>`;
+}
+
+async function _confirmarPromocionAlumno(alumnoId, decision) {
+  if (!decision) return;
+  const label = decision === 'promovido' ? 'promover' : 'no promover';
+  if (!confirm(`¿Confirmás ${label} a este alumno?`)) return;
+
+  const anio = new Date().getFullYear();
+  const { error } = await sb.from('alertas_academicas').update({
+    tipo: decision === 'promovido' ? 'resuelta' : 'promocion_acompanada',
+    resuelta: decision === 'promovido',
+  }).eq('alumno_id', alumnoId).eq('ciclo_lectivo', anio).not('tipo', 'is', null);
+
+  if (error) { alert('Error: ' + error.message); return; }
+  alert(`✅ Decisión registrada: ${label}.`);
 }

@@ -73,7 +73,8 @@ function _adminTabs() {
     { id: 'materias',     label: 'Materias',         roles: ['director_general', 'directivo_nivel'] },
     { id: 'asignaciones', label: 'Asignaciones',     roles: ['director_general', 'directivo_nivel'] },
     { id: 'parametros',   label: 'Parámetros',       roles: ['director_general', 'directivo_nivel'] },
-    { id: 'suplencias',   label: 'Suplencias',       roles: ['director_general', 'directivo_nivel'] },
+    { id: 'suplencias',    label: 'Suplencias',    roles: ['director_general', 'directivo_nivel'] },
+    { id: 'ciclo_lectivo', label: 'Ciclo Lectivo', roles: ['director_general', 'directivo_nivel'] },
   ];
 
   const resultado = rolBase.filter(t => t.roles.includes(r));
@@ -140,14 +141,15 @@ async function _switchAdminTab(tabId) {
 
 async function _renderAdminSection(tabId) {
   const fns = {
-    institucion:  _renderInstitucion,
-    usuarios:     _renderUsuarios,
-    cursos:       _renderCursos,
-    alumnos:      _renderAlumnos,
-    materias:     _renderMaterias,
-    asignaciones: _renderAsignaciones,
-    parametros:   _renderParametros,
-    suplencias:   _renderSuplencias,
+    institucion:   _renderInstitucion,
+    usuarios:      _renderUsuarios,
+    cursos:        _renderCursos,
+    alumnos:       _renderAlumnos,
+    materias:      _renderMaterias,
+    asignaciones:  _renderAsignaciones,
+    parametros:    _renderParametros,
+    suplencias:    _renderSuplencias,
+    ciclo_lectivo: _renderCicloLectivo,
   };
   if (fns[tabId]) await fns[tabId]();
 }
@@ -2817,6 +2819,215 @@ function inyectarEstilosAdmin() {
     }
   `;
   document.head.appendChild(s);
+}
+
+// ══════════════════════════════════════════════════════
+// SECCIÓN: CICLO LECTIVO (v15 — Res. 1650/2024)
+// ══════════════════════════════════════════════════════
+
+async function _renderCicloLectivo() {
+  const sec = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const anio   = new Date().getFullYear();
+
+  const [periodosRes, cierresRes] = await Promise.all([
+    sb.from('periodos_intensificacion')
+      .select('*').eq('institucion_id', instId)
+      .eq('ciclo_lectivo', anio).order('fecha_inicio'),
+    sb.from('cierres_periodo')
+      .select('*').eq('institucion_id', instId)
+      .eq('ciclo_lectivo', anio).order('tipo'),
+  ]);
+
+  const periodos = periodosRes.data || [];
+  const cierres  = cierresRes.data  || [];
+  const cierreC1 = cierres.find(c => c.tipo === 'cuatrimestre_1');
+  const cierreC2 = cierres.find(c => c.tipo === 'cuatrimestre_2');
+
+  const TIPO_LABELS = {
+    inicio_c1: 'Inicio C1', fin_c1: 'Fin C1',
+    diciembre: 'Diciembre', febrero: 'Febrero',
+  };
+
+  sec.innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-t">Períodos de intensificación — ${anio}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
+        Cuatro períodos por año según Res. 1650/2024. Activar el período correcto para que preceptores y docentes puedan registrar asistencia en intensificación.
+      </div>
+
+      ${periodos.length ? `
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+        ${periodos.map(p => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${p.activo ? 'var(--verde)' : 'var(--brd)'}">
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:600">${_esc(p.nombre)}</div>
+              <div style="font-size:10px;color:var(--txt2)">${TIPO_LABELS[p.tipo] || p.tipo} · ${_fmtFecha(p.fecha_inicio)} — ${_fmtFecha(p.fecha_fin)}</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <div class="tog${p.activo ? ' on' : ''}" id="tog-periodo-${p.id}" onclick="_toggleActivoPeriodo('${p.id}',${!p.activo})" title="${p.activo ? 'Desactivar' : 'Activar'}">
+                <div class="tog-thumb"></div>
+              </div>
+              <button onclick="_eliminarPeriodoIntensif('${p.id}')"
+                style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--txt3);padding:0 2px;line-height:1" title="Eliminar">×</button>
+            </div>
+          </div>`).join('')}
+      </div>` : `
+      <div style="font-size:11px;color:var(--txt3);text-align:center;padding:16px 0;margin-bottom:12px">
+        Sin períodos definidos para ${anio}.
+      </div>`}
+
+      <button class="btn-s" onclick="_nuevoPeriodoIntensif()" style="font-size:11px">+ Agregar período</button>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-t">Cierre de cuatrimestre</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
+        Al cerrar un cuatrimestre se generan alertas académicas automáticas según la cantidad de materias desaprobadas.
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px;padding:12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${cierreC1 ? 'var(--verde)' : 'var(--brd)'}">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">Cuatrimestre 1</div>
+          ${cierreC1
+            ? `<div style="font-size:10px;color:var(--verde)">✅ Cerrado el ${_fmtFecha(cierreC1.created_at?.slice(0,10))}</div>`
+            : `<div style="font-size:10px;color:var(--txt2)">Sin cerrar</div>`}
+          <button class="btn-s" onclick="_cerrarCuatrimestreConf(1)" style="font-size:10px;margin-top:8px">
+            🔒 ${cierreC1 ? 'Re-generar alertas' : 'Cerrar C1'}
+          </button>
+        </div>
+        <div style="flex:1;min-width:200px;padding:12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${cierreC2 ? 'var(--verde)' : 'var(--brd)'}">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">Cuatrimestre 2</div>
+          ${cierreC2
+            ? `<div style="font-size:10px;color:var(--verde)">✅ Cerrado el ${_fmtFecha(cierreC2.created_at?.slice(0,10))}</div>`
+            : `<div style="font-size:10px;color:var(--txt2)">Sin cerrar</div>`}
+          <button class="btn-s" onclick="_cerrarCuatrimestreConf(2)" style="font-size:10px;margin-top:8px">
+            🔒 ${cierreC2 ? 'Re-generar alertas' : 'Cerrar C2'}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Cierre anual / Promoción</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
+        Calcula el estado de promoción de cada alumno según las alertas generadas en el ciclo lectivo. Se aplica al nivel secundario.
+      </div>
+      <button class="btn-p" onclick="_verCierreAnualConf()" style="font-size:12px">
+        🎓 Ver estado de promoción
+      </button>
+    </div>`;
+}
+
+function _fmtFecha(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso + 'T12:00:00');
+  return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+}
+
+function _nuevoPeriodoIntensif() {
+  const anio  = new Date().getFullYear();
+  const today = new Date().toISOString().slice(0,10);
+  _crearModal('Nuevo período de intensificación', `
+    <div class="adm-form-row">
+      <label class="adm-label">Nombre del período</label>
+      <input type="text" id="pi-nombre" placeholder="Ej: Intensificación inicio C1 2026">
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Tipo</label>
+      <select id="pi-tipo">
+        <option value="inicio_c1">Inicio C1</option>
+        <option value="fin_c1">Fin C1</option>
+        <option value="diciembre">Diciembre</option>
+        <option value="febrero">Febrero</option>
+      </select>
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Fecha de inicio</label>
+      <input type="date" id="pi-inicio" value="${today}">
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Fecha de fin</label>
+      <input type="date" id="pi-fin" value="${today}">
+    </div>`,
+    async () => { await _guardarPeriodoIntensif(anio); }
+  );
+}
+
+async function _guardarPeriodoIntensif(anio) {
+  const nombre = document.getElementById('pi-nombre')?.value?.trim();
+  const tipo   = document.getElementById('pi-tipo')?.value;
+  const inicio = document.getElementById('pi-inicio')?.value;
+  const fin    = document.getElementById('pi-fin')?.value;
+
+  if (!nombre) { alert('El nombre es obligatorio.'); return; }
+  if (!inicio || !fin) { alert('Las fechas son obligatorias.'); return; }
+  if (fin < inicio) { alert('La fecha de fin debe ser posterior al inicio.'); return; }
+
+  const { error } = await sb.from('periodos_intensificacion').insert({
+    institucion_id: USUARIO_ACTUAL.institucion_id,
+    ciclo_lectivo:  anio,
+    nombre, tipo,
+    fecha_inicio: inicio,
+    fecha_fin:    fin,
+    activo:       false,
+  });
+
+  if (error) { alert('Error: ' + error.message); return; }
+  _cerrarModal();
+  _toastOk('Período creado correctamente.');
+  await _renderCicloLectivo();
+}
+
+async function _eliminarPeriodoIntensif(id) {
+  if (!confirm('¿Eliminar este período? Esta acción no se puede deshacer.')) return;
+  const { error } = await sb.from('periodos_intensificacion').delete().eq('id', id);
+  if (error) { alert('Error: ' + error.message); return; }
+  _toastOk('Período eliminado.');
+  await _renderCicloLectivo();
+}
+
+async function _toggleActivoPeriodo(id, activo) {
+  const tog = document.getElementById(`tog-periodo-${id}`);
+  if (tog) tog.classList.toggle('on', activo);
+  const { error } = await sb.from('periodos_intensificacion').update({ activo }).eq('id', id);
+  if (error) { alert('Error: ' + error.message); if (tog) tog.classList.toggle('on', !activo); return; }
+  _toastOk(activo ? 'Período activado.' : 'Período desactivado.');
+}
+
+async function _cerrarCuatrimestreConf(cuatrimestre) {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const anio   = new Date().getFullYear();
+
+  const tipoCierre = cuatrimestre === 1 ? 'cuatrimestre_1' : 'cuatrimestre_2';
+  const { data: existe } = await sb.from('cierres_periodo')
+    .select('id').eq('institucion_id', instId)
+    .eq('ciclo_lectivo', anio).eq('tipo', tipoCierre).maybeSingle();
+
+  const accion = existe ? 're-generar las alertas' : `cerrar el Cuatrimestre ${cuatrimestre}`;
+  if (!confirm(`¿Querés ${accion}? Se calcularán las materias desaprobadas por alumno y se generarán alertas académicas.`)) return;
+
+  const sec = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div><div style="font-size:11px;color:var(--txt2);margin-top:8px">Calculando alertas...</div></div>';
+
+  // Reutilizar la lógica de calificaciones.js — llamar directamente si está disponible
+  if (typeof _cerrarCuatrimestreTrayectoria === 'function') {
+    await _cerrarCuatrimestreTrayectoria(cuatrimestre);
+  } else {
+    alert('Para usar esta función, el módulo de Calificaciones debe estar cargado. Ir a Calificaciones → Gestión del ciclo lectivo.');
+  }
+
+  await _renderCicloLectivo();
+}
+
+async function _verCierreAnualConf() {
+  if (typeof _mostrarCierreAnual === 'function') {
+    goPage('notas');
+    setTimeout(() => _mostrarCierreAnual(), 400);
+  } else {
+    alert('Ir a Calificaciones → Cierre anual / Promoción para ver el estado de cada alumno.');
+  }
 }
 
 function _toastOk(msg) {

@@ -512,6 +512,11 @@ async function rAsistPreceptor() {
         </button>`).join('')}
     </div>
 
+    <div class="sec-lb">Intensificación / Recursada</div>
+    <button class="btn-s" onclick="mostrarPeriodosIntensif()" style="font-size:11px;margin-bottom:14px">
+      📅 Registrar asistencia en período de intensificación
+    </button>
+
     ${resumenHTML}`;
 }
 
@@ -766,7 +771,12 @@ async function rAsistDocente() {
             📊 ${cu.nombre}${cu.division} · ${m.nombre}
           </button>`).join('')
       ).join('')}
-    </div>` : ''}`;
+    </div>` : ''}
+
+    <div class="sec-lb" style="margin-top:4px">Intensificación / Recursada</div>
+    <button class="btn-s" onclick="mostrarPeriodosIntensif()" style="font-size:11px;margin-bottom:14px">
+      📅 Registrar asistencia en período de intensificación
+    </button>`;
 
   window._docCursoMap = cursoMapClases;
   window._docCursoSel = null;
@@ -1562,4 +1572,216 @@ async function buildResumenDia(instId, fecha) {
       </div>
       <div style="font-size:10px;color:var(--txt3);text-align:right">${total} registros totales · ${formatFechaLatam(fecha)}</div>
     </div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+// ASISTENCIA EN PERÍODOS DE INTENSIFICACIÓN (v15)
+// ═══════════════════════════════════════════════════════
+
+async function mostrarPeriodosIntensif() {
+  const c      = document.getElementById('page-asist');
+  const instId = USUARIO_ACTUAL.institucion_id;
+  showLoading('asist');
+
+  const { data: periodos, error } = await sb.from('periodos_intensificacion')
+    .select('*')
+    .eq('institucion_id', instId)
+    .order('fecha_inicio', { ascending: false })
+    .limit(20);
+
+  const TIPO_LBL = { inicio_c1:'Inicio C1', fin_c1:'Fin C1', diciembre:'Diciembre', febrero:'Febrero' };
+
+  const lista = periodos || [];
+  const activos  = lista.filter(p => p.activo);
+  const inactivos = lista.filter(p => !p.activo);
+
+  const volverFn = USUARIO_ACTUAL.rol === 'preceptor' ? 'rAsistPreceptor' : 'rAsistDocente';
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button onclick="${volverFn}()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+      <div>
+        <div class="pg-t">Períodos de intensificación</div>
+        <div class="pg-s">Registrar asistencia</div>
+      </div>
+    </div>
+
+    ${!lista.length
+      ? '<div class="empty-state">Sin períodos de intensificación definidos.<br>Crearlos en Configuración → Ciclo Lectivo.</div>'
+      : `
+      ${activos.length ? `
+        <div class="sec-lb">Períodos activos</div>
+        ${activos.map(p => `
+          <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:4px solid var(--verde)"
+            onclick="mostrarListaIntensifPeriodo('${p.id}','${p.nombre.replace(/'/g,"\\'")}')">
+            <div>
+              <div style="font-size:14px;font-weight:700">${p.nombre}</div>
+              <div style="font-size:11px;color:var(--txt2)">${TIPO_LBL[p.tipo] || p.tipo} · ${formatFechaLatam(p.fecha_inicio)} — ${formatFechaLatam(p.fecha_fin)}</div>
+            </div>
+            <span style="font-size:22px;color:var(--verde)">→</span>
+          </div>`).join('')}` : ''}
+
+      ${inactivos.length ? `
+        <div class="sec-lb" style="margin-top:10px">Otros períodos</div>
+        ${inactivos.map(p => `
+          <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin-bottom:6px;cursor:pointer;opacity:.7"
+            onclick="mostrarListaIntensifPeriodo('${p.id}','${p.nombre.replace(/'/g,"\\'")}')">
+            <div>
+              <div style="font-size:13px;font-weight:600">${p.nombre}</div>
+              <div style="font-size:10px;color:var(--txt2)">${TIPO_LBL[p.tipo] || p.tipo} · ${formatFechaLatam(p.fecha_inicio)}</div>
+            </div>
+            <span style="color:var(--txt2)">→</span>
+          </div>`).join('')}` : ''}`}`;
+}
+
+async function mostrarListaIntensifPeriodo(periodoId, periodoNombre) {
+  const c      = document.getElementById('page-asist');
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const miId   = USUARIO_ACTUAL.id;
+  const rol    = USUARIO_ACTUAL.rol;
+  showLoading('asist');
+
+  // Obtener materias en estado intensif para este período, filtrado por rol
+  let q = sb.from('materias_estado_alumno')
+    .select('id,estado,alumno_id,materia_id,curso_id,alumnos(id,nombre,apellido,curso_id),materias(nombre)')
+    .eq('periodo_id', periodoId)
+    .not('estado', 'in', '("cursando","aprobada")')
+    .order('alumnos(apellido)');
+
+  // Docente: filtrar por sus cursos asignados
+  if (rol === 'docente') {
+    const { data: asigs } = await sb.from('asignaciones')
+      .select('curso_id').eq('docente_id', miId).eq('anio_lectivo', new Date().getFullYear());
+    const cursoIds = (asigs || []).map(a => a.curso_id);
+    if (!cursoIds.length) {
+      c.innerHTML = `<button onclick="mostrarPeriodosIntensif()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2);margin-bottom:12px">←</button><div class="empty-state">Sin cursos asignados.</div>`;
+      return;
+    }
+    q = q.in('curso_id', cursoIds);
+  } else if (rol === 'preceptor' && USUARIO_ACTUAL.nivel) {
+    // Preceptor: filtrar por cursos de su nivel
+    const { data: cursos } = await sb.from('cursos')
+      .select('id').eq('institucion_id', instId).eq('nivel', USUARIO_ACTUAL.nivel);
+    const cursoIds = (cursos || []).map(cu => cu.id);
+    if (cursoIds.length) q = q.in('curso_id', cursoIds);
+  }
+
+  const { data: estados, error } = await q;
+  const lista = estados || [];
+
+  const hoy = hoyISO();
+
+  // Verificar si ya se tomó asistencia hoy en este período
+  const alumnoIds = lista.map(e => e.alumno_id);
+  let asistHoy = new Set();
+  if (alumnoIds.length) {
+    const { data: regHoy } = await sb.from('asistencia')
+      .select('alumno_id').in('alumno_id', alumnoIds)
+      .eq('fecha', hoy).eq('periodo_intensif_id', periodoId);
+    asistHoy = new Set((regHoy || []).map(r => r.alumno_id));
+  }
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button onclick="mostrarPeriodosIntensif()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+      <div>
+        <div class="pg-t">${periodoNombre}</div>
+        <div class="pg-s">${lista.length} alumno(s) · ${formatFechaLatam(hoy)}</div>
+      </div>
+    </div>
+
+    ${!lista.length
+      ? '<div class="empty-state">Sin alumnos en intensificación para este período.</div>'
+      : `
+      <div style="font-size:11px;color:var(--txt2);background:var(--surf2);border-radius:var(--rad);padding:8px 12px;margin-bottom:12px">
+        Marcá el estado de cada alumno hoy. Se guardará con la fecha de hoy (${formatFechaLatam(hoy)}).
+      </div>
+      <div id="intensif-lista">
+        ${lista.map(e => {
+          const al = e.alumnos;
+          const tomado = asistHoy.has(e.alumno_id);
+          return `
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--brd)" id="fila-int-${e.id}">
+              <div style="flex:1">
+                <div style="font-size:12px;font-weight:600">${al?.apellido}, ${al?.nombre}</div>
+                <div style="font-size:10px;color:var(--txt2)">${e.materias?.nombre}</div>
+              </div>
+              <div style="display:flex;gap:4px;flex-wrap:wrap">
+                ${Object.entries(ESTADOS_ASIST).map(([est, info]) => `
+                  <button class="est-chip ${tomado ? 'disabled' : ''}"
+                    data-alumno="${e.alumno_id}" data-estado-id="${e.id}" data-estado="${est}"
+                    onclick="selEstadoIntensif(this)"
+                    style="padding:4px 8px;border:1.5px solid ${info.color};border-radius:12px;background:transparent;
+                      color:${info.color};font-size:10px;cursor:pointer;font-family:inherit;font-weight:600;
+                      transition:all .1s"
+                    title="${info.label}">
+                    ${info.short}
+                  </button>`).join('')}
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+
+      <div style="margin-top:16px">
+        <button class="btn-p" onclick="guardarAsistIntensif('${periodoId}')" style="width:100%">
+          💾 Guardar asistencia de hoy
+        </button>
+      </div>`}`;
+}
+
+function selEstadoIntensif(btn) {
+  const alumnoId = btn.dataset.alumno;
+  // Deseleccionar otros botones de la misma fila
+  const fila = document.getElementById(`fila-int-${btn.dataset.estadoId}`);
+  if (fila) {
+    fila.querySelectorAll('.est-chip').forEach(b => {
+      b.style.background = 'transparent';
+      b.classList.remove('seleccionado');
+    });
+  }
+  btn.style.background = btn.style.borderColor;
+  btn.style.color = '#fff';
+  btn.classList.add('seleccionado');
+}
+
+async function guardarAsistIntensif(periodoId) {
+  const chips = document.querySelectorAll('.est-chip.seleccionado');
+  if (!chips.length) { alert('Seleccioná al menos un estado antes de guardar.'); return; }
+
+  const hoy    = hoyISO();
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const miId   = USUARIO_ACTUAL.id;
+
+  const registros = [];
+  chips.forEach(chip => {
+    const alumnoId     = chip.dataset.alumno;
+    const estadoId     = chip.dataset.estadoId;
+    const estado       = chip.dataset.estado;
+    if (!alumnoId || !estado) return;
+
+    // Obtener curso_id del alumno desde la fila
+    registros.push({
+      institucion_id:    instId,
+      alumno_id:         alumnoId,
+      fecha:             hoy,
+      estado,
+      registrado_por:    miId,
+      periodo_intensif_id: periodoId,
+      materia_estado_id:   estadoId,
+    });
+  });
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  const { error } = await sb.from('asistencia').upsert(registros, {
+    onConflict: 'alumno_id,fecha,periodo_intensif_id',
+    ignoreDuplicates: false,
+  });
+
+  if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar asistencia de hoy'; }
+  if (error) { alert('Error: ' + error.message); return; }
+
+  alert(`✅ Asistencia guardada para ${registros.length} alumno(s).`);
+  mostrarPeriodosIntensif();
 }

@@ -267,6 +267,7 @@ const LEG_TABS = [
   { id:'datos',         label:'Datos' },
   { id:'contactos',     label:'Contactos' },
   { id:'academico',     label:'Académico' },
+  { id:'trayectoria',   label:'Trayectoria' },
   { id:'asistencia',    label:'Asistencia' },
   { id:'problematicas', label:'Situaciones' },
   { id:'objetivos',     label:'Objetivos' },
@@ -337,6 +338,7 @@ async function _cargarTabLeg(idx) {
     datos:         _tabDatos,
     contactos:     _tabContactos,
     academico:     _tabAcademico,
+    trayectoria:   _tabTrayectoria,
     asistencia:    _tabAsistencia,
     problematicas: _tabProblematicas,
     objetivos:     _tabObjetivos,
@@ -1146,4 +1148,112 @@ function inyectarEstilosLeg() {
     }
   `;
   document.head.appendChild(s);
+}
+
+// ═══════════════════════════════════════════════════════
+// TAB: TRAYECTORIA ACADÉMICA (v15 — Res. 1650/2024)
+// ═══════════════════════════════════════════════════════
+async function _tabTrayectoria(c) {
+  try {
+    const { data, error } = await sb.from('materias_estado_alumno')
+      .select('id,estado,ciclo_lectivo_origen,ciclo_lectivo_cursado,nota_final,nota_intensif_1,nota_intensif_2,materias(nombre),periodos_intensificacion(nombre)')
+      .eq('alumno_id', _legAlumnoSel.id)
+      .order('ciclo_lectivo_origen', { ascending: false })
+      .order('materias(nombre)');
+
+    if (error) throw error;
+    const lista = data || [];
+
+    if (!lista.length) {
+      c.innerHTML = `<div class="card" style="margin-top:12px"><div class="empty-state">≡<br>Sin trayectoria académica registrada.</div></div>`;
+      return;
+    }
+
+    const ESTADO_CLR = {
+      cursando:          'var(--azul)',
+      pendiente_intensif:'var(--ambar)',
+      intensificando:    'var(--ambar)',
+      recursando:        'var(--rojo)',
+      aprobada:          'var(--verde)',
+      desaprobada:       'var(--rojo)',
+      a_recursar:        'var(--rojo)',
+    };
+    const ESTADO_LBL = {
+      cursando:          'Cursando',
+      pendiente_intensif:'Pend. intensif.',
+      intensificando:    'Intensificando',
+      recursando:        'Recursando',
+      aprobada:          'Aprobada',
+      desaprobada:       'Desaprobada',
+      a_recursar:        'A recursar',
+    };
+
+    const pendientes = lista.filter(r =>
+      ['pendiente_intensif','intensificando','recursando','a_recursar'].includes(r.estado)
+    );
+
+    const porCiclo = {};
+    lista.forEach(r => {
+      const k = r.ciclo_lectivo_origen;
+      if (!porCiclo[k]) porCiclo[k] = [];
+      porCiclo[k].push(r);
+    });
+
+    const fmtNota = (n) => n !== null && n !== undefined
+      ? `<span style="font-weight:700;color:${n >= 7 ? 'var(--verde)' : n >= 4 ? 'var(--ambar)' : 'var(--rojo)'}">${n}</span>`
+      : '<span style="color:var(--txt3)">—</span>';
+
+    c.innerHTML = `
+      ${pendientes.length ? `
+      <div class="card" style="margin-top:12px;border-left:4px solid var(--rojo)">
+        <div style="font-size:11px;font-weight:700;color:var(--rojo);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+          ⚠️ Materias con acreditación pendiente (${pendientes.length})
+        </div>
+        ${pendientes.map(r => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--brd)">
+            <div>
+              <div style="font-size:12px;font-weight:500">${r.materias?.nombre || '—'}</div>
+              <div style="font-size:10px;color:var(--txt2)">Ciclo ${r.ciclo_lectivo_origen}
+                ${r.ciclo_lectivo_cursado !== r.ciclo_lectivo_origen
+                  ? `→ resolviendo en ${r.ciclo_lectivo_cursado}` : ''}
+              </div>
+            </div>
+            <span style="font-size:10px;font-weight:600;color:${ESTADO_CLR[r.estado]||'var(--txt2)'}">
+              ${ESTADO_LBL[r.estado] || r.estado}
+            </span>
+          </div>`).join('')}
+      </div>` : ''}
+
+      ${Object.entries(porCiclo).sort((a, b) => b[0] - a[0]).map(([ciclo, registros]) => `
+        <div class="card" style="margin-top:12px">
+          <div style="font-size:12px;font-weight:700;color:var(--txt2);margin-bottom:10px;display:flex;align-items:center;gap:8px">
+            <span style="width:6px;height:6px;border-radius:50%;background:var(--verde);display:inline-block"></span>
+            Ciclo lectivo ${ciclo}
+            <span style="font-size:10px;font-weight:400">(${registros.length} materia${registros.length !== 1 ? 's' : ''})</span>
+          </div>
+          ${registros.map(r => {
+            const clr = ESTADO_CLR[r.estado] || 'var(--txt2)';
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--brd)">
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:12px;font-weight:500">${r.materias?.nombre || '—'}</div>
+                  ${r.periodos_intensificacion?.nombre
+                    ? `<div style="font-size:10px;color:var(--txt2)">Resuelto en: ${r.periodos_intensificacion.nombre}</div>`
+                    : ''}
+                </div>
+                <div style="text-align:right;flex-shrink:0;margin-left:10px">
+                  <div style="font-size:10px;font-weight:600;color:${clr};margin-bottom:2px">${ESTADO_LBL[r.estado] || r.estado}</div>
+                  <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;font-size:10px;color:var(--txt2)">
+                    ${r.nota_final !== null ? `<span>Final: ${fmtNota(r.nota_final)}</span>` : ''}
+                    ${r.nota_intensif_1 !== null ? `<span>I1: ${fmtNota(r.nota_intensif_1)}</span>` : ''}
+                    ${r.nota_intensif_2 !== null ? `<span>I2: ${fmtNota(r.nota_intensif_2)}</span>` : ''}
+                  </div>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>`).join('')}`;
+
+  } catch(e) {
+    c.innerHTML = `<div class="card" style="margin-top:12px"><div class="empty-state">≡<br>Sin trayectoria académica registrada.</div></div>`;
+  }
 }

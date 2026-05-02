@@ -37,7 +37,7 @@ No hay comandos de build, lint ni tests. Para desarrollar:
 | `prob` | `rProb()` | problematicas.js |
 | `obj` | `rObj()` | modulos.js |
 | `asist` | `rAsist()` | asistencia.js |
-| `notas` | `rNotas()` | calificaciones.js |
+| `notas` | `rNotas()` | calificaciones.js — incluye sección Intensificación/Recursada y botones de cierre de cuatrimestre (solo directivos) |
 | `leg` | `rLeg()` | legajos.js |
 | `agenda` | `rAgenda()` | agenda.js |
 | `eoe` | `rEOE()` | modulos.js |
@@ -74,7 +74,11 @@ Los usuarios `docente` y `preceptor` tienen acceso a asistencia y calificaciones
 | `alumnos` | Alumnos con `curso_id`, `activo` |
 | `materias` | Materias |
 | `asignaciones` | Vínculo docente-curso-materia (`docente_id`, `curso_id`, `materia_id`, `anio_lectivo`) |
-| `asistencia` | Registros diarios (`alumno_id`, `fecha`, `estado`, `hora_clase`) |
+| `asistencia` | Registros diarios (`alumno_id`, `fecha`, `estado`, `hora_clase`, `periodo_intensif_id`, `materia_estado_id`) |
+| `periodos_intensificacion` | 4 períodos de intensificación por ciclo lectivo (`tipo`: inicio_c1/fin_c1/diciembre/febrero, `activo`) |
+| `materias_estado_alumno` | Estado de cada materia por alumno con trayectoria histórica (`ciclo_lectivo_origen`, `ciclo_lectivo_cursado`, `estado`, `nota_intensif_1`, `nota_intensif_2`) |
+| `alertas_academicas` | Alertas al cierre de cuatrimestre. **Cols nuevas** (v15): `tipo`, `materias_ids[]`, `ciclo_lectivo`, `cuatrimestre`, `leida`, `resuelta`. Cols viejas intactas. |
+| `cierres_periodo` | Registro del cierre de cuatrimestre/año por la institución |
 | `problematicas` | Situaciones problemáticas con soporte grupal (`modalidad`, `problematica_madre_id`) |
 | `problematica_alumnos` | Alumnos de una problematica grupal/curso (`problematica_id`, `alumno_id`) |
 | `intervenciones` | Bitácora de seguimiento de problematicas |
