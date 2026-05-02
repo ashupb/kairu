@@ -2,7 +2,7 @@
 // PROBLEMATICAS.JS — v3 (soporte grupal)
 // =====================================================
 
-let _probFiltros     = { estado: 'activas', urgencia: 'todas', nivel: 'todos' };
+let _probFiltros     = { estado: 'todas', urgencia: 'todas', nivel: 'todos' };
 let _tiposProbCache  = null; // nombres cargados desde tipos_problematicas
 let _tiposIntervCache = null; // nombres cargados desde tipos_intervencion
 
