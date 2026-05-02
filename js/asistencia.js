@@ -97,8 +97,7 @@ async function rAsistDirector() {
   });
 
   const niveles = nivel ? [nivel] : ['inicial','primario','secundario'];
-  const diaHoy = new Date(hoy + 'T12:00:00').getDay();
-  const hoyHabil = diaHoy >= 1 && diaHoy <= 5;
+  const hoyHabil = esFechaHabil(hoy);
   const totalPendiente = hoyHabil ? cursos.filter(cu => {
     const ids = alumnosPorCurso[cu.id] || [];
     return ids.length > 0 && ids.filter(id => asistSet.has(id)).length < ids.length;
@@ -391,10 +390,8 @@ async function rAsistPreceptor() {
     return;
   }
 
-  const diaHoy   = new Date(hoy + 'T12:00:00').getDay();
-  const hoyHabil = diaHoy >= 1 && diaHoy <= 5;
-  const diaAyer  = new Date(ayer + 'T12:00:00').getDay();
-  const ayerHabil = diaAyer >= 1 && diaAyer <= 5;
+  const hoyHabil  = esFechaHabil(hoy);
+  const ayerHabil = esFechaHabil(ayer);
 
   let bloqueoAyer = false;
   let cursosAyerPendientes = [];

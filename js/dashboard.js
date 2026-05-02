@@ -538,7 +538,7 @@ async function rDashDocente() {
   const sem    = _semanaActual();
 
   // Paso 1: asignaciones + eventos + pendientes (paralelo)
-  const [asigsRes, eventosRes, respRes] = await Promise.all([
+  const [asigsRes, eventosRes, respRes, noLectRes] = await Promise.all([
     sb.from('asignaciones')
       .select('curso_id,cursos(id,nombre,division,nivel)')
       .eq('docente_id', miId)
@@ -552,7 +552,10 @@ async function rDashDocente() {
     sb.from('evento_respuestas')
       .select('id,eventos_institucionales(nombre,hora,lugar)')
       .eq('usuario_id', miId).eq('respuesta', 'pendiente'),
+    sb.from('dias_no_lectivos').select('fecha').eq('institucion_id', instId),
   ]);
+
+  window._diasNoLectivos = new Set((noLectRes.data || []).map(r => r.fecha));
 
   const eventosSem = eventosRes.data || [];
   const pendientes = (respRes.data   || []).filter(r => r.eventos_institucionales);
@@ -603,6 +606,7 @@ async function rDashDocente() {
   });
 
   const cursosConLista = new Set((asistHoy || []).map(a => a.curso_id));
+  const hoyHabil = esFechaHabil(sem.hoy);
 
   // Actividades de esta semana donde el docente es responsable/convocado
   const eventosPropios = eventosSem.filter(e =>
@@ -617,7 +621,7 @@ async function rDashDocente() {
         const nc         = NIVEL_CONFIG[cur.nivel] || NIVEL_CONFIG.todos;
         const cntAl      = alumnosByCurso[cur.id]  || 0;
         const prbs       = probsByCurso[cur.id]    || [];
-        const listaHecha = cursosConLista.has(cur.id);
+        const listaHecha = cursosConLista.has(cur.id) || !hoyHabil;
         const urgentes   = prbs.filter(p => p.urgencia === 'alta').length;
         return `
           <div class="doc-curso-card" style="border-top:3px solid ${nc.color}">
@@ -666,7 +670,7 @@ async function rDashDocente() {
       }).join('')}
     </div>` : '';
 
-  const listasPendCount = cursos.filter(c => !cursosConLista.has(c.id)).length;
+  const listasPendCount = hoyHabil ? cursos.filter(c => !cursosConLista.has(c.id)).length : 0;
   const totalSituaciones = Object.values(probsByCurso).reduce((s, a) => s + a.length, 0);
   const listaColor = listasPendCount ? 'var(--rojo)' : 'var(--verde)';
 
@@ -712,7 +716,7 @@ async function rDashPreceptor() {
     .eq('institucion_id', instId).eq('nivel', nivel).order('nombre');
   if (cursosIds?.length) cursosQuery = cursosQuery.in('id', cursosIds);
 
-  const [cursosRes, probRes, eventosRes, respRes] = await Promise.all([
+  const [cursosRes, probRes, eventosRes, respRes, noLectRes] = await Promise.all([
     cursosQuery,
     sb.from('problematicas')
       .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
@@ -727,7 +731,10 @@ async function rDashPreceptor() {
     sb.from('evento_respuestas')
       .select('id,eventos_institucionales(nombre,hora,lugar)')
       .eq('usuario_id', miId).eq('respuesta', 'pendiente'),
+    sb.from('dias_no_lectivos').select('fecha').eq('institucion_id', instId),
   ]);
+
+  window._diasNoLectivos = new Set((noLectRes.data || []).map(r => r.fecha));
 
   const cursos     = cursosRes.data   || [];
   const probs      = probRes.data     || [];
@@ -736,13 +743,11 @@ async function rDashPreceptor() {
   const cursoIdsList = cursos.map(c => c.id);
 
   // Calcular hoy/ayer y si son días hábiles
-  const diaHoy = new Date(sem.hoy + 'T12:00:00').getDay();
-  const hoyHabil = diaHoy >= 1 && diaHoy <= 5;
   const ayerDate = new Date(sem.hoy + 'T12:00:00');
   ayerDate.setDate(ayerDate.getDate() - 1);
   const ayer = ayerDate.toISOString().split('T')[0];
-  const diaAyer = ayerDate.getDay();
-  const ayerHabil = diaAyer >= 1 && diaAyer <= 5;
+  const hoyHabil  = esFechaHabil(sem.hoy);
+  const ayerHabil = esFechaHabil(ayer);
 
   // Asistencia hoy + ayer + alertas (requiere cursos)
   let asistHoy = [], asistAyer = [], alertasAlumnos = [];
