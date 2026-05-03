@@ -16,11 +16,12 @@ function validarFechaHabilInput(inputEl) {
 }
 
 const ESTADOS_ASIST = {
-  presente:    { label:'Presente',    short:'P', icon:'✅', color:'var(--verde)',  bg:'var(--verde-l)', valor:0 },
-  ausente:     { label:'Ausente',     short:'A', icon:'❌', color:'var(--rojo)',   bg:'var(--rojo-l)',  valor:1 },
-  media_falta: { label:'Media falta', short:'M', icon:'🕐', color:'var(--ambar)', bg:'var(--amb-l)',   valor:0.5 },
-  tardanza:    { label:'Tardanza',    short:'T', icon:'⏰', color:'var(--ambar)', bg:'var(--amb-l)',   valor:0.25 },
-  justificado: { label:'Justificado', short:'J', icon:'📋', color:'var(--azul)',  bg:'var(--azul-l)',  valor:0 },
+  presente:          { label:'Presente',          short:'P',  icon:'✅', color:'var(--verde)',  bg:'var(--verde-l)', valor:0 },
+  ausente:           { label:'Ausente',           short:'A',  icon:'❌', color:'var(--rojo)',   bg:'var(--rojo-l)',  valor:1 },
+  media_falta:       { label:'Media falta',       short:'M',  icon:'🕐', color:'var(--ambar)', bg:'var(--amb-l)',   valor:0.5 },
+  tardanza:          { label:'Tardanza',          short:'T',  icon:'⏰', color:'var(--ambar)', bg:'var(--amb-l)',   valor:0.25 },
+  justificado:       { label:'Justificado',       short:'J',  icon:'📋', color:'var(--azul)',  bg:'var(--azul-l)',  valor:0 },
+  retiro_anticipado: { label:'Retiro anticipado', short:'RA', icon:'🚶', color:'#7c3aed',      bg:'#f5f3ff',       valor:0.25 },
 };
 
 const NIVEL_COLORS = {
@@ -81,12 +82,12 @@ async function rAsistDirector() {
   const asistSet = new Set(asistHoy.map(a => a.alumno_id));
 
   // Contadores globales de estados del día
-  const contadorEstados = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
+  const contadorEstados = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0, retiro_anticipado:0 };
   asistHoy.forEach(a => { if (contadorEstados[a.estado] !== undefined) contadorEstados[a.estado]++; });
   const totalRegistradosHoy = asistHoy.length;
   const totalAlumnosHoy     = alumnos.length;
   const pctAsistHoy         = totalRegistradosHoy > 0
-    ? Math.round((contadorEstados.presente + contadorEstados.tardanza + contadorEstados.media_falta) / totalRegistradosHoy * 100)
+    ? Math.round((contadorEstados.presente + contadorEstados.tardanza + contadorEstados.media_falta + contadorEstados.retiro_anticipado) / totalRegistradosHoy * 100)
     : null;
 
   // Calcular estado por curso
@@ -214,7 +215,7 @@ async function verCursoDirector(cursoId, nivel) {
   const asistHoyMap = {};
   asistHoy.forEach(a => { asistHoyMap[a.alumno_id] = a; });
   const asistHoyUniq = Object.values(asistHoyMap);
-  const presHoy = asistHoyUniq.filter(a => ['presente','tardanza','media_falta'].includes(a.estado)).length;
+  const presHoy = asistHoyUniq.filter(a => ['presente','tardanza','media_falta','retiro_anticipado'].includes(a.estado)).length;
   const ausHoy  = asistHoyUniq.filter(a => a.estado === 'ausente').length;
   const pctPres = alumnos.length ? Math.round(presHoy/alumnos.length*100) : 0;
 
@@ -287,6 +288,69 @@ async function verCursoDirector(cursoId, nivel) {
     </div>`;
 }
 
+// ─── GRILLA COMPARTIDA — HELPERS ──────────────────────
+function _htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config) {
+  if (!fechas.length) return '<div style="padding:16px;text-align:center;color:var(--txt3);font-size:12px">Sin registros en el rango seleccionado.</div>';
+
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const cabecera = fechas.map(f => {
+    const d = new Date(f+'T12:00:00');
+    return `<th title="${f}">${d.getDate()}<br><span style="font-weight:400;font-size:8px">${meses[d.getMonth()]}</span></th>`;
+  }).join('');
+
+  const filas = alumnos.map(al => {
+    let total = 0;
+    const celdas = fechas.map(f => {
+      const est = asistIdx[`${al.id}_${f}`];
+      if (!est) return `<td><span class="grilla-nd">—</span></td>`;
+      const st = ESTADOS_ASIST[est];
+      total += st?.valor || 0;
+      return `<td><span class="grilla-cell" style="background:${st?.bg||''};color:${st?.color||''}" title="${st?.label||est}">${st?.short||'?'}</span></td>`;
+    }).join('');
+    const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
+    return `<tr>
+      <td style="font-size:11px;font-weight:500;white-space:nowrap;cursor:pointer;position:sticky;left:0;background:var(--bg);box-shadow:2px 0 3px rgba(0,0,0,.06)" onclick="verAlumnoAsist('${al.id}')">${al.apellido}, ${al.nombre}</td>
+      ${celdas}
+      <td style="background:var(--rojo-l)"><span style="font-weight:700;color:${colorT}">${total}</span></td>
+    </tr>`;
+  }).join('');
+
+  const leyenda = Object.entries(ESTADOS_ASIST).map(([k,v]) =>
+    `<span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${v.bg};color:${v.color}">${v.short}=${v.label}</span>`
+  ).join('');
+
+  return `
+    <div style="display:flex;align-items:stretch;gap:4px">
+      <button onclick="document.getElementById('gw').scrollLeft-=150"
+        style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">‹</button>
+      <div id="gw" style="overflow-x:auto;flex:1">
+        <table class="grilla-asist">
+          <thead>
+            <tr>
+              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--bg)">Alumno</th>
+              ${cabecera}
+              <th style="background:var(--rojo-l);color:var(--rojo)">Faltas</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+      <button onclick="document.getElementById('gw').scrollLeft+=150"
+        style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">›</button>
+    </div>
+    <div class="asist-leyenda" style="margin-top:10px">${leyenda}</div>`;
+}
+
+function _filtrarGrillaFechas() {
+  const desde = document.getElementById('grilla-desde')?.value || '';
+  const hasta = document.getElementById('grilla-hasta')?.value || '';
+  const { alumnos, fechas: todas, asistIdx, config } = window._grillaData || {};
+  if (!alumnos) return;
+  const filtradas = todas.filter(f => (!desde || f >= desde) && (!hasta || f <= hasta));
+  const wrap = document.getElementById('grilla-tabla-wrap');
+  if (wrap) wrap.innerHTML = _htmlTablaGrillaAsist(alumnos, filtradas, asistIdx, config);
+}
+
 async function mostrarGrillaDirector(cursoId, nivel) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
@@ -310,6 +374,10 @@ async function mostrarGrillaDirector(cursoId, nivel) {
     if (!a.hora_clase) asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado;
   });
 
+  const hoy = hoyISO();
+  const primerDiaMes = hoy.slice(0,7) + '-01';
+  const fechasFiltradas = fechas.filter(f => f >= primerDiaMes);
+
   c.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <button onclick="verCursoDirector('${cursoId}','${nivel}')" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
@@ -320,46 +388,18 @@ async function mostrarGrillaDirector(cursoId, nivel) {
     </div>
 
     ${!fechas.length ? '<div class="empty-state">Sin registros aún</div>' : `
-    <div style="display:flex;gap:6px;margin-bottom:8px">
-      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar Excel</button>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar</button>
+      <span style="font-size:11px;color:var(--txt2)">Desde</span>
+      <input type="date" id="grilla-desde" value="${primerDiaMes}"
+        style="font-size:11px;padding:4px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf)">
+      <span style="font-size:11px;color:var(--txt2)">Hasta</span>
+      <input type="date" id="grilla-hasta" value="${hoy}"
+        style="font-size:11px;padding:4px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf)">
+      <button class="btn-s" style="font-size:11px" onclick="_filtrarGrillaFechas()">Filtrar</button>
     </div>
-    <div style="display:flex;align-items:stretch;gap:4px">
-      <button onclick="document.getElementById('gw').scrollLeft-=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">‹</button>
-      <div id="gw" style="overflow-x:auto;flex:1">
-        <table class="grilla-asist">
-          <thead>
-            <tr>
-              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--bg)">Alumno</th>
-              ${fechas.map(f => `<th title="${f}">${formatFechaCorta(f).split(' ')[0]}<br><span style="font-weight:400">${formatFechaCorta(f).split(' ')[1]||''}</span></th>`).join('')}
-              <th style="background:var(--rojo-l);color:var(--rojo)">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${alumnos.map(al => {
-              let total = 0;
-              const celdas = fechas.map(f => {
-                const est = asistIdx[`${al.id}_${f}`];
-                if (!est) return `<td><span class="grilla-nd">—</span></td>`;
-                const st = ESTADOS_ASIST[est];
-                total += st?.valor || 0;
-                return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}" title="${st?.label}">${st?.short}</span></td>`;
-              }).join('');
-              const colorT = total >= 10 ? 'var(--rojo)' : total >= 5 ? 'var(--ambar)' : 'var(--verde)';
-              return `<tr>
-                <td style="font-size:11px;font-weight:500;white-space:nowrap;position:sticky;left:0;background:var(--bg);box-shadow:2px 0 3px rgba(0,0,0,.06)">${al.apellido}, ${al.nombre}</td>
-                ${celdas}
-                <td style="background:var(--rojo-l)"><span style="font-weight:700;color:${colorT}">${total}</span></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      <button onclick="document.getElementById('gw').scrollLeft+=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">›</button>
-    </div>
-    <div class="asist-leyenda" style="margin-top:12px">
-      ${Object.entries(ESTADOS_ASIST).map(([k,v]) => `
-        <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${v.bg};color:${v.color}">${v.short} = ${v.label}</span>
-      `).join('')}
+    <div id="grilla-tabla-wrap">
+      ${_htmlTablaGrillaAsist(alumnos, fechasFiltradas, asistIdx, {})}
     </div>`}`;
 
   window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: `${curso?.nombre}${curso?.division||''}`, config:{} };
@@ -552,6 +592,10 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
   asists.forEach(a => asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado);
   const config = CONFIG_ASIST[nivel] || {};
 
+  const hoy = hoyISO();
+  const primerDiaMes = hoy.slice(0,7) + '-01';
+  const fechasFiltradas = fechas.filter(f => f >= primerDiaMes);
+
   c.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <button onclick="${volverFn || 'rAsistPreceptor'}()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
@@ -562,51 +606,18 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
     </div>
 
     ${!fechas.length ? '<div class="empty-state">Sin registros aún. Tomá la primera lista.</div>' : `
-    <div style="display:flex;gap:6px;margin-bottom:8px">
-      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar Excel</button>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar</button>
+      <span style="font-size:11px;color:var(--txt2)">Desde</span>
+      <input type="date" id="grilla-desde" value="${primerDiaMes}"
+        style="font-size:11px;padding:4px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf)">
+      <span style="font-size:11px;color:var(--txt2)">Hasta</span>
+      <input type="date" id="grilla-hasta" value="${hoy}"
+        style="font-size:11px;padding:4px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf)">
+      <button class="btn-s" style="font-size:11px" onclick="_filtrarGrillaFechas()">Filtrar</button>
     </div>
-    <div style="display:flex;align-items:stretch;gap:4px">
-      <button onclick="document.getElementById('gw').scrollLeft-=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">‹</button>
-      <div id="gw" style="overflow-x:auto;flex:1">
-        <table class="grilla-asist">
-          <thead>
-            <tr>
-              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--bg)">Alumno</th>
-              ${fechas.map(f => {
-                const d = new Date(f+'T12:00:00');
-                return `<th>${d.getDate()}/${d.getMonth()+1}</th>`;
-              }).join('')}
-              <th style="background:var(--rojo-l);color:var(--rojo)">Faltas</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${alumnos.map(al => {
-              let total = 0;
-              const celdas = fechas.map(f => {
-                const est = asistIdx[`${al.id}_${f}`];
-                if (!est) return `<td><span class="grilla-nd">—</span></td>`;
-                const st = ESTADOS_ASIST[est];
-                total += st?.valor || 0;
-                return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}">${st?.short}</span></td>`;
-              }).join('');
-              const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
-              return `<tr>
-                <td style="font-size:11px;font-weight:500;cursor:pointer;position:sticky;left:0;background:var(--bg);white-space:nowrap;box-shadow:2px 0 3px rgba(0,0,0,.06)" onclick="verAlumnoAsist('${al.id}')">
-                  ${al.apellido}, ${al.nombre}
-                </td>
-                ${celdas}
-                <td style="background:var(--rojo-l)"><span style="font-weight:700;color:${colorT}">${total}</span></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      <button onclick="document.getElementById('gw').scrollLeft+=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">›</button>
-    </div>
-    <div class="asist-leyenda" style="margin-top:10px">
-      ${Object.entries(ESTADOS_ASIST).map(([k,v]) => `
-        <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${v.bg};color:${v.color}">${v.short}=${v.label}</span>
-      `).join('')}
+    <div id="grilla-tabla-wrap">
+      ${_htmlTablaGrillaAsist(alumnos, fechasFiltradas, asistIdx, config)}
     </div>`}`;
 
   window._grillaData = { alumnos, fechas, asistIdx, nombreCurso, config };
@@ -837,6 +848,10 @@ async function mostrarGrillaDocente(cursoId, nivel, materiaId, titulo) {
   asists.forEach(a => asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado);
   const config = CONFIG_ASIST[nivel] || {};
 
+  const hoy = hoyISO();
+  const primerDiaMes = hoy.slice(0,7) + '-01';
+  const fechasFiltradas = fechas.filter(f => f >= primerDiaMes);
+
   c.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <button onclick="rAsistDocente()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
@@ -847,49 +862,18 @@ async function mostrarGrillaDocente(cursoId, nivel, materiaId, titulo) {
     </div>
 
     ${!fechas.length ? '<div class="empty-state">Sin clases registradas aún.</div>' : `
-    <div style="display:flex;gap:6px;margin-bottom:8px">
-      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar Excel</button>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+      <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar</button>
+      <span style="font-size:11px;color:var(--txt2)">Desde</span>
+      <input type="date" id="grilla-desde" value="${primerDiaMes}"
+        style="font-size:11px;padding:4px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf)">
+      <span style="font-size:11px;color:var(--txt2)">Hasta</span>
+      <input type="date" id="grilla-hasta" value="${hoy}"
+        style="font-size:11px;padding:4px 8px;border:1px solid var(--brd);border-radius:var(--rad);background:var(--surf)">
+      <button class="btn-s" style="font-size:11px" onclick="_filtrarGrillaFechas()">Filtrar</button>
     </div>
-    <div style="display:flex;align-items:stretch;gap:4px">
-      <button onclick="document.getElementById('gw').scrollLeft-=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">‹</button>
-      <div id="gw" style="overflow-x:auto;flex:1">
-        <table class="grilla-asist">
-          <thead>
-            <tr>
-              <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--bg)">Alumno</th>
-              ${fechas.map(f => {
-                const d = new Date(f+'T12:00:00');
-                return `<th>${d.getDate()}/${d.getMonth()+1}</th>`;
-              }).join('')}
-              <th style="background:var(--rojo-l);color:var(--rojo)">Faltas</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${alumnos.map(al => {
-              let total = 0;
-              const celdas = fechas.map(f => {
-                const est = asistIdx[`${al.id}_${f}`];
-                if (!est) return `<td><span class="grilla-nd">—</span></td>`;
-                const st = ESTADOS_ASIST[est];
-                total += st?.valor || 0;
-                return `<td><span class="grilla-cell" style="background:${st?.bg};color:${st?.color}">${st?.short}</span></td>`;
-              }).join('');
-              const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
-              return `<tr>
-                <td style="font-size:11px;font-weight:500;white-space:nowrap;position:sticky;left:0;background:var(--bg);box-shadow:2px 0 3px rgba(0,0,0,.06)">${al.apellido}, ${al.nombre}</td>
-                ${celdas}
-                <td style="background:var(--rojo-l)"><strong style="color:${colorT}">${total}</strong></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      <button onclick="document.getElementById('gw').scrollLeft+=150" style="background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad);padding:0 10px;cursor:pointer;font-size:18px;flex-shrink:0;color:var(--txt2)">›</button>
-    </div>
-    <div class="asist-leyenda" style="margin-top:10px">
-      ${Object.entries(ESTADOS_ASIST).map(([k,v]) => `
-        <span style="font-size:10px;padding:2px 8px;border-radius:20px;background:${v.bg};color:${v.color}">${v.short}=${v.label}</span>
-      `).join('')}
+    <div id="grilla-tabla-wrap">
+      ${_htmlTablaGrillaAsist(alumnos, fechasFiltradas, asistIdx, config)}
     </div>`}`;
 
   window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: titulo, config };
@@ -903,19 +887,31 @@ async function mostrarListaCurso(cursoId, nivel, fecha, editable, materiaId = nu
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
-  const [alumnosRes, asistRes, cursoRes] = await Promise.all([
+  const [alumnosRes, asistRes, cursoRes, precAsistRes] = await Promise.all([
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
     sb.from('asistencia').select('*')
       .eq('curso_id', cursoId).eq('fecha', fecha)
       .is('hora_clase', horaClase)
       .is('materia_id', materiaId),
     sb.from('cursos').select('*').eq('id', cursoId).single(),
+    horaClase
+      ? sb.from('asistencia').select('alumno_id,estado')
+          .eq('curso_id', cursoId).eq('fecha', fecha)
+          .is('hora_clase', null).is('materia_id', null)
+      : Promise.resolve({ data: null }),
   ]);
 
   const alumnos  = alumnosRes.data || [];
   const asistMap = {};
   (asistRes.data||[]).forEach(a => asistMap[a.alumno_id] = a);
   const curso    = cursoRes.data;
+
+  const precMap = {};
+  (precAsistRes.data || []).forEach(a => { precMap[a.alumno_id] = a.estado; });
+  const hasPrecData = Object.keys(precMap).length > 0;
+
+  window._asistPreceptorHoy = precMap;
+  window._asistAlumnos      = alumnos;
 
   const yaRegistrado = Object.keys(asistMap).length > 0;
 
@@ -961,6 +957,10 @@ async function mostrarListaCurso(cursoId, nivel, fecha, editable, materiaId = nu
               <div class="asist-av">${(al.apellido||'?')[0]}${(al.nombre||'?')[0]}</div>
               <div class="asist-info">
                 <div class="asist-nombre">${al.apellido}, ${al.nombre}</div>
+                ${horaClase && hasPrecData ? `
+                  <div style="font-size:10px;color:var(--txt3);margin-top:2px">
+                    Preceptor: ${precMap[al.id] ? `${ESTADOS_ASIST[precMap[al.id]]?.icon} ${ESTADOS_ASIST[precMap[al.id]]?.label}` : '—'}
+                  </div>` : ''}
               </div>
               ${editable ? `
               <div class="asist-btns">
@@ -992,7 +992,8 @@ async function mostrarListaCurso(cursoId, nivel, fecha, editable, materiaId = nu
       onclick="guardarAsistencia('${cursoId}','${nivel}','${fecha}',${horaClase||'null'},'${materiaId||''}')">
       💾 Confirmar lista
     </button>` : ''}
-    <div id="asist-resumen"></div>`;
+    <div id="asist-resumen"></div>
+    <div id="asist-cruce"></div>`;
 }
 
 function setEstadoAsist(alumnoId, estado, btn) {
@@ -1076,13 +1077,61 @@ async function guardarAsistencia(cursoId, nivel, fecha, horaClase, materiaId) {
 
   if (btn) { btn.textContent = '✅ Lista guardada'; }
   mostrarResumenAsist(estados);
+  if (horaClase) await _mostrarCruceAsistencia(estados);
   setTimeout(() => {
     if (btn) { btn.disabled = false; btn.textContent = '💾 Confirmar lista'; }
   }, 2000);
 }
 
+async function _mostrarCruceAsistencia(estadosDocente) {
+  const precMap = window._asistPreceptorHoy || {};
+  const alumnos = window._asistAlumnos      || [];
+  if (!Object.keys(precMap).length) return;
+
+  const PRESENTES = ['presente', 'tardanza', 'media_falta', 'retiro_anticipado'];
+
+  const disc = alumnos.filter(al => {
+    const estPrec = precMap[al.id];
+    const estDoc  = estadosDocente[al.id] || 'presente';
+    if (!estPrec) return false;
+    return PRESENTES.includes(estPrec) !== PRESENTES.includes(estDoc);
+  });
+
+  const div = document.getElementById('asist-cruce');
+  if (!div) return;
+
+  if (!disc.length) {
+    div.innerHTML = `<div style="background:var(--verde-l);border-left:3px solid var(--verde);border-radius:var(--rad);
+      padding:8px 12px;margin-top:10px;font-size:11px;color:var(--verde)">
+      ✅ Asistencias coinciden con la lista del preceptor
+    </div>`;
+    return;
+  }
+
+  const filas = disc.map(al => {
+    const estPrec  = precMap[al.id];
+    const estDoc   = estadosDocente[al.id] || 'presente';
+    const precPres = PRESENTES.includes(estPrec);
+    const msg = precPres
+      ? `Preceptor: ${ESTADOS_ASIST[estPrec]?.icon} ${ESTADOS_ASIST[estPrec]?.label} · Docente: ${ESTADOS_ASIST[estDoc]?.icon} ausente en clase`
+      : `Preceptor: ${ESTADOS_ASIST[estPrec]?.icon} ${ESTADOS_ASIST[estPrec]?.label} · Docente: ${ESTADOS_ASIST[estDoc]?.icon} presente en clase`;
+    return `<div style="font-size:11px;padding:6px 0;border-bottom:1px solid var(--brd)">
+      <strong>${al.apellido}, ${al.nombre}</strong><br>
+      <span style="color:var(--ambar)">${msg}</span>
+    </div>`;
+  }).join('');
+
+  div.innerHTML = `
+    <div class="card" style="margin-top:12px;border-left:3px solid var(--ambar)">
+      <div style="font-size:12px;font-weight:700;color:var(--ambar);margin-bottom:8px">
+        ⚠️ ${disc.length} discrepancia(s) con la lista del preceptor
+      </div>
+      ${filas}
+    </div>`;
+}
+
 function mostrarResumenAsist(estados) {
-  const totales = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
+  const totales = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0, retiro_anticipado:0 };
   Object.values(estados).forEach(e => { if (totales[e]!==undefined) totales[e]++; });
   const div = document.getElementById('asist-resumen');
   if (!div) return;
