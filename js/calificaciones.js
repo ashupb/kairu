@@ -238,7 +238,7 @@ async function rNotasDocente() {
             </div>`;
         }
 
-        // --- MODO: secundario (sin cambios) ---
+        // --- MODO: secundario ---
         return `
           <div class="card" style="margin-bottom:8px;padding:14px 16px;border-left:3px solid var(--verde)">
             <div style="font-size:15px;font-weight:700;font-family:'Lora',serif;margin-bottom:8px">
@@ -250,21 +250,25 @@ async function rNotasDocente() {
                 <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;
                   padding:7px 10px;background:var(--surf2);border-radius:var(--rad)"
                   onclick="verNotasCursoDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division}','${m.nombre.replace(/'/g,"\\'")}')">
-                  <div style="font-size:12px;font-weight:500">${m.nombre}</div>
-                  <span style="color:var(--verde)">→</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:12px;font-weight:500">${m.nombre}</div>
+                    <div id="card-stat-${cu.id}_${m.id}"></div>
+                  </div>
+                  <span style="color:var(--verde);flex-shrink:0;margin-left:8px">→</span>
                 </div>`).join('')}
             </div>
           </div>`;
       }
       return cu.materias.map(m => `
-        <div class="card" style="display:flex;align-items:center;justify-content:space-between;
+        <div class="card" style="display:flex;align-items:flex-start;justify-content:space-between;
           padding:14px 16px;margin-bottom:8px;cursor:pointer;border-left:3px solid var(--verde)"
           onclick="verNotasCursoDocente('${cu.id}','${cu.nivel}','${m.id}','${cu.nombre}${cu.division}','${m.nombre.replace(/'/g,"\\'")}')">
-          <div>
+          <div style="flex:1;min-width:0">
             <div style="font-size:15px;font-weight:700;font-family:'Lora',serif">${cu.nombre}${cu.division}</div>
             <div style="font-size:12px;color:var(--txt2)">${m.nombre}</div>
+            <div id="card-stat-${cu.id}_${m.id}"></div>
           </div>
-          <span style="font-size:22px;color:var(--verde)">→</span>
+          <span style="font-size:22px;color:var(--verde);flex-shrink:0;margin-left:8px">→</span>
         </div>`).join('');
     }).join('')}
     <div class="sec-lb" style="margin-top:14px">Situación de mis alumnos</div>
@@ -365,6 +369,30 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
     if (el) el.innerHTML = _mkMiniStat(st.apr, st.obs, st.crit, st.sin);
   });
 
+  // Stats por materia para docentes de secundario (grado y especial)
+  const materiaStatsDo = {};
+  alumnos.forEach(al => {
+    const cu = cursoMap[al.curso_id];
+    if (!cu) return;
+    (cu.materias || []).forEach(m => {
+      const combId = `${al.curso_id}_${m.id}`;
+      if (!materiaStatsDo[combId]) materiaStatsDo[combId] = { apr: 0, obs: 0, crit: 0, sin: 0 };
+      const notas = notasPorAlumnoMateria[`${al.id}_${m.id}`];
+      const st = materiaStatsDo[combId];
+      if (!notas?.length) { st.sin++; return; }
+      const prom = notas.reduce((a, b) => a + b, 0) / notas.length;
+      const min = CONFIG_NOTAS[cu.nivel]?.nota_minima ?? 7;
+      const rec = CONFIG_NOTAS[cu.nivel]?.nota_recuperacion ?? 4;
+      if (prom >= min) st.apr++;
+      else if (prom >= rec) st.obs++;
+      else st.crit++;
+    });
+  });
+  Object.entries(materiaStatsDo).forEach(([combId, st]) => {
+    const el = document.getElementById(`card-stat-${combId}`);
+    if (el) el.innerHTML = _mkMiniStat(st.apr, st.obs, st.crit, st.sin);
+  });
+
   const alumnosConCurso = alumnos.map(al => ({
     ...al,
     cursoNombre: cursoMap[al.curso_id]
@@ -393,7 +421,7 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
   let PERIODO_SEL = periodoActual?.id || '';
 
   const cargarVista = async () => {
-    const [alumnosRes, instanciasRes, califRes, configRes] = await Promise.all([
+    const [alumnosRes, instanciasRes, califRes, configRes, cierreRes] = await Promise.all([
       sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
       sb.from('instancias_evaluativas')
         .select('*, tipos_evaluacion(nombre,es_recuperatorio)')
@@ -405,12 +433,15 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
       sb.from('config_calificaciones').select('*')
         .eq('usuario_id', USUARIO_ACTUAL.id)
         .eq('materia_id', materiaId).eq('curso_id', cursoId).maybeSingle(),
+      sb.from('cierres_materia_cuatrimestre').select('*')
+        .eq('curso_id', cursoId).eq('materia_id', materiaId).eq('periodo_id', PERIODO_SEL).maybeSingle(),
     ]);
 
     const alumnos    = alumnosRes.data  || [];
     const instancias = instanciasRes.data || [];
     const califs     = califRes.data    || [];
     const config     = configRes.data;
+    const cierre     = cierreRes.data;
 
     const notaMin   = config?.nota_minima_aprobacion ?? 7;
     const recReempl = config?.recuperatorio_reemplaza ?? true;
@@ -457,17 +488,15 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
 
       <!-- Botones acción -->
       ${(() => {
-        const p = periodosCurso.find(p => p.id === PERIODO_SEL);
-        if (!p) return '';
-        if (p.validado_at) return `
+        if (cierre?.validado_at) return `
           <div style="background:var(--azul-l);border-left:3px solid var(--azul);border-radius:var(--rad);
             padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--azul)">
-            🔒 <strong>${p.nombre}</strong> — validado y bloqueado por el preceptor
+            ✅ Cuatrimestre validado por el preceptor — notas bloqueadas
           </div>`;
-        if (p.cerrado) return `
+        if (cierre?.cerrado_at) return `
           <div style="background:var(--amb-l);border-left:3px solid var(--ambar);border-radius:var(--rad);
             padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ambar)">
-            ⏳ <strong>${p.nombre}</strong> cerrado — pendiente de validación del preceptor
+            ⏳ Cuatrimestre cerrado — pendiente de validación del preceptor
           </div>`;
         return `
           <div class="acc" style="margin-bottom:12px">
@@ -483,8 +512,8 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
             <button class="btn-s" onclick="abrirConfigCalif('${cursoId}','${materiaId}',${notaMin},${recReempl})">
               ⚙️ Configurar
             </button>
-            <button class="btn-d" onclick="cerrarPeriodo('${cursoId}','${materiaId}','${PERIODO_SEL}','${p.nombre}')">
-              🔒 Cerrar período
+            <button class="btn-d" onclick="cerrarCuatrimestreDocente('${cursoId}','${materiaId}','${PERIODO_SEL}','${nombreMateria.replace(/'/g,"\\'")}')">
+              🔒 Cerrar cuatrimestre
             </button>
           </div>`;
       })()}
@@ -1069,8 +1098,10 @@ async function rNotasDirectivo() {
   c.innerHTML = `
     <div class="pg-t">Calificaciones</div>
     <div class="pg-s">${rol === 'preceptor' ? 'Preceptoría' : 'Vista institucional'} · Solo lectura</div>
-    ${rol === 'preceptor' ? `<div style="font-size:11px;color:var(--txt2);background:var(--surf2);border-radius:var(--rad);padding:8px 12px;margin-bottom:12px">
-      Ingresá a cada curso para revisar y validar el cierre de período.
+    ${rol === 'preceptor' ? `<div id="preceptor-cierre-resumen">
+      <div style="text-align:center;padding:12px;color:var(--txt3);font-size:11px">
+        <div class="spinner" style="margin:0 auto 8px"></div>Cargando estado de cierres...
+      </div>
     </div>` : ''}
     ${niveles.map(n => {
       const cs = filtrados.filter(cu => cu.nivel === n);
@@ -1099,6 +1130,7 @@ async function rNotasDirectivo() {
         <div class="spinner" style="margin:0 auto 8px"></div>Verificando...
       </div>
     </div>
+    ${rol !== 'preceptor' ? `
     <div class="sec-lb" style="margin-top:18px">Gestión del ciclo lectivo</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
       <button class="btn-s" onclick="_cerrarCuatrimestreTrayectoria(1)" style="font-size:11px">
@@ -1113,10 +1145,11 @@ async function rNotasDirectivo() {
     </div>
     <div style="font-size:10px;color:var(--txt2);margin-bottom:14px">
       El cierre de cuatrimestre genera alertas automáticas según la cantidad de materias desaprobadas (Res. 1650/2024).
-    </div>`;
+    </div>` : ''}`;
 
   _cargarSituacionDirectivoGlobal(filtrados);
   _cargarIntensifDirectivo(filtrados.map(c => c.id));
+  if (rol === 'preceptor') _cargarResumenCierrePreceptor(filtrados.map(cu => cu.id));
 }
 
 async function _cargarSituacionDirectivoGlobal(cursos) {
@@ -1225,32 +1258,51 @@ async function verCalifCurso(cursoId, nivel) {
   const { data: curso } = await sb.from('cursos').select('*').eq('id', cursoId).single();
 
   const renderGrilla = async () => {
-    const [alumnosRes, materiasRes] = await Promise.all([
+    const [alumnosRes, materiasRes, cierresRes, cierreCursoRes] = await Promise.all([
       sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
       sb.from('materias').select('*')
         .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
         .eq('nivel', nivel).eq('activo', true).order('nombre'),
+      sb.from('cierres_materia_cuatrimestre').select('*')
+        .eq('curso_id', cursoId).eq('periodo_id', PERIODO_SEL),
+      sb.from('cierres_curso_cuatrimestre').select('*')
+        .eq('curso_id', cursoId).eq('periodo_id', PERIODO_SEL).maybeSingle(),
     ]);
 
     const alumnos  = alumnosRes.data || [];
     const materias = materiasRes.data || [];
+    const cierresMap = {};
+    (cierresRes.data || []).forEach(c => { cierresMap[c.materia_id] = c; });
+    const cierreCurso = cierreCursoRes.data;
 
-    // Períodos de este nivel que están cerrados y pendientes de validación
-    const periodosPendCurso = periodosCurso.filter(p => p.cerrado && !p.validado_at);
-    const validacionPendHTML = (USUARIO_ACTUAL.rol === 'preceptor' && periodosPendCurso.length) ? `
+    const isPrecep = USUARIO_ACTUAL.rol === 'preceptor';
+    const todasCerradas  = materias.length > 0 && materias.every(m => cierresMap[m.id]?.cerrado_at);
+    const todasValidadas = materias.length > 0 && materias.every(m => cierresMap[m.id]?.validado_at);
+    const pendientesValid = materias.filter(m => cierresMap[m.id]?.cerrado_at && !cierresMap[m.id]?.validado_at);
+
+    const cierreCursoBanner = cierreCurso?.validado_at
+      ? `<div style="background:var(--azul-l);border-left:3px solid var(--azul);border-radius:var(--rad);
+          padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--azul);font-weight:600">
+          🏆 Cuatrimestre cerrado y validado por preceptoría
+        </div>`
+      : (isPrecep && todasValidadas && materias.length)
+        ? `<div style="background:var(--verde-l);border-left:3px solid var(--verde);border-radius:var(--rad);
+            padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:11px;font-weight:600;color:var(--verde)">✅ Todas las materias validadas</span>
+            <button class="btn-p" style="font-size:11px"
+              onclick="validarCierreCurso('${cursoId}','${PERIODO_SEL}','${_escCal(curso?.nombre)}${_escCal(curso?.division)}')">
+              🏆 Cerrar cuatrimestre
+            </button>
+          </div>`
+        : '';
+
+    const validacionPendHTML = (isPrecep && pendientesValid.length) ? `
       <div style="background:var(--amb-l);border-left:3px solid var(--ambar);border-radius:var(--rad);
         padding:10px 14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--ambar);margin-bottom:8px">
-          ⏳ Pendiente de validación
+        <div style="font-size:11px;font-weight:700;color:var(--ambar);margin-bottom:4px">
+          ⏳ ${pendientesValid.length} materia(s) pendiente(s) de validación
         </div>
-        ${periodosPendCurso.map(p => `
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-            <span style="font-size:11px;font-weight:600">${p.nombre}</span>
-            <button class="btn-p" style="font-size:10px;padding:5px 12px;background:var(--ambar)"
-              onclick="validarCierrePeriodo('${p.id}','${p.nombre}')">
-              ✓ Validar este curso
-            </button>
-          </div>`).join('')}
+        <div style="font-size:10px;color:var(--txt2)">Hacé clic en el encabezado de cada materia para ver las notas y validar.</div>
       </div>` : '';
 
     // Calcular promedios por alumno por materia
@@ -1271,27 +1323,16 @@ async function verCalifCurso(cursoId, nivel) {
     }
 
     return `
+      ${cierreCursoBanner}
         <div class="periodo-tabs" style="align-items:center">
             ${periodosCurso.map(p => {
               const esSel = PERIODO_SEL === p.id;
-              const estado = p.validado_at ? '🔒' : p.cerrado ? '⏳' : '';
               return `
                 <button class="periodo-tab ${esSel ? 'on' : ''}"
                   onclick="cambioPeriodoDir('${p.id}')">
-                  ${estado} ${p.nombre}
+                  ${p.nombre}
                 </button>`;
             }).join('')}
-            ${(() => {
-              const pSel = periodosCurso.find(p => p.id === PERIODO_SEL);
-              if (!pSel?.validado_at) return '';
-              const esDir = USUARIO_ACTUAL.rol === 'director_general' || USUARIO_ACTUAL.rol === 'directivo_nivel';
-              if (!esDir) return '';
-              return `
-                <button class="btn-d" style="font-size:10px;padding:5px 12px;margin-left:8px"
-                  onclick="reabrirPeriodo('${PERIODO_SEL}','${pSel.nombre}')">
-                  🔓 Reabrir para edición
-                </button>`;
-            })()}
         </div>
       ${validacionPendHTML}
       ${!materias.length ? '<div class="empty-state">Sin materias configuradas</div>' : `
@@ -1304,9 +1345,25 @@ async function verCalifCurso(cursoId, nivel) {
           <thead>
             <tr>
               <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
-              ${materias.map(m => `
-                <th style="font-size:9px;width:65px;white-space:normal;line-height:1.3">${m.nombre}</th>
-              `).join('')}
+              ${materias.map(m => {
+                const cierre = cierresMap[m.id];
+                const validado = !!cierre?.validado_at;
+                const cerrado  = !!cierre?.cerrado_at;
+                const headerBg = validado ? 'background:var(--verde-l)' : cerrado ? 'background:var(--amb-l)' : '';
+                const icon = validado ? '✅ ' : cerrado ? '⏳ ' : '';
+                return `
+                  <th style="font-size:9px;width:75px;white-space:normal;line-height:1.3;cursor:pointer;vertical-align:top;padding:4px 2px;${headerBg}"
+                    onclick="verGrillaMateriaPreceptor('${cursoId}','${m.id}','${_escCal(m.nombre)}','${PERIODO_SEL}','${nivel}')">
+                    ${icon}${m.nombre}
+                    ${isPrecep && cerrado && !validado ? `
+                      <div style="margin-top:4px">
+                        <button onclick="event.stopPropagation();validarCierreMateria('${cursoId}','${m.id}','${PERIODO_SEL}','${_escCal(m.nombre)}')"
+                          style="font-size:8px;padding:2px 5px;background:var(--ambar);color:white;border:none;border-radius:3px;cursor:pointer;white-space:nowrap">
+                          ✓ Validar
+                        </button>
+                      </div>` : ''}
+                  </th>`;
+              }).join('')}
             </tr>
           </thead>
           <tbody>
@@ -2476,6 +2533,232 @@ async function reabrirPeriodo(periodoId, nombrePeriodo) {
   }).eq('id', periodoId);
 
   rNotas();
+}
+
+// ─── CIERRE DE CUATRIMESTRE (por materia/curso) ──────
+
+async function cerrarCuatrimestreDocente(cursoId, materiaId, periodoId, nombreMateria) {
+  if (!confirm(`¿Cerrás el cuatrimestre para "${nombreMateria}"? El preceptor deberá validarlo.`)) return;
+
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { error } = await sb.from('cierres_materia_cuatrimestre').upsert({
+    institucion_id: instId,
+    curso_id:   cursoId,
+    materia_id: materiaId,
+    periodo_id: periodoId,
+    cerrado_por: USUARIO_ACTUAL.id,
+    cerrado_at:  new Date().toISOString(),
+    validado_por: null,
+    validado_at:  null,
+  }, { onConflict: 'curso_id,materia_id,periodo_id' });
+
+  if (error) { alert('Error al cerrar: ' + error.message); return; }
+  window.cambioPeriodoDoc?.(periodoId);
+}
+
+async function validarCierreMateria(cursoId, materiaId, periodoId, nombreMateria) {
+  if (!confirm(`¿Validás el cierre de "${nombreMateria}"? Las notas quedarán bloqueadas.`)) return;
+
+  const { error } = await sb.from('cierres_materia_cuatrimestre')
+    .update({ validado_por: USUARIO_ACTUAL.id, validado_at: new Date().toISOString() })
+    .eq('curso_id', cursoId).eq('materia_id', materiaId).eq('periodo_id', periodoId);
+
+  if (error) { alert('Error al validar: ' + error.message); return; }
+  window.cambioPeriodoDir?.(periodoId);
+}
+
+async function validarCierreCurso(cursoId, periodoId, nombreCurso) {
+  if (!confirm(`¿Cerrás el cuatrimestre completo del curso "${nombreCurso}"? Esta acción confirma que todas las materias están revisadas.`)) return;
+
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { error } = await sb.from('cierres_curso_cuatrimestre').upsert({
+    institucion_id: instId,
+    curso_id:   cursoId,
+    periodo_id: periodoId,
+    validado_por: USUARIO_ACTUAL.id,
+    validado_at:  new Date().toISOString(),
+  }, { onConflict: 'curso_id,periodo_id' });
+
+  if (error) { alert('Error al cerrar curso: ' + error.message); return; }
+  alert('🏆 Cuatrimestre cerrado para este curso.');
+  window.cambioPeriodoDir?.(periodoId);
+}
+
+async function verGrillaMateriaPreceptor(cursoId, materiaId, nombreMateria, periodoId, nivel) {
+  const c = document.getElementById('page-notas');
+  showLoading('notas');
+
+  const { data: curso } = await sb.from('cursos').select('nombre,division').eq('id', cursoId).single();
+  const nombreCurso = `${curso?.nombre || ''}${curso?.division || ''}`;
+
+  const [alumnosRes, instanciasRes, califRes, cierreRes] = await Promise.all([
+    sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
+    sb.from('instancias_evaluativas')
+      .select('*, tipos_evaluacion(nombre,es_recuperatorio)')
+      .eq('curso_id', cursoId).eq('materia_id', materiaId).eq('periodo_id', periodoId).order('fecha'),
+    sb.from('calificaciones').select('*')
+      .eq('curso_id', cursoId).eq('materia_id', materiaId).eq('periodo_id', periodoId),
+    sb.from('cierres_materia_cuatrimestre').select('*')
+      .eq('curso_id', cursoId).eq('materia_id', materiaId).eq('periodo_id', periodoId).maybeSingle(),
+  ]);
+
+  const alumnos    = alumnosRes.data    || [];
+  const instancias = instanciasRes.data || [];
+  const califs     = califRes.data      || [];
+  const cierre     = cierreRes.data;
+
+  const califIdx = {};
+  califs.forEach(cf => { califIdx[`${cf.alumno_id}_${cf.instancia_id}`] = cf; });
+
+  const promedios = {};
+  alumnos.forEach(al => {
+    const notas = instancias
+      .filter(inst => !inst.tipos_evaluacion?.es_recuperatorio)
+      .map(inst => { const cf = califIdx[`${al.id}_${inst.id}`]; return (cf && !cf.ausente && cf.nota !== null) ? cf.nota : null; })
+      .filter(n => n !== null);
+    promedios[al.id] = notas.length ? notas.reduce((a, b) => a + b, 0) / notas.length : null;
+  });
+
+  const estadoBanner = cierre?.validado_at
+    ? `<div style="background:var(--verde-l);border-left:3px solid var(--verde);border-radius:var(--rad);
+        padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--verde);font-weight:600">
+        ✅ Materia validada por preceptoría
+      </div>`
+    : cierre?.cerrado_at
+      ? `<div style="background:var(--amb-l);border-left:3px solid var(--ambar);border-radius:var(--rad);
+          padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;font-weight:600;color:var(--ambar)">⏳ Cerrado por docente — pendiente de validación</span>
+          ${USUARIO_ACTUAL.rol === 'preceptor' ? `
+            <button class="btn-p" style="font-size:11px;background:var(--ambar)"
+              onclick="validarCierreMateria('${cursoId}','${materiaId}','${periodoId}','${_escCal(nombreMateria)}')">
+              ✓ Validar cierre
+            </button>` : ''}
+        </div>`
+      : `<div style="background:var(--surf2);border-radius:var(--rad);padding:8px 12px;margin-bottom:12px;font-size:11px;color:var(--txt2)">
+          ℹ️ El docente aún no cerró el cuatrimestre para esta materia.
+        </div>`;
+
+  c.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button onclick="verCalifCurso('${cursoId}','${nivel}')"
+        style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2)">←</button>
+      <div>
+        <div class="pg-t">${nombreCurso} · ${_escCal(nombreMateria)}</div>
+        <div class="pg-s">Grilla de notas · Solo lectura</div>
+      </div>
+    </div>
+    ${estadoBanner}
+    ${!instancias.length
+      ? '<div class="empty-state">Sin instancias evaluativas en este período.</div>'
+      : `<div style="display:flex;justify-content:flex-end;gap:4px;margin-bottom:6px">
+          <button onclick="_scrollGrilla(-1)" style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">◀</button>
+          <button onclick="_scrollGrilla(1)"  style="background:var(--surf2);border:1px solid var(--brd);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:14px;color:var(--txt2)">▶</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="grilla-notas" style="table-layout:auto">
+            <thead>
+              <tr>
+                <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
+                ${instancias.map(inst => `
+                  <th class="${inst.tipos_evaluacion?.es_recuperatorio ? 'th-recup' : ''}"
+                    style="width:68px;min-width:68px">
+                    <div style="font-size:9px;line-height:1.3">${inst.tipos_evaluacion?.nombre || '—'}</div>
+                    <div style="font-size:9px;opacity:.6">${formatFechaCorta(inst.fecha)}</div>
+                  </th>`).join('')}
+                <th style="font-size:9px">Prom.</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${alumnos.map(al => {
+                const prom = promedios[al.id];
+                return `
+                  <tr>
+                    <td style="font-size:11px;font-weight:500;white-space:nowrap;position:sticky;left:0;z-index:1;background:var(--bg);box-shadow:2px 0 4px rgba(0,0,0,.06)">
+                      ${al.apellido}, ${al.nombre}
+                    </td>
+                    ${instancias.map(inst => {
+                      const cf = califIdx[`${al.id}_${inst.id}`];
+                      if (!cf)          return `<td><span class="nota-cell nota-nd">—</span></td>`;
+                      if (cf.ausente)   return `<td><span class="nota-cell nota-nd">A</span></td>`;
+                      const nota = cf.nota;
+                      if (nota === null) return `<td><span class="nota-cell nota-nd">—</span></td>`;
+                      return `<td><span class="nota-cell ${NOTA_CLS(nota, nivel, nombreCurso)}">${nota % 1 === 0 ? nota : nota.toFixed(1)}</span></td>`;
+                    }).join('')}
+                    <td>
+                      ${prom !== null
+                        ? `<span style="font-weight:700;color:${NOTA_COLOR(Math.round(prom), nivel, nombreCurso)}">${Math.round(prom)}</span>`
+                        : `<span style="color:var(--txt3)">—</span>`}
+                    </td>
+                  </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>`}`;
+}
+
+async function _cargarResumenCierrePreceptor(cursoIds) {
+  const sec = document.getElementById('preceptor-cierre-resumen');
+  if (!sec || !cursoIds.length) return;
+
+  const [cierresRes, cursosCerradosRes] = await Promise.all([
+    sb.from('cierres_materia_cuatrimestre')
+      .select('id,cerrado_at,validado_at,materia_id,curso_id,materias(nombre),cursos(nombre,division),periodos_evaluativos(nombre)')
+      .in('curso_id', cursoIds),
+    sb.from('cierres_curso_cuatrimestre')
+      .select('id,validado_at,curso_id,cursos(nombre,division),periodos_evaluativos(nombre)')
+      .in('curso_id', cursoIds),
+  ]);
+
+  const cierres        = cierresRes.data        || [];
+  const cursosCerrados = cursosCerradosRes.data  || [];
+
+  if (!cierres.length && !cursosCerrados.length) {
+    sec.innerHTML = `<div style="background:var(--surf2);border-radius:var(--rad);padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--txt2)">
+      ℹ️ No hay materias cerradas por los docentes todavía.
+    </div>`;
+    return;
+  }
+
+  const pendientes = cierres.filter(c => !c.validado_at);
+  const validadas  = cierres.filter(c => !!c.validado_at);
+
+  sec.innerHTML = `
+    <div style="background:var(--surf2);border-radius:var(--rad);padding:12px 14px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">
+        Estado de cierre de cuatrimestre
+      </div>
+      <div class="metrics m3" style="margin-bottom:${pendientes.length || cursosCerrados.length ? '12px' : '0'}">
+        <div class="mc" style="background:var(--amb-l)">
+          <div class="mc-v" style="color:var(--ambar);font-size:20px">${pendientes.length}</div>
+          <div class="mc-l">Pendientes de validación</div>
+        </div>
+        <div class="mc" style="background:var(--verde-l)">
+          <div class="mc-v" style="color:var(--verde);font-size:20px">${validadas.length}</div>
+          <div class="mc-l">Materias validadas</div>
+        </div>
+        <div class="mc" style="background:var(--azul-l)">
+          <div class="mc-v" style="color:var(--azul);font-size:20px">${cursosCerrados.length}</div>
+          <div class="mc-l">Cursos cerrados</div>
+        </div>
+      </div>
+      ${pendientes.length ? `
+        <div style="font-size:10px;font-weight:700;color:var(--ambar);margin-bottom:6px">⏳ Pendientes de validación</div>
+        ${pendientes.map(c => `
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--brd)">
+            <span style="font-size:11px">${c.cursos?.nombre}${c.cursos?.division} · ${c.materias?.nombre}</span>
+            <span style="font-size:10px;color:var(--txt2)">${c.periodos_evaluativos?.nombre || ''}</span>
+          </div>`).join('')}
+      ` : ''}
+      ${cursosCerrados.length ? `
+        <div style="font-size:10px;font-weight:700;color:var(--azul);margin-bottom:6px;margin-top:${pendientes.length ? '10px' : '0'}">
+          🏆 Cursos cerrados
+        </div>
+        ${cursosCerrados.map(c => `
+          <div style="font-size:11px;padding:5px 0;border-bottom:1px solid var(--brd)">
+            ${c.cursos?.nombre}${c.cursos?.division} · ${c.periodos_evaluativos?.nombre || ''}
+          </div>`).join('')}
+      ` : ''}
+    </div>`;
 }
 
 // ═══════════════════════════════════════════════════════

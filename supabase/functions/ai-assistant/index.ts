@@ -66,7 +66,7 @@ Alumno: ${p.alumno}
 Período: ${p.periodo}
 Notas del docente: "${p.notas_docente}"
 
-Redactá una observación pedagógica formal en 2-3 oraciones. 
+Redactá una observación pedagógica formal en 2-3 oraciones.
 Tono profesional, objetivo, en español rioplatense. Empezá directamente con la observación, sin encabezado.`;
 }
 
@@ -86,7 +86,7 @@ Tono directo y profesional.`;
 }
 
 function construirPromptAnalisis(p: any): string {
-  return `Sos un asistente de gestión institucional escolar argentina. 
+  return `Sos un asistente de gestión institucional escolar argentina.
 Generá un análisis ejecutivo del estado institucional del mes para el equipo directivo.
 
 Institución: ${p.institucion}
@@ -109,12 +109,54 @@ serve(async (req) => {
   }
 
   try {
-    const { action, payload } = await req.json();
     const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY");
+    const SUPABASE_URL  = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_KEY   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    if (!ANTHROPIC_KEY) {
-      throw new Error("API key no configurada");
+    if (!ANTHROPIC_KEY) throw new Error("API key no configurada");
+
+    // Verificar JWT
+    const jwt = req.headers.get("Authorization")?.replace("Bearer ", "");
+    if (!jwt) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
+    const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+      headers: { "Authorization": `Bearer ${jwt}`, "apikey": SERVICE_KEY },
+    });
+    if (!userRes.ok) {
+      return new Response(JSON.stringify({ error: "Sesión inválida" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const userData = await userRes.json();
+    if (!userData.id) {
+      return new Response(JSON.stringify({ error: "Sesión inválida" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Verificar rol — solo directivos pueden usar IA
+    const perfilRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/usuarios?id=eq.${userData.id}&select=rol,institucion_id`,
+      { headers: { "Authorization": `Bearer ${jwt}`, "apikey": SERVICE_KEY } }
+    );
+    const perfilArr = await perfilRes.json();
+    const perfil = Array.isArray(perfilArr) ? perfilArr[0] : null;
+
+    if (!perfil || !["director_general", "directivo_nivel"].includes(perfil.rol)) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { action, payload } = await req.json();
 
     let prompt = "";
     if (action === "sintesis_legajo") {
@@ -148,6 +190,23 @@ serve(async (req) => {
     if (!response.ok) {
       throw new Error(data.error?.message || "Error en API de Anthropic");
     }
+
+    // Registrar uso sin bloquear la respuesta
+    fetch(`${SUPABASE_URL}/rest/v1/ia_uso`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SERVICE_KEY}`,
+        "apikey": SERVICE_KEY,
+      },
+      body: JSON.stringify({
+        institucion_id: perfil.institucion_id,
+        usuario_id: userData.id,
+        accion: action,
+        tokens_input: data.usage?.input_tokens ?? null,
+        tokens_output: data.usage?.output_tokens ?? null,
+      }),
+    }).catch(() => {});
 
     return new Response(
       JSON.stringify({ result: data.content[0].text }),
