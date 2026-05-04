@@ -670,18 +670,17 @@ async function _guardarUsuario(userId, esNuevo) {
         await sb.from('cursos').update({ preceptor_id: authData.id }).in('id', cursos_ids);
       }
     } else {
-      const updatePayload = {
+      const campos = {
         nombre_completo, rol, nivel, activo,
-        dni: passField || dni || null,
+        dni: dni || null,
         cursos_ids: cursos_ids.length ? cursos_ids : null,
       };
       if (_configExtraOk && USUARIO_ACTUAL.rol === 'director_general') {
         const tabChecks = document.querySelectorAll('input[name="mu-cfg-tab"]:not(:disabled):checked');
         const tabsExtra = Array.from(tabChecks).map(c => c.value);
-        updatePayload.config_extra = tabsExtra.length ? { tabs: tabsExtra } : {};
+        campos.config_extra = tabsExtra.length ? { tabs: tabsExtra } : {};
       }
-      const { error } = await sb.from('usuarios').update(updatePayload).eq('id', userId);
-      if (error) throw error;
+      await _llamarAdminUsers('actualizar_usuario', { usuario_id: userId, campos });
       if (rol === 'preceptor') {
         await sb.from('cursos')
           .update({ preceptor_id: null })

@@ -16,7 +16,6 @@ serve(async (req) => {
 
     if (!SERVICE_KEY) throw new Error("Service key no configurada");
 
-    // Leer body una sola vez
     const { action, payload } = await req.json();
 
     // ── Verificar JWT del usuario ──────────────────────
@@ -28,7 +27,6 @@ serve(async (req) => {
       });
     }
 
-    // Verificar identidad con Supabase Auth
     const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { "Authorization": `Bearer ${jwt}`, "apikey": SERVICE_KEY },
     });
@@ -46,7 +44,6 @@ serve(async (req) => {
       });
     }
 
-    // Obtener perfil para verificar rol e institución
     const perfilRes = await fetch(
       `${SUPABASE_URL}/rest/v1/usuarios?id=eq.${userData.id}&select=rol,institucion_id`,
       { headers: { "Authorization": `Bearer ${jwt}`, "apikey": SERVICE_KEY } }
@@ -89,18 +86,29 @@ serve(async (req) => {
         throw new Error(authData.error?.message || authData.msg || "Error al crear usuario en Auth");
       }
 
-      // Actualizar cursos_ids en la fila creada por el trigger handle_new_user()
-      if (payload.cursos_ids?.length) {
-        await fetch(`${SUPABASE_URL}/rest/v1/usuarios?id=eq.${authData.id}`, {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${SERVICE_KEY}`,
-            "apikey": SERVICE_KEY,
-          },
-          body: JSON.stringify({ cursos_ids: payload.cursos_ids }),
-        });
-      }
+      // Upsert explícito en usuarios — no depende del trigger handle_new_user
+      const meta = payload.user_metadata;
+      await fetch(`${SUPABASE_URL}/rest/v1/usuarios`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "apikey": SERVICE_KEY,
+          "Prefer": "resolution=merge-duplicates",
+        },
+        body: JSON.stringify({
+          id:              authData.id,
+          email:           payload.email,
+          nombre_completo: meta.nombre_completo,
+          username:        meta.username,
+          rol:             meta.rol,
+          nivel:           meta.nivel || null,
+          activo:          meta.activo,
+          dni:             meta.dni || null,
+          institucion_id:  meta.institucion_id,
+          cursos_ids:      payload.cursos_ids?.length ? payload.cursos_ids : [],
+        }),
+      });
 
       return new Response(
         JSON.stringify({ id: authData.id }),
@@ -108,9 +116,48 @@ serve(async (req) => {
       );
     }
 
+    // ── Acción: actualizar usuario ─────────────────────
+    if (action === "actualizar_usuario") {
+      const targetRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/usuarios?id=eq.${payload.usuario_id}&select=institucion_id`,
+        { headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "apikey": SERVICE_KEY } }
+      );
+      const targetArr = await targetRes.json();
+      const target = Array.isArray(targetArr) ? targetArr[0] : null;
+
+      if (!target || target.institucion_id !== perfil.institucion_id) {
+        return new Response(JSON.stringify({ error: "Usuario no encontrado o de otra institución" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const updateRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/usuarios?id=eq.${payload.usuario_id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+          },
+          body: JSON.stringify(payload.campos),
+        }
+      );
+
+      if (!updateRes.ok) {
+        const errData = await updateRes.json();
+        throw new Error(errData.message || errData.msg || "Error al actualizar usuario");
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // ── Acción: actualizar contraseña ──────────────────
     if (action === "actualizar_contrasena") {
-      // Verificar que el usuario objetivo pertenece a la misma institución
       const targetRes = await fetch(
         `${SUPABASE_URL}/rest/v1/usuarios?id=eq.${payload.usuario_id}&select=institucion_id`,
         { headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "apikey": SERVICE_KEY } }
