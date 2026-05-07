@@ -68,19 +68,24 @@ async function rIntensif() {
   }
 
   // Filtrar por alumno_id en vez de curso_id para encontrar registros aunque curso_id esté null
-  const { data: alumnosEnCursos } = await sb.from('alumnos').select('id')
+  const { data: alumnosEnCursos, error: _errAlumnos } = await sb.from('alumnos').select('id')
     .in('curso_id', cursoIds).or('activo.is.null,activo.eq.true');
+  if (_errAlumnos) console.error('[Intensif] Error alumnos:', _errAlumnos.message);
   const alumnoIds = (alumnosEnCursos || []).map(a => a.id);
+  console.log('[Intensif] cursoIds:', cursoIds.length, 'alumnoIds:', alumnoIds.length);
+
+  const ESTADOS_ACTIVOS = ['pendiente_intensif','intensificando','recursando','a_recursar','no_acreditada'];
 
   let todosEstados = [];
   if (alumnoIds.length) {
     let q = sb.from('materias_estado_alumno')
       .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,curso_id,periodo_id,alumnos(nombre,apellido),materias(nombre),cursos(nombre,division)')
       .in('alumno_id', alumnoIds)
-      .not('estado', 'in', '(cursando,aprobada)')
-      .order('alumnos(apellido)');
+      .in('estado', ESTADOS_ACTIVOS);
     if (materiaIds?.length) q = q.in('materia_id', materiaIds);
-    const { data: estados } = await q;
+    const { data: estados, error: _errEstados } = await q;
+    if (_errEstados) console.error('[Intensif] Error estados:', _errEstados.message, _errEstados.details);
+    console.log('[Intensif] estados encontrados:', estados?.length ?? 'null', estados?.[0]);
     todosEstados = estados || [];
   }
 
