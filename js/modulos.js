@@ -1108,9 +1108,7 @@ async function rEOE() {
           <div class="sec-lb" style="margin:0">Actividades EOE (${actividades.length})</div>
           ${esEOE ? `<button class="btn-p" style="font-size:11px" onclick="_abrirFormActividad()">+ Nueva actividad</button>` : ''}
         </div>
-        ${!actividades.length
-          ? '<div class="empty-state">📋<br>Sin actividades registradas</div>'
-          : actividades.map(a => _renderActCard(a, hoy)).join('')}
+        ${_renderActividadesEOE(actividades, hoy)}
       </div>` : ''}`;
   } catch(e) { showError('eoe', 'Error: ' + e.message); }
 }
@@ -1137,7 +1135,7 @@ function _renderActCard(a, hoy) {
   const objTit    = a.obj?.nombre;
   const planTxt   = a.objetivo_actividad || a.descripcion;
   return `
-    <div class="card" style="margin-bottom:8px${esPasada ? ';opacity:.75' : ''}">
+    <div class="card" style="margin-bottom:8px${esPasada ? ';opacity:.75' : ''};cursor:pointer" onclick="_verDetalleActividad('${a.id}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
         <div style="font-size:12px;font-weight:600;line-height:1.3;flex:1">${a.titulo}</div>
         <span class="tag ${esPasada ? 'tgr' : 'tg'}" style="flex-shrink:0;margin-left:8px">${esPasada ? 'Realizada' : 'Próxima'}</span>
@@ -1555,11 +1553,12 @@ async function _guardarActividad() {
   // Invitados + notificaciones
   const invChks = [...document.querySelectorAll('.act-inv-chk:checked')];
   if (invChks.length) {
-    await sb.from('reunion_invitados').insert(
+    const { error: errInv } = await sb.from('reunion_invitados').insert(
       invChks.map(c => ({ reunion_id: nueva.id, usuario_id: c.value, estado: 'pendiente' }))
     );
+    if (errInv) console.error('reunion_invitados insert error:', errInv.message);
     const fechaStr = formatFechaCorta(fecha);
-    await sb.from('notificaciones').insert(
+    const { error: errNotif } = await sb.from('notificaciones').insert(
       invChks.map(c => ({
         usuario_id:       c.value,
         tipo:             'invitacion_actividad_eoe',
@@ -1569,11 +1568,12 @@ async function _guardarActividad() {
         referencia_tabla: 'reuniones',
       }))
     );
+    if (errNotif) console.error('notificaciones insert error:', errNotif.message);
   }
 
   // Agregar a agenda institucional
   if (enAgenda) {
-    await sb.from('eventos_institucionales').insert({
+    const { error: errAgenda } = await sb.from('eventos_institucionales').insert({
       institucion_id:      USUARIO_ACTUAL.institucion_id,
       creado_por:          USUARIO_ACTUAL.id,
       nombre:              titulo,
@@ -1586,10 +1586,192 @@ async function _guardarActividad() {
       convocados_ids:      [],
       responsables_ids:    [],
     });
+    if (errAgenda) console.error('eventos_institucionales insert error:', errAgenda.message);
   }
 
   _cerrarModalObj('modal-act-eoe');
   _toastObj('✓ Actividad registrada correctamente');
+  await rEOE();
+}
+
+function _renderActividadesEOE(actividades, hoy) {
+  if (!actividades.length) return '<div class="empty-state">📋<br>Sin actividades registradas</div>';
+  const proximas = actividades.filter(a => a.fecha >= hoy).sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const pasadas  = actividades.filter(a => a.fecha < hoy);
+  let out = '';
+  if (proximas.length) {
+    out += `<div style="font-size:10px;font-weight:600;color:var(--verde);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Próximas</div>`;
+    out += proximas.map(a => _renderActCard(a, hoy)).join('');
+  }
+  if (pasadas.length) {
+    out += `<div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px;margin:${proximas.length ? '12px' : '0'} 0 6px">Realizadas</div>`;
+    out += pasadas.map(a => _renderActCard(a, hoy)).join('');
+  }
+  return out;
+}
+
+async function _verDetalleActividad(id) {
+  const [actRes, encRes] = await Promise.all([
+    sb.from('reuniones')
+      .select('*, prob:problematicas(descripcion), obj:objetivos(nombre)')
+      .eq('id', id).single(),
+    sb.from('actividad_encuentros').select('*').eq('reunion_id', id).order('orden'),
+  ]);
+  if (actRes.error) { alert('Error al cargar la actividad.'); return; }
+  const a    = actRes.data;
+  const encs = encRes.data || [];
+  const esEOE    = USUARIO_ACTUAL.rol === 'eoe';
+  const esPasada = a.fecha < hoyISO();
+  const tipoLabel = _ACT_TIPO_LABEL[a.tipo_actividad] || a.tipo_actividad;
+
+  const encHTML = encs.length
+    ? encs.map((e, i) => `
+      <div style="padding:8px 0;border-bottom:1px solid var(--brd)">
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;margin-bottom:3px">Encuentro ${e.orden || i + 1}</div>
+        <div style="font-size:12px;font-weight:500">${formatFechaCorta(e.fecha)}${e.hora ? ' · ' + e.hora.slice(0, 5) : ''}</div>
+        ${e.tematica ? `<div style="font-size:11px;color:var(--txt2);margin-top:2px">${e.tematica}</div>` : ''}
+      </div>`).join('')
+    : `<div style="font-size:11px;color:var(--txt2);padding:6px 0">Encuentro único: ${formatFechaCorta(a.fecha)}${a.hora ? ' · ' + a.hora.slice(0, 5) : ''}</div>`;
+
+  const probTxt = a.prob?.descripcion;
+  const objNom  = a.obj?.nombre;
+
+  const html = `
+    <div style="display:grid;gap:14px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span class="tag tp">${tipoLabel}</span>
+        ${a.en_agenda ? '<span class="tag tg" style="font-size:9px">En agenda</span>' : ''}
+        <span class="tag ${esPasada ? 'tgr' : 'tg'}">${esPasada ? 'Realizada' : 'Próxima'}</span>
+      </div>
+
+      <div>
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Encuentros</div>
+        ${encHTML}
+      </div>
+
+      ${a.lugar ? `<div>
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">Lugar</div>
+        <div style="font-size:12px">${a.lugar}</div>
+      </div>` : ''}
+
+      ${a.destinatarios_texto ? `<div>
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">Destinatarios</div>
+        <div style="font-size:12px">${a.destinatarios_texto}</div>
+      </div>` : ''}
+
+      ${probTxt || objNom ? `<div>
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">Relacionado con</div>
+        ${probTxt ? `<div style="font-size:11px;color:var(--txt2)">Problemática: ${probTxt}</div>` : ''}
+        ${objNom  ? `<div style="font-size:11px;color:var(--txt2)">Objetivo: ${objNom}</div>`      : ''}
+      </div>` : ''}
+
+      ${a.objetivo_actividad ? `<div>
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px">Objetivo de la actividad</div>
+        <div style="font-size:12px;color:var(--txt2);font-style:italic">${a.objetivo_actividad}</div>
+      </div>` : ''}
+
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px">Resultado / descripción</div>
+          ${esEOE ? `<button class="btn-s" style="font-size:10px;padding:3px 8px" onclick="_toggleEditarResultado('${a.id}')">Editar</button>` : ''}
+        </div>
+        <div id="det-res-display-${a.id}">
+          ${a.resultado
+            ? `<div style="font-size:12px;padding:8px 10px;background:var(--verde-l);border-radius:var(--rad)">${a.resultado}</div>`
+            : `<div style="font-size:11px;color:var(--txt2);font-style:italic">Sin resultado registrado aún.</div>`}
+        </div>
+        <div id="det-res-edit-${a.id}" style="display:none">
+          <textarea id="det-res-ta-${a.id}" rows="3" style="width:100%;margin-bottom:6px" placeholder="Describí lo sucedido y logrado en la actividad...">${a.resultado || ''}</textarea>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="btn-s" style="font-size:11px" onclick="_toggleEditarResultado('${a.id}')">Cancelar</button>
+            <button class="btn-p" id="btn-save-res-${a.id}" style="font-size:11px" onclick="_guardarResultadoActividad('${a.id}')">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  const btns = `
+    ${esEOE ? `<button class="btn-s" onclick="_abrirEditarActividad('${a.id}')">Editar actividad</button>` : ''}
+    <button class="btn-p" onclick="_cerrarModalObj('modal-det-act')">Cerrar</button>`;
+  _objModal('modal-det-act', a.titulo, html, btns);
+}
+
+function _toggleEditarResultado(actId) {
+  const display = document.getElementById(`det-res-display-${actId}`);
+  const edit    = document.getElementById(`det-res-edit-${actId}`);
+  if (!display || !edit) return;
+  const abriendo = edit.style.display === 'none';
+  display.style.display = abriendo ? 'none' : '';
+  edit.style.display    = abriendo ? ''     : 'none';
+}
+
+async function _guardarResultadoActividad(actId) {
+  const ta  = document.getElementById(`det-res-ta-${actId}`);
+  const btn = document.getElementById(`btn-save-res-${actId}`);
+  if (!ta) return;
+  const resultado = ta.value.trim() || null;
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const { error } = await sb.from('reuniones').update({ resultado }).eq('id', actId);
+  if (error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    alert('Error: ' + error.message);
+    return;
+  }
+  _cerrarModalObj('modal-det-act');
+  _toastObj('✓ Resultado guardado');
+  await rEOE();
+}
+
+async function _abrirEditarActividad(actId) {
+  _cerrarModalObj('modal-det-act');
+  const { data: a, error } = await sb.from('reuniones').select('*').eq('id', actId).single();
+  if (error || !a) { alert('Error al cargar la actividad.'); return; }
+
+  const html = `
+    <div style="display:grid;gap:14px">
+      <div><label class="lbl">Título *</label>
+        <input type="text" id="edit-act-titulo" value="${(a.titulo || '').replace(/"/g, '&quot;')}"></div>
+      <div><label class="lbl">Tipo *</label>
+        <select id="edit-act-tipo" style="width:100%">
+          <option value="charla"${a.tipo_actividad === 'charla' ? ' selected' : ''}>Charla</option>
+          <option value="taller"${a.tipo_actividad === 'taller' ? ' selected' : ''}>Taller</option>
+          <option value="entrevista_grupal"${a.tipo_actividad === 'entrevista_grupal' ? ' selected' : ''}>Entrevista grupal</option>
+          <option value="otra"${a.tipo_actividad === 'otra' ? ' selected' : ''}>Otra</option>
+        </select></div>
+      <div><label class="lbl">Lugar</label>
+        <input type="text" id="edit-act-lugar" value="${(a.lugar || '').replace(/"/g, '&quot;')}"></div>
+      <div><label class="lbl">Objetivo de la actividad</label>
+        <textarea id="edit-act-obj-txt" rows="2">${a.objetivo_actividad || ''}</textarea></div>
+      <div><label class="lbl">Resultado / descripción</label>
+        <textarea id="edit-act-resultado" rows="3">${a.resultado || ''}</textarea></div>
+    </div>`;
+
+  const btns = `
+    <button class="btn-s" onclick="_cerrarModalObj('modal-edit-act')">Cancelar</button>
+    <button class="btn-p" onclick="_guardarEdicionActividad('${actId}')">Guardar cambios</button>`;
+  _objModal('modal-edit-act', 'Editar actividad', html, btns);
+}
+
+async function _guardarEdicionActividad(actId) {
+  const titulo    = document.getElementById('edit-act-titulo')?.value.trim();
+  const tipo      = document.getElementById('edit-act-tipo')?.value;
+  const lugar     = document.getElementById('edit-act-lugar')?.value.trim() || null;
+  const objTxt    = document.getElementById('edit-act-obj-txt')?.value.trim() || null;
+  const resultado = document.getElementById('edit-act-resultado')?.value.trim() || null;
+  if (!titulo) { alert('El título es obligatorio.'); return; }
+  const btn = document.querySelector('#modal-edit-act .btn-p');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  const { error } = await sb.from('reuniones').update({
+    titulo, tipo_actividad: tipo, lugar,
+    objetivo_actividad: objTxt, descripcion: objTxt, resultado,
+  }).eq('id', actId);
+  if (error) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
+    alert('Error: ' + error.message);
+    return;
+  }
+  _cerrarModalObj('modal-edit-act');
+  _toastObj('✓ Actividad actualizada');
   await rEOE();
 }
 
