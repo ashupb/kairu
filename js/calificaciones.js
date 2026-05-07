@@ -32,6 +32,15 @@ function _escCal(s) {
   return String(s).replace(/'/g, "\\'").replace(/"/g, '\\"');
 }
 
+async function _guardarNotaIntensifCal(estadoId, campo, valor) {
+  const v = parseFloat(valor);
+  const upd = campo === 1
+    ? { nota_intensif_1: isNaN(v) ? null : v }
+    : { nota_intensif_2: isNaN(v) ? null : v };
+  const { error } = await sb.from('materias_estado_alumno').update(upd).eq('id', estadoId);
+  if (error) console.error('Error guardando nota intensif:', error.message);
+}
+
 // NOTA_COLOR / NOTA_BG / NOTA_CLS aceptan (nota) o (nota, nivel, nombreCurso)
 // Retrocompatibles: sin nivel/nombreCurso usan umbrales por defecto
 const NOTA_COLOR = (n, nivel, nombreCurso) => {
@@ -1351,7 +1360,65 @@ async function verCalifCurso(cursoId, nivel) {
 
   const { data: curso } = await sb.from('cursos').select('*').eq('id', cursoId).single();
 
+  const { data: _piData } = await sb.from('periodos_intensificacion')
+    .select('id,nombre').eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+    .eq('ciclo_lectivo', new Date().getFullYear()).order('fecha_inicio');
+  const periIntensif = _piData || [];
+  let _modoIntensif = null;
+
+  const renderIntensifCurso = async () => {
+    const { data: alumnos } = await sb.from('alumnos')
+      .select('id,nombre,apellido').eq('curso_id', cursoId).eq('activo', true).order('apellido');
+    const alumnoIds = (alumnos || []).map(a => a.id);
+    if (!alumnoIds.length) return '<div class="empty-state">Sin alumnos en este curso.</div>';
+    const { data: estados } = await sb.from('materias_estado_alumno')
+      .select('id,estado,nota_intensif_1,nota_intensif_2,alumno_id,materia_id,materias(nombre)')
+      .eq('periodo_id', _modoIntensif).in('alumno_id', alumnoIds);
+    if (!estados?.length) return `<div style="text-align:center;padding:24px;color:var(--txt3);font-size:12px">
+      Sin alumnos asignados a este período en este curso.<br>
+      <span style="font-size:10px">Agregá desde el módulo <b>Intensificación</b>.</span>
+    </div>`;
+    const puedeEditar = ['director_general','directivo_nivel','preceptor','docente'].includes(USUARIO_ACTUAL.rol);
+    return `
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
+        ${estados.map(e => {
+          const clr    = ESTADO_INTENSIF_COLOR[e.estado] || 'var(--txt2)';
+          const alumno = alumnos.find(a => a.id === e.alumno_id);
+          return `<div style="display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--brd);gap:10px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600">${alumno?.apellido || ''}, ${alumno?.nombre || ''}</div>
+              <div style="font-size:10px;color:var(--txt2)">${e.materias?.nombre || '—'}</div>
+              <span style="font-size:10px;font-weight:600;color:${clr}">${ESTADO_INTENSIF_LABEL[e.estado] || e.estado}</span>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;flex-shrink:0">
+              <div style="text-align:center">
+                <div style="font-size:9px;color:var(--txt2);margin-bottom:2px">Intensif. 1</div>
+                ${puedeEditar
+                  ? `<input type="number" value="${e.nota_intensif_1 ?? ''}" min="1" max="10" step="0.5"
+                      style="width:55px;padding:5px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:13px;font-weight:700;text-align:center;background:var(--surf);color:var(--txt)"
+                      onchange="_guardarNotaIntensifCal('${e.id}',1,this.value)">`
+                  : `<span style="font-size:16px;font-weight:700;color:${NOTA_COLOR(e.nota_intensif_1)}">${e.nota_intensif_1 ?? '—'}</span>`}
+              </div>
+              <div style="text-align:center">
+                <div style="font-size:9px;color:var(--txt2);margin-bottom:2px">Intensif. 2</div>
+                ${puedeEditar
+                  ? `<input type="number" value="${e.nota_intensif_2 ?? ''}" min="1" max="10" step="0.5"
+                      style="width:55px;padding:5px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:13px;font-weight:700;text-align:center;background:var(--surf);color:var(--txt)"
+                      onchange="_guardarNotaIntensifCal('${e.id}',2,this.value)">`
+                  : `<span style="font-size:16px;font-weight:700;color:${NOTA_COLOR(e.nota_intensif_2)}">${e.nota_intensif_2 ?? '—'}</span>`}
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  };
+
   const renderGrilla = async () => {
+    const tabBar = `<div class="periodo-tabs" style="align-items:center">
+      ${periodosCurso.map(p => `<button class="periodo-tab ${!_modoIntensif && PERIODO_SEL === p.id ? 'on' : ''}" onclick="cambioPeriodoDir('${p.id}')">${p.nombre}</button>`).join('')}
+      ${periIntensif.map(p => `<button class="periodo-tab ${_modoIntensif === p.id ? 'on' : ''}" style="border-color:var(--ambar)" onclick="cambioIntensifDir('${p.id}')">◈ ${p.nombre}</button>`).join('')}
+    </div>`;
+    if (_modoIntensif) return tabBar + (await renderIntensifCurso());
     const [alumnosRes, materiasRes, cierresRes, cierreCursoRes] = await Promise.all([
       sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
       sb.from('materias').select('*')
@@ -1418,16 +1485,7 @@ async function verCalifCurso(cursoId, nivel) {
 
     return `
       ${cierreCursoBanner}
-        <div class="periodo-tabs" style="align-items:center">
-            ${periodosCurso.map(p => {
-              const esSel = PERIODO_SEL === p.id;
-              return `
-                <button class="periodo-tab ${esSel ? 'on' : ''}"
-                  onclick="cambioPeriodoDir('${p.id}')">
-                  ${p.nombre}
-                </button>`;
-            }).join('')}
-        </div>
+      ${tabBar}
       ${validacionPendHTML}
       ${!materias.length ? '<div class="empty-state">Sin materias configuradas</div>' : `
       <div style="display:flex;justify-content:flex-end;gap:4px;margin-bottom:6px">
@@ -1494,6 +1552,13 @@ async function verCalifCurso(cursoId, nivel) {
 
   window.cambioPeriodoDir = async (pid) => {
     PERIODO_SEL = pid;
+    _modoIntensif = null;
+    document.getElementById('contenido-calif-dir').innerHTML = await renderGrilla();
+    inyectarEstilosNotas();
+  };
+
+  window.cambioIntensifDir = async (pid) => {
+    _modoIntensif = pid;
     document.getElementById('contenido-calif-dir').innerHTML = await renderGrilla();
     inyectarEstilosNotas();
   };

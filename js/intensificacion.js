@@ -67,15 +67,22 @@ async function rIntensif() {
     return;
   }
 
-  let q = sb.from('materias_estado_alumno')
-    .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,curso_id,periodo_id,alumnos(nombre,apellido),materias(nombre),cursos(nombre,division)')
-    .in('curso_id', cursoIds)
-    .not('estado', 'in', '(cursando,aprobada)')
-    .order('alumnos(apellido)');
+  // Filtrar por alumno_id en vez de curso_id para encontrar registros aunque curso_id esté null
+  const { data: alumnosEnCursos } = await sb.from('alumnos').select('id')
+    .in('curso_id', cursoIds).or('activo.is.null,activo.eq.true');
+  const alumnoIds = (alumnosEnCursos || []).map(a => a.id);
 
-  if (materiaIds?.length) q = q.in('materia_id', materiaIds);
-  const { data: estados } = await q;
-  const todosEstados = estados || [];
+  let todosEstados = [];
+  if (alumnoIds.length) {
+    let q = sb.from('materias_estado_alumno')
+      .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,curso_id,periodo_id,alumnos(nombre,apellido),materias(nombre),cursos(nombre,division)')
+      .in('alumno_id', alumnoIds)
+      .not('estado', 'in', '(cursando,aprobada)')
+      .order('alumnos(apellido)');
+    if (materiaIds?.length) q = q.in('materia_id', materiaIds);
+    const { data: estados } = await q;
+    todosEstados = estados || [];
+  }
 
   if (!_intensifTabActivo) _intensifTabActivo = '__todos';
 
