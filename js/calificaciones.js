@@ -27,6 +27,11 @@ function _umbralRec(nivel, nombreCurso) {
   return (CONFIG_NOTAS[nivel]?.nota_recuperacion) ?? 4;
 }
 
+function _escCal(s) {
+  if (!s) return '';
+  return String(s).replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
 // NOTA_COLOR / NOTA_BG / NOTA_CLS aceptan (nota) o (nota, nivel, nombreCurso)
 // Retrocompatibles: sin nivel/nombreCurso usan umbrales por defecto
 const NOTA_COLOR = (n, nivel, nombreCurso) => {

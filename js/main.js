@@ -13,7 +13,7 @@ const PAGE_LABELS = {
   obj:       'Objetivos institucionales',
   asist:     'Asistencia',
   notas:     'Calificaciones',
-  intensif:  'Períodos de Intensificación',
+  intensif:  'Intensificación',
   leg:       'Resumen del estudiante',
   eoe:       'Equipo de orientación',
   admin:     'Datos institucionales',

@@ -279,7 +279,7 @@ const LEG_TABS_BASE = [
 
 function _buildLegTabs() {
   const tabs = [...LEG_TABS_BASE];
-  if (_ROLES_VER_DERIVACIONES.includes(USUARIO_ACTUAL?.rol)) {
+  if (typeof USUARIO_ACTUAL !== 'undefined' && _ROLES_VER_DERIVACIONES.includes(USUARIO_ACTUAL?.rol)) {
     tabs.push({ id:'derivaciones', label:'Derivaciones' });
   }
   return tabs;

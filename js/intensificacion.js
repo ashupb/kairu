@@ -62,7 +62,7 @@ async function rIntensif() {
 
   if (!cursoIds.length) {
     pag.innerHTML = `
-      <div class="pg-t">Períodos de Intensificación</div>
+      <div class="pg-t">Intensificación</div>
       <div class="empty-state">Sin cursos asignados para este año.</div>`;
     return;
   }
@@ -70,8 +70,7 @@ async function rIntensif() {
   let q = sb.from('materias_estado_alumno')
     .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,curso_id,periodo_id,alumnos(nombre,apellido),materias(nombre),cursos(nombre,division)')
     .in('curso_id', cursoIds)
-    .eq('ciclo_lectivo_cursado', anio)
-    .not('estado', 'in', '("cursando","aprobada")')
+    .not('estado', 'in', '(cursando,aprobada)')
     .order('alumnos(apellido)');
 
   if (materiaIds?.length) q = q.in('materia_id', materiaIds);
@@ -86,7 +85,7 @@ async function rIntensif() {
   pag.innerHTML = `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:16px;gap:12px">
       <div>
-        <div class="pg-t">Períodos de Intensificación</div>
+        <div class="pg-t">Intensificación</div>
         <div class="pg-s">${anio} · ${todosEstados.length} registro(s) activo(s)</div>
       </div>
       ${puedeAgregar ? `<button class="btn-p" onclick="_mostrarFormAgregarIntensif()" style="flex-shrink:0;font-size:12px">+ Agregar</button>` : ''}
@@ -581,6 +580,7 @@ async function _guardarNuevaIntensif() {
   }
 
   document.getElementById('modal-agregar-intensif')?.remove();
+  _intensifTabActivo = null;
   alert('Materia pendiente registrada. Ya aparece en el legajo del alumno y en este módulo.');
   rIntensif();
 }
