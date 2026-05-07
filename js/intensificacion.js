@@ -79,7 +79,7 @@ async function rIntensif() {
   let todosEstados = [];
   if (alumnoIds.length) {
     let q = sb.from('materias_estado_alumno')
-      .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,curso_id,periodo_id,alumnos(nombre,apellido),materias(nombre),cursos(nombre,division)')
+      .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,curso_id,periodo_id,alumnos(nombre,apellido),materias(nombre),cursos!curso_id(nombre,division)')
       .in('alumno_id', alumnoIds)
       .in('estado', ESTADOS_ACTIVOS);
     if (materiaIds?.length) q = q.in('materia_id', materiaIds);
