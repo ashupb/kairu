@@ -59,6 +59,13 @@ async function login() {
       return;
     }
 
+    if (perfil.en_licencia) {
+      mostrarErrorLogin('Usuario con licencia. Contactá con la institución para habilitar este usuario.');
+      await sb.auth.signOut();
+      resetBtn();
+      return;
+    }
+
     if (!perfil.activo) {
       mostrarErrorLogin('Tu cuenta está desactivada. Contactá al administrador.');
       await sb.auth.signOut();
@@ -134,6 +141,13 @@ async function verificarSesion() {
       .eq('id', perfil.institucion_id)
       .single();
     instData = inst;
+  }
+
+  if (perfil && perfil.en_licencia) {
+    await sb.auth.signOut();
+    document.getElementById('login-screen').style.display = 'flex';
+    mostrarErrorLogin('Usuario con licencia. Contactá con la institución para habilitar este usuario.');
+    return;
   }
 
   if (perfil && perfil.activo) {

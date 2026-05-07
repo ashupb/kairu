@@ -394,6 +394,7 @@ function _renderUsuariosList() {
         const rolBadge   = ROL_BADGE_ADM[u.rol] || 'tgr';
         const nivelColor = u.nivel ? NIVEL_COLORS_ADM[u.nivel] : 'var(--gris)';
         const inactivo   = u.activo === false;
+        const enLicencia = u.en_licencia === true;
         return `<div class="adm-user-row" onclick="_abrirModalUsuario('${u.id}')">
             <div class="av av32" style="background:${nivelColor};color:#fff;flex-shrink:0">${iniciales}</div>
             <div style="flex:1;min-width:0">
@@ -403,6 +404,7 @@ function _renderUsuariosList() {
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
               <span class="tag ${rolBadge}">${ROL_LABELS_ADM[u.rol] || u.rol}</span>
               ${inactivo ? '<span class="tag tr">Inactivo</span>' : ''}
+              ${enLicencia ? '<span class="tag" style="background:#f59e0b22;color:#b45309;border-color:#f59e0b44">En licencia</span>' : ''}
             </div>
           </div>`;
       };
@@ -525,6 +527,17 @@ async function _abrirModalUsuario(userId) {
         </div>
       </div>
     </div>
+    <div class="adm-form-row">
+      <div class="toggle-row-ui">
+        <div>
+          <span style="font-size:12px;font-weight:500">En licencia</span>
+          <div style="font-size:10px;color:var(--txt2);margin-top:2px">No puede iniciar sesión mientras esté activo</div>
+        </div>
+        <div class="tog${user?.en_licencia ? ' on' : ''}" id="mu-licencia" onclick="_togAdm('mu-licencia')">
+          <div class="tog-thumb"></div>
+        </div>
+      </div>
+    </div>
     ${(_configExtraOk && USUARIO_ACTUAL.rol === 'director_general') ? `
     <div class="adm-form-row">
       <label class="adm-label">Accesos a Configuración</label>
@@ -635,6 +648,7 @@ async function _guardarUsuario(userId, esNuevo) {
   const rol             = document.getElementById('mu-rol')?.value;
   const nivel           = document.getElementById('mu-nivel')?.value || null;
   const activo          = document.getElementById('mu-activo')?.classList.contains('on');
+  const en_licencia     = document.getElementById('mu-licencia')?.classList.contains('on') ?? false;
 
   const cursosChecks = document.querySelectorAll('#mu-cursos-list input[type=checkbox]:checked');
   const cursos_ids   = Array.from(cursosChecks).map(c => c.value);
@@ -671,7 +685,7 @@ async function _guardarUsuario(userId, esNuevo) {
       }
     } else {
       const campos = {
-        nombre_completo, rol, nivel, activo,
+        nombre_completo, rol, nivel, activo, en_licencia,
         dni: dni || null,
         cursos_ids: cursos_ids.length ? cursos_ids : null,
       };
