@@ -1226,7 +1226,10 @@ async function rNotasDirectivo() {
     <div id="sit-dir-global" style="text-align:center;padding:20px;color:var(--txt3);font-size:11px">
       <div class="spinner" style="margin:0 auto 8px"></div>Calculando situación...
     </div>
-    <div class="sec-lb" style="margin-top:18px">Intensificación / Recursada activa</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:18px;margin-bottom:6px">
+      <div class="sec-lb" style="margin:0">Intensificación / Recursada activa</div>
+      ${rol !== 'eoe' ? `<button class="btn-s" onclick="_mostrarFormAgregarIntensif()" style="font-size:11px">+ Agregar</button>` : ''}
+    </div>
     <div id="intensif-dir-sec" style="padding:8px 0">
       <div style="text-align:center;padding:16px;color:var(--txt3);font-size:11px">
         <div class="spinner" style="margin:0 auto 8px"></div>Verificando...
@@ -2991,9 +2994,9 @@ async function _cargarIntensifDocente(cursoIds) {
   const anio = new Date().getFullYear();
   const { data, error } = await sb.from('materias_estado_alumno')
     .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,alumnos(nombre,apellido),materias(nombre)')
-    .in('curso_origen_id', cursoIds)
+    .in('curso_id', cursoIds)
     .eq('ciclo_lectivo_cursado', anio)
-    .lt('ciclo_lectivo_origen', anio)
+    .not('estado', 'in', '("cursando","aprobada")')
     .order('ciclo_lectivo_origen').order('alumnos(apellido)');
 
   if (error || !data?.length) {
@@ -3041,9 +3044,9 @@ async function _cargarIntensifDirectivo(cursoIds) {
   const anio = new Date().getFullYear();
   const { data, error } = await sb.from('materias_estado_alumno')
     .select('id,estado,ciclo_lectivo_origen,nota_intensif_1,nota_intensif_2,nota_final,alumno_id,materia_id,alumnos(nombre,apellido),materias(nombre)')
-    .in('curso_origen_id', cursoIds)
+    .in('curso_id', cursoIds)
     .eq('ciclo_lectivo_cursado', anio)
-    .not('estado', 'in', '("en_curso","aprobada")')
+    .not('estado', 'in', '("cursando","aprobada")')
     .order('ciclo_lectivo_origen').order('alumnos(apellido)');
 
   if (error || !data?.length) {
@@ -3090,11 +3093,15 @@ async function verNotasIntensif(estadoId, alumnoNombre, materiaNombre, cicloOrig
   const c = document.getElementById('page-notas');
   showLoading('notas');
 
-  const { data: rec, error } = await sb.from('materias_estado_alumno')
-    .select('*,periodos_intensificacion(nombre)')
-    .eq('id', estadoId).single();
+  const anio = new Date().getFullYear();
+  const [recRes, periodosRes] = await Promise.all([
+    sb.from('materias_estado_alumno').select('*,periodos_intensificacion(nombre)').eq('id', estadoId).single(),
+    sb.from('periodos_intensificacion').select('id,nombre,tipo').eq('institucion_id', USUARIO_ACTUAL.institucion_id).eq('ciclo_lectivo', anio).order('fecha_inicio'),
+  ]);
 
-  if (error) { c.innerHTML = `<div class="empty-state">Error: ${error.message}</div>`; return; }
+  const rec = recRes.data;
+  if (recRes.error || !rec) { c.innerHTML = `<div class="empty-state">Error: ${recRes.error?.message}</div>`; return; }
+  const periodos = periodosRes.data || [];
 
   const esDirectivo = ['director_general','directivo_nivel'].includes(USUARIO_ACTUAL.rol);
 
@@ -3142,10 +3149,19 @@ async function verNotasIntensif(estadoId, alumnoNombre, materiaNombre, cicloOrig
       </div>
 
       ${esDirectivo || USUARIO_ACTUAL.rol === 'docente' ? `
+      ${esDirectivo && periodos.length ? `
+      <div style="margin-bottom:14px">
+        <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Período de intensificación</label>
+        <select id="periodo-intensif" style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt)">
+          <option value="">— Sin período asignado —</option>
+          ${periodos.map(p => `<option value="${p.id}" ${rec.periodo_id === p.id ? 'selected' : ''}>${p.nombre}</option>`).join('')}
+        </select>
+        <div style="font-size:10px;color:var(--txt2);margin-top:4px">Asignar período para que aparezca en la lista de asistencia de intensificación.</div>
+      </div>` : ''}
       <div style="margin-bottom:14px">
         <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Estado resultante</label>
         <select id="estado-intensif" style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt)">
-          ${['pendiente_intensif','intensificando','recursando','aprobada','no_acreditada','a_recursar'].map(e => `
+          ${['pendiente_intensif','intensificando','recursando','aprobada','a_recursar'].map(e => `
             <option value="${e}" ${rec.estado === e ? 'selected' : ''}>${ESTADO_INTENSIF_LABEL[e]}</option>`).join('')}
         </select>
       </div>
@@ -3156,18 +3172,22 @@ async function verNotasIntensif(estadoId, alumnoNombre, materiaNombre, cicloOrig
 }
 
 async function _guardarNotasIntensif(estadoId) {
-  const i1     = parseFloat(document.getElementById('nota-i1')?.value);
-  const i2     = parseFloat(document.getElementById('nota-i2')?.value);
-  const estado = document.getElementById('estado-intensif')?.value;
+  const i1       = parseFloat(document.getElementById('nota-i1')?.value);
+  const i2       = parseFloat(document.getElementById('nota-i2')?.value);
+  const estado   = document.getElementById('estado-intensif')?.value;
+  const periodoEl = document.getElementById('periodo-intensif');
 
   const btn = event?.target;
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
 
-  const { error } = await sb.from('materias_estado_alumno').update({
+  const upd = {
     nota_intensif_1: isNaN(i1) ? null : i1,
     nota_intensif_2: isNaN(i2) ? null : i2,
     estado,
-  }).eq('id', estadoId);
+  };
+  if (periodoEl) upd.periodo_id = periodoEl.value || null;
+
+  const { error } = await sb.from('materias_estado_alumno').update(upd).eq('id', estadoId);
 
   if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar'; }
   if (error) { alert('Error: ' + error.message); return; }
@@ -3239,8 +3259,12 @@ async function _cerrarCuatrimestreTrayectoria(cuatrimestre) {
     });
   }
 
-  // Generar alertas
+  // Generar alertas y colectar pendientes de intensificación
   let alertasGeneradas = 0;
+  // ciclo_lectivo_cursado: mismo año para Q1 (intensif. intra-año), año siguiente para Q2 (recursada)
+  const cicloResolucion = cuatrimestre === 1 ? anio : anio + 1;
+  const pendientesIntensif = []; // {alumno_id, materia_id, curso_id}
+
   for (const alumno of alumnos) {
     const materiasAlumno = desaprobadasPorAlumno[alumno.id] || {};
     const matsBajas = Object.entries(materiasAlumno)
@@ -3277,6 +3301,31 @@ async function _cerrarCuatrimestreTrayectoria(cuatrimestre) {
       });
     }
     alertasGeneradas++;
+
+    // Colectar materias para trayectoria
+    for (const matId of matsBajas) {
+      pendientesIntensif.push({ alumno_id: alumno.id, materia_id: matId, curso_id: alumno.curso_id });
+    }
+  }
+
+  // Crear registros en materias_estado_alumno para los que no existan aún
+  if (pendientesIntensif.length) {
+    const alumnoIds = [...new Set(pendientesIntensif.map(d => d.alumno_id))];
+    const { data: existentes } = await sb.from('materias_estado_alumno')
+      .select('alumno_id,materia_id')
+      .in('alumno_id', alumnoIds)
+      .eq('ciclo_lectivo_origen', anio);
+    const existSet = new Set((existentes || []).map(e => `${e.alumno_id}_${e.materia_id}`));
+    const nuevos = pendientesIntensif.filter(d => !existSet.has(`${d.alumno_id}_${d.materia_id}`));
+    if (nuevos.length) {
+      await sb.from('materias_estado_alumno').insert(nuevos.map(d => ({
+        ...d,
+        ciclo_lectivo_origen:  anio,
+        ciclo_lectivo_cursado: cicloResolucion,
+        estado:                'pendiente_intensif',
+        institucion_id:        instId,
+      })));
+    }
   }
 
   // Registrar cierre
@@ -3405,4 +3454,163 @@ async function _confirmarPromocionAlumno(alumnoId, decision) {
 
   if (error) { alert('Error: ' + error.message); return; }
   alert(`✅ Decisión registrada: ${label}.`);
+}
+
+// ═══════════════════════════════════════════════════════
+// CARGA MANUAL DE MATERIAS PENDIENTES (directivos)
+// ═══════════════════════════════════════════════════════
+
+async function _mostrarFormAgregarIntensif() {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const anio   = new Date().getFullYear();
+
+  let qCursos = sb.from('cursos').select('id,nombre,division,nivel').eq('institucion_id', instId).order('nombre');
+  // director_general ve todos; los demás ven solo su nivel
+  if (USUARIO_ACTUAL.rol !== 'director_general' && USUARIO_ACTUAL.nivel) {
+    qCursos = qCursos.eq('nivel', USUARIO_ACTUAL.nivel);
+  }
+  const { data: cursos } = await qCursos;
+
+  const existing = document.getElementById('modal-agregar-intensif');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-agregar-intensif';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.45);z-index:1000;display:flex;align-items:flex-end';
+  modal.innerHTML = `
+    <div style="background:var(--bg);border-radius:16px 16px 0 0;padding:20px;width:100%;max-height:90vh;overflow-y:auto;box-sizing:border-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-size:14px;font-weight:700">Agregar materia pendiente</div>
+        <button onclick="document.getElementById('modal-agregar-intensif').remove()"
+          style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--txt2);line-height:1">×</button>
+      </div>
+
+      <div style="font-size:11px;color:var(--txt2);background:var(--surf);border-radius:var(--rad);padding:10px 12px;margin-bottom:14px">
+        Usá este formulario para registrar materias pendientes de alumnos que ya estaban intensificando antes de usar el sistema, o para correcciones manuales.
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Curso</label>
+        <select id="ai-curso" onchange="_onCursoAgregarIntensif()"
+          style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt);box-sizing:border-box">
+          <option value="">— Seleccionar curso —</option>
+          ${(cursos || []).map(cu => `<option value="${cu.id}">${cu.nombre}${cu.division ? ' ' + cu.division : ''} (${cu.nivel})</option>`).join('')}
+        </select>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Alumno/a</label>
+        <select id="ai-alumno"
+          style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt);box-sizing:border-box">
+          <option value="">— Elegir curso primero —</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Materia</label>
+        <select id="ai-materia"
+          style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt);box-sizing:border-box">
+          <option value="">— Elegir curso primero —</option>
+        </select>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Ciclo de origen</label>
+          <input type="number" id="ai-ciclo" value="${anio - 1}" min="2020" max="${anio}"
+            style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt);box-sizing:border-box">
+          <div style="font-size:10px;color:var(--txt2);margin-top:3px">Año que debió cursar la materia.</div>
+        </div>
+        <div>
+          <label style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;display:block;margin-bottom:4px">Estado inicial</label>
+          <select id="ai-estado"
+            style="width:100%;padding:9px 12px;border:1.5px solid var(--brd);border-radius:var(--rad);font-size:12px;background:var(--surf);color:var(--txt);box-sizing:border-box">
+            <option value="pendiente_intensif">Pendiente de intensif.</option>
+            <option value="intensificando">Intensificando</option>
+            <option value="recursando">Recursando</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="ai-btn-guardar" class="btn-p" onclick="_guardarNuevaIntensif()" style="width:100%;font-size:13px">
+        Guardar materia pendiente
+      </button>
+    </div>`;
+
+  document.body.appendChild(modal);
+}
+
+async function _onCursoAgregarIntensif() {
+  const cursoId = document.getElementById('ai-curso')?.value;
+  const selA    = document.getElementById('ai-alumno');
+  const selM    = document.getElementById('ai-materia');
+  if (!cursoId || !selA || !selM) return;
+
+  selA.innerHTML = '<option value="">Cargando...</option>';
+  selM.innerHTML = '<option value="">Cargando...</option>';
+
+  const anio = new Date().getFullYear();
+  const [alumnosRes, materiasRes] = await Promise.all([
+    sb.from('alumnos').select('id,nombre,apellido').eq('curso_id', cursoId).or('activo.is.null,activo.eq.true').order('apellido'),
+    sb.from('asignaciones').select('materia_id,materias(id,nombre)').eq('curso_id', cursoId).eq('anio_lectivo', anio),
+  ]);
+
+  selA.innerHTML = '<option value="">— Seleccionar —</option>' +
+    (alumnosRes.data || []).map(a => `<option value="${a.id}">${a.apellido}, ${a.nombre}</option>`).join('');
+
+  const materiaMap = {};
+  (materiasRes.data || []).forEach(a => {
+    if (a.materias && !materiaMap[a.materia_id]) materiaMap[a.materia_id] = a.materias.nombre;
+  });
+  selM.innerHTML = '<option value="">— Seleccionar —</option>' +
+    Object.entries(materiaMap).sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([id, nombre]) => `<option value="${id}">${nombre}</option>`).join('');
+}
+
+async function _guardarNuevaIntensif() {
+  const alumnoId   = document.getElementById('ai-alumno')?.value;
+  const materiaId  = document.getElementById('ai-materia')?.value;
+  const cursoId    = document.getElementById('ai-curso')?.value;
+  const cicloOrigen = parseInt(document.getElementById('ai-ciclo')?.value);
+  const estado     = document.getElementById('ai-estado')?.value;
+
+  if (!alumnoId || !materiaId || !cursoId || !cicloOrigen) {
+    alert('Completá todos los campos antes de guardar.');
+    return;
+  }
+
+  const anio   = new Date().getFullYear();
+  const instId = USUARIO_ACTUAL.institucion_id;
+
+  const { data: existe } = await sb.from('materias_estado_alumno')
+    .select('id').eq('alumno_id', alumnoId).eq('materia_id', materiaId)
+    .eq('ciclo_lectivo_origen', cicloOrigen).maybeSingle();
+
+  if (existe) {
+    alert('Ya existe un registro de esta materia para este alumno en ese ciclo lectivo.');
+    return;
+  }
+
+  const btn = document.getElementById('ai-btn-guardar');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+
+  const { error } = await sb.from('materias_estado_alumno').insert({
+    alumno_id:             alumnoId,
+    materia_id:            materiaId,
+    curso_id:              cursoId,
+    ciclo_lectivo_origen:  cicloOrigen,
+    ciclo_lectivo_cursado: anio,
+    estado,
+    institucion_id:        instId,
+  });
+
+  if (error) {
+    alert('Error al guardar: ' + error.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar materia pendiente'; }
+    return;
+  }
+
+  document.getElementById('modal-agregar-intensif')?.remove();
+  alert('✅ Materia pendiente registrada. Ya aparece en el legajo del alumno y en la sección de intensificación.');
+  rNotas();
 }
