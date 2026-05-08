@@ -518,7 +518,7 @@ async function rDashEOE() {
   const sem    = _semanaActual();
   const hoy    = sem.hoy;
 
-  const [casosRes, alertasAsistRes, derivRes, eventosProxRes] = await Promise.all([
+  const [casosRes, alertasAsistRes, derivRes, eventosProxRes, actividadesRes] = await Promise.all([
     sb.from('problematicas')
       .select('id,tipo,urgencia,estado,created_at,alumno_id,alumno:alumnos(id,nombre,apellido,curso:cursos(nombre,division,nivel))')
       .eq('institucion_id', instId)
@@ -539,11 +539,18 @@ async function rDashEOE() {
       .gte('fecha_inicio', hoy)
       .order('fecha_inicio').order('hora', { nullsFirst: true })
       .limit(10),
+    sb.from('reuniones')
+      .select('*, prob:problematicas(descripcion), obj:objetivos(nombre)')
+      .eq('institucion_id', instId)
+      .not('tipo_actividad', 'is', null)
+      .order('fecha', { ascending: false })
+      .limit(30),
   ]);
 
   const casos       = casosRes.data        || [];
   const alertasAsist= alertasAsistRes.data || [];
   const derivaciones= derivRes.data        || [];
+  const actividades = actividadesRes.data  || [];
 
   // Última intervención por caso
   const casosIds = casos.map(p => p.id);
@@ -712,6 +719,14 @@ async function rDashEOE() {
           </div>
         </div>
       </div>
+    </div>
+
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--brd)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div class="sec-lb" style="margin:0">Actividades EOE (${actividades.length})</div>
+        <button class="btn-p" style="font-size:11px" onclick="_abrirFormActividad()">+ Nueva actividad</button>
+      </div>
+      ${_renderActividadesEOE(actividades, hoy)}
     </div>`;
 
   inyectarEstilosDash();

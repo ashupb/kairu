@@ -1122,10 +1122,11 @@ const _ACT_TIPO_LABEL = {
   otra:              'Otra',
 };
 
-let _actAlumnosSel = [];
-let _actBusqTimer  = null;
-let _actAlumnosMap = {};
-let _actEncuentros = []; // encuentros adicionales (índice 0 = 2do encuentro visual)
+let _actAlumnosSel  = [];
+let _actBusqTimer   = null;
+let _actAlumnosMap  = {};
+let _actEncuentros  = []; // encuentros adicionales al crear
+let _editNuevosEncs = []; // nuevos encuentros al editar
 
 function _renderActCard(a, hoy) {
   const esPasada  = a.fecha < hoy;
@@ -1329,8 +1330,6 @@ async function _abrirFormActividad() {
       <div><label class="lbl">Objetivo de la actividad</label>
         <textarea id="act-objetivo-txt" rows="2" placeholder="¿Qué se busca lograr con esta actividad?"></textarea></div>
 
-      <div><label class="lbl">Resultado / descripción</label>
-        <textarea id="act-desc" rows="2" placeholder="Podés completar esto luego de realizada la actividad..."></textarea></div>
     </div>`;
 
   const btns = `
@@ -1501,7 +1500,6 @@ async function _guardarActividad() {
   const hora       = document.getElementById('act-hora')?.value || null;
   const lugar      = document.getElementById('act-lugar')?.value.trim() || null;
   const objTxt     = document.getElementById('act-objetivo-txt')?.value.trim() || null;
-  const resultado  = document.getElementById('act-desc')?.value.trim() || null;
   const enAgenda   = document.getElementById('act-en-agenda')?.classList.contains('on') || false;
   const tematica0  = document.getElementById('enc-tematica-0')?.value.trim() || null;
 
@@ -1517,7 +1515,6 @@ async function _guardarActividad() {
     lugar,
     descripcion:        objTxt,
     objetivo_actividad: objTxt,
-    resultado,
     tipo_actividad:     tipo,
     problematica_id:    probId     || null,
     objetivo_id:        objetivoId || null,
@@ -1591,7 +1588,7 @@ async function _guardarActividad() {
 
   _cerrarModalObj('modal-act-eoe');
   _toastObj('✓ Actividad registrada correctamente');
-  await rEOE();
+  await _recargarActividadesEOE();
 }
 
 function _renderActividadesEOE(actividades, hoy) {
@@ -1673,7 +1670,7 @@ async function _verDetalleActividad(id) {
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.4px">Resultado / descripción</div>
-          ${esEOE ? `<button class="btn-s" style="font-size:10px;padding:3px 8px" onclick="_toggleEditarResultado('${a.id}')">Editar</button>` : ''}
+          ${esEOE ? `<button class="btn-s" style="font-size:10px;padding:3px 8px" onclick="_toggleEditarResultado('${a.id}')">${a.resultado ? 'Editar' : 'Agregar resultado'}</button>` : ''}
         </div>
         <div id="det-res-display-${a.id}">
           ${a.resultado
@@ -1719,13 +1716,29 @@ async function _guardarResultadoActividad(actId) {
   }
   _cerrarModalObj('modal-det-act');
   _toastObj('✓ Resultado guardado');
-  await rEOE();
+  await _recargarActividadesEOE();
 }
 
 async function _abrirEditarActividad(actId) {
   _cerrarModalObj('modal-det-act');
-  const { data: a, error } = await sb.from('reuniones').select('*').eq('id', actId).single();
-  if (error || !a) { alert('Error al cargar la actividad.'); return; }
+  _editNuevosEncs = [];
+  const [actRes, encRes] = await Promise.all([
+    sb.from('reuniones').select('*').eq('id', actId).single(),
+    sb.from('actividad_encuentros').select('*').eq('reunion_id', actId).order('orden'),
+  ]);
+  if (actRes.error || !actRes.data) { alert('Error al cargar la actividad.'); return; }
+  const a    = actRes.data;
+  const encs = encRes.data || [];
+  window._editEncMaxOrden = encs.length ? Math.max(...encs.map(e => e.orden || 1)) : 1;
+
+  const encsExistHTML = encs.length
+    ? encs.map((e, i) => `
+      <div style="padding:8px 10px;border:1px solid var(--brd);border-radius:var(--rad);margin-bottom:6px;font-size:11px;background:var(--bg)">
+        <div style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;margin-bottom:2px">Encuentro ${e.orden || i + 1}</div>
+        <div style="font-weight:500">${formatFechaCorta(e.fecha)}${e.hora ? ' · ' + e.hora.slice(0, 5) : ''}</div>
+        ${e.tematica ? `<div style="color:var(--txt2);margin-top:2px">${e.tematica}</div>` : ''}
+      </div>`).join('')
+    : '';
 
   const html = `
     <div style="display:grid;gap:14px">
@@ -1742,37 +1755,102 @@ async function _abrirEditarActividad(actId) {
         <input type="text" id="edit-act-lugar" value="${(a.lugar || '').replace(/"/g, '&quot;')}"></div>
       <div><label class="lbl">Objetivo de la actividad</label>
         <textarea id="edit-act-obj-txt" rows="2">${a.objetivo_actividad || ''}</textarea></div>
-      <div><label class="lbl">Resultado / descripción</label>
-        <textarea id="edit-act-resultado" rows="3">${a.resultado || ''}</textarea></div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <label class="lbl" style="margin:0">Encuentros</label>
+          <button type="button" class="btn-s" style="font-size:10px;padding:3px 8px" onclick="_addEditEncuentro()">+ Agregar encuentro</button>
+        </div>
+        ${encsExistHTML}
+        <div id="edit-enc-nuevos"></div>
+      </div>
     </div>`;
 
   const btns = `
+    <button class="btn-s" style="color:var(--rojo);margin-right:auto" onclick="_confirmarEliminarActividad('${actId}')">Eliminar</button>
     <button class="btn-s" onclick="_cerrarModalObj('modal-edit-act')">Cancelar</button>
     <button class="btn-p" onclick="_guardarEdicionActividad('${actId}')">Guardar cambios</button>`;
   _objModal('modal-edit-act', 'Editar actividad', html, btns);
 }
 
+function _addEditEncuentro() {
+  _editNuevosEncs.push({ fecha: hoyISO(), hora: '', tematica: '' });
+  _renderEditEncuentrosNuevos();
+}
+
+function _removeEditEncuentro(i) {
+  _editNuevosEncs.splice(i, 1);
+  _renderEditEncuentrosNuevos();
+}
+
+function _renderEditEncuentrosNuevos() {
+  const cont = document.getElementById('edit-enc-nuevos');
+  if (!cont) return;
+  cont.innerHTML = _editNuevosEncs.map((enc, i) => `
+    <div style="background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad);padding:10px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:10px;font-weight:600;color:var(--verde);text-transform:uppercase;letter-spacing:.5px">Nuevo encuentro</div>
+        <button type="button" onclick="_removeEditEncuentro(${i})" style="background:none;border:none;cursor:pointer;font-size:18px;color:var(--txt3);padding:0;line-height:1">×</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label class="lbl">Fecha *</label>${renderFechaInput('edit-enc-fecha-' + i, enc.fecha)}</div>
+        <div><label class="lbl">Hora</label>
+          <input type="time" id="edit-enc-hora-${i}" value="${enc.hora}" style="width:100%;border:1px solid var(--brd);border-radius:var(--rad);padding:8px;background:var(--surf);color:var(--txt)">
+        </div>
+      </div>
+      <div><label class="lbl">Temática</label>
+        <input type="text" id="edit-enc-tematica-${i}" value="${enc.tematica}" placeholder="Tema de este encuentro (opcional)">
+      </div>
+    </div>`).join('');
+}
+
 async function _guardarEdicionActividad(actId) {
-  const titulo    = document.getElementById('edit-act-titulo')?.value.trim();
-  const tipo      = document.getElementById('edit-act-tipo')?.value;
-  const lugar     = document.getElementById('edit-act-lugar')?.value.trim() || null;
-  const objTxt    = document.getElementById('edit-act-obj-txt')?.value.trim() || null;
-  const resultado = document.getElementById('edit-act-resultado')?.value.trim() || null;
+  const titulo = document.getElementById('edit-act-titulo')?.value.trim();
+  const tipo   = document.getElementById('edit-act-tipo')?.value;
+  const lugar  = document.getElementById('edit-act-lugar')?.value.trim() || null;
+  const objTxt = document.getElementById('edit-act-obj-txt')?.value.trim() || null;
   if (!titulo) { alert('El título es obligatorio.'); return; }
   const btn = document.querySelector('#modal-edit-act .btn-p');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
   const { error } = await sb.from('reuniones').update({
     titulo, tipo_actividad: tipo, lugar,
-    objetivo_actividad: objTxt, descripcion: objTxt, resultado,
+    objetivo_actividad: objTxt, descripcion: objTxt,
   }).eq('id', actId);
   if (error) {
     if (btn) { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
     alert('Error: ' + error.message);
     return;
   }
+  if (_editNuevosEncs.length) {
+    const maxOrden = window._editEncMaxOrden || 1;
+    const rows = _editNuevosEncs.map((enc, i) => ({
+      reunion_id: actId,
+      fecha:      getFechaInput('edit-enc-fecha-' + i) || enc.fecha,
+      hora:       document.getElementById('edit-enc-hora-' + i)?.value || null,
+      tematica:   document.getElementById('edit-enc-tematica-' + i)?.value?.trim() || null,
+      orden:      maxOrden + i + 1,
+    }));
+    const { error: errEnc } = await sb.from('actividad_encuentros').insert(rows);
+    if (errEnc) console.error('Error guardando encuentros:', errEnc.message);
+  }
   _cerrarModalObj('modal-edit-act');
   _toastObj('✓ Actividad actualizada');
-  await rEOE();
+  await _recargarActividadesEOE();
+}
+
+async function _confirmarEliminarActividad(actId) {
+  if (!confirm('¿Eliminar esta actividad? Esta acción no se puede deshacer.')) return;
+  _cerrarModalObj('modal-edit-act');
+  await sb.from('actividad_encuentros').delete().eq('reunion_id', actId);
+  await sb.from('reunion_invitados').delete().eq('reunion_id', actId);
+  const { error } = await sb.from('reuniones').delete().eq('id', actId);
+  if (error) { alert('Error al eliminar: ' + error.message); return; }
+  _toastObj('✓ Actividad eliminada');
+  await _recargarActividadesEOE();
+}
+
+async function _recargarActividadesEOE() {
+  if (CUR_PAGE === 'dash') await rDash();
+  else await rEOE();
 }
 
 // =====================================================

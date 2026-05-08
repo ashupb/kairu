@@ -45,7 +45,6 @@ const NAV_CONFIG = {
     { id:'prob',    icon:'△',  label:'Problemáticas' },
     { id:'leg',     icon:'▤',  label:'Resumen del estudiante' },
     { id:'obj',     icon:'◎',  label:'Objetivos' },
-    { id:'eoe',     icon:'✦',  label:'Panel EOE' },
   ],
   docente: [
     { sec: 'General' },

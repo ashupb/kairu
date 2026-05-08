@@ -315,8 +315,8 @@ const BOTTOM_NAV_ITEMS = {
   ],
   eoe: [
     { id:'dash',     icon:'⌂',  label:'Inicio' },
+    { id:'prob',     icon:'△',  label:'Situaciones' },
     { id:'agenda',   icon:'▦',  label:'Agenda' },
-    { id:'eoe',      icon:'✦',  label:'Casos' },
     { id:'intensif', icon:'◈',  label:'Intensif.' },
     { id:'leg',      icon:'▤',  label:'Resumen' },
   ],
