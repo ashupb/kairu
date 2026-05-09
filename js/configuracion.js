@@ -49,7 +49,7 @@ const NIVEL_LABELS_ADM = {
 };
 
 const ROL_LABELS_ADM = {
-  director_general: 'Director General',
+  director_general: 'Administrador',
   directivo_nivel:  'Directivo de Nivel',
   secretario:       'Secretario/a',
   vicedirector:     'Vicedirector/a',
@@ -1988,8 +1988,7 @@ async function _renderParamGlobal() {
   // Invalidar cache de tipos de instancia usado en calificaciones.js
   window._tiposInstanciaCache = null;
 
-  const [tiposEvalRes, tiposJustRes, tiposEventoRes, tiposInstRes, tiposProbRes, tiposIntervRes] = await Promise.all([
-    sb.from('tipos_evaluacion').select('*').eq('institucion_id', instId).order('nombre'),
+  const [tiposJustRes, tiposEventoRes, tiposInstRes, tiposProbRes, tiposIntervRes] = await Promise.all([
     sb.from('tipos_justificacion').select('*').eq('institucion_id', instId).order('nombre'),
     sb.from('tipos_evento').select('*').eq('institucion_id', instId).order('nombre'),
     sb.from('tipos_instancia_evaluativa').select('*').eq('institucion_id', instId).eq('activo', true).order('created_at'),
@@ -1997,7 +1996,6 @@ async function _renderParamGlobal() {
     sb.from('tipos_intervencion').select('*').eq('institucion_id', instId).eq('activo', true).order('orden'),
   ]);
 
-  const tiposEval   = tiposEvalRes.data   || [];
   const tiposJust   = tiposJustRes.data   || [];
   const tiposEvento = tiposEventoRes.data || [];
   let   tiposInst   = tiposInstRes.data   || [];
@@ -2025,18 +2023,6 @@ async function _renderParamGlobal() {
       <div style="display:flex;gap:8px;margin-top:10px">
         <input type="text" id="new-tipo-inst-global" placeholder="Ej: Exposición oral" style="flex:1">
         <button class="btn-s" onclick="_agregarTipoInst()">Agregar</button>
-      </div>
-    </div>
-
-    <!-- TIPOS EVALUACIÓN -->
-    <div class="card">
-      <div class="card-t">Tipos de evaluación</div>
-      <div id="lista-tipos-eval">
-        ${_renderListaTipos(tiposEval, 'tipos_evaluacion', 'global', 'lista-tipos-eval')}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <input type="text" id="new-tipo-eval-global" placeholder="Nuevo tipo de evaluación" style="flex:1">
-        <button class="btn-s" onclick="_agregarTipo('tipos_evaluacion','new-tipo-eval-global','global','lista-tipos-eval')">Agregar</button>
       </div>
     </div>
 
@@ -2830,19 +2816,24 @@ async function _renderCicloLectivo() {
   const instId = USUARIO_ACTUAL.institucion_id;
   const anio   = new Date().getFullYear();
 
-  const [periodosRes, cierresRes] = await Promise.all([
+  const [periodosRes, cierresRes, instRes] = await Promise.all([
     sb.from('periodos_intensificacion')
       .select('*').eq('institucion_id', instId)
       .eq('ciclo_lectivo', anio).order('fecha_inicio'),
     sb.from('cierres_periodo')
       .select('*').eq('institucion_id', instId)
       .eq('ciclo_lectivo', anio).order('tipo'),
+    sb.from('instituciones')
+      .select('fecha_inicio_ciclo,fecha_fin_ciclo,fecha_activacion')
+      .eq('id', instId).single(),
   ]);
 
-  const periodos = periodosRes.data || [];
-  const cierres  = cierresRes.data  || [];
-  const cierreC1 = cierres.find(c => c.tipo === 'cuatrimestre_1');
-  const cierreC2 = cierres.find(c => c.tipo === 'cuatrimestre_2');
+  const periodos    = periodosRes.data || [];
+  const cierres     = cierresRes.data  || [];
+  const cierreC1    = cierres.find(c => c.tipo === 'cuatrimestre_1');
+  const cierreC2    = cierres.find(c => c.tipo === 'cuatrimestre_2');
+  const instCiclo   = instRes.data || {};
+  const fechaActiv  = instCiclo.fecha_activacion;
 
   const TIPO_LABELS = {
     inicio_c1: 'Inicio C1', fin_c1: 'Fin C1',
@@ -2850,6 +2841,52 @@ async function _renderCicloLectivo() {
   };
 
   sec.innerHTML = `
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-t">Fechas del ciclo lectivo ${anio}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:14px">
+        Establecé el rango del año lectivo. La fecha de inicio es el primer día de clases y la de cierre el último.
+      </div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div class="adm-form-row" style="flex:1;min-width:160px;margin-bottom:0">
+          <label class="adm-label">Fecha de inicio</label>
+          <input type="date" id="cl-fecha-inicio" value="${instCiclo.fecha_inicio_ciclo || ''}">
+        </div>
+        <div class="adm-form-row" style="flex:1;min-width:160px;margin-bottom:0">
+          <label class="adm-label">Fecha de cierre</label>
+          <input type="date" id="cl-fecha-fin" value="${instCiclo.fecha_fin_ciclo || ''}">
+        </div>
+      </div>
+      <div class="acc" style="margin-top:14px">
+        <button class="btn-s" onclick="_guardarFechasCiclo()">Guardar fechas</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-t">Activación del sistema</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
+        Al activar el sistema empiezan a correr los días sin lista, las alertas por inasistencia y todos los contadores automáticos.
+      </div>
+      ${fechaActiv ? `
+        <div style="display:flex;align-items:center;gap:10px;padding:12px;background:#e8f5e9;border-radius:var(--rad);border-left:3px solid var(--verde);margin-bottom:12px">
+          <div style="font-size:18px">✅</div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--verde)">Sistema activo</div>
+            <div style="font-size:11px;color:var(--txt2)">Activado el ${_fmtFechaHora(fechaActiv)}</div>
+          </div>
+        </div>
+        <button class="btn-s" style="font-size:11px;color:var(--txt3)" onclick="_reactivarSistema()">Reactivar (reinicia la fecha de activación)</button>
+      ` : `
+        <div style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid var(--brd);margin-bottom:12px">
+          <div style="font-size:18px">⏸</div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--txt2)">Sistema no activado</div>
+            <div style="font-size:11px;color:var(--txt3)">Los contadores de asistencia y alertas no están corriendo.</div>
+          </div>
+        </div>
+        <button class="btn-p" id="btn-activar-sistema" onclick="_activarSistema()">Iniciar uso de la app</button>
+      `}
+    </div>
+
     <div class="card" style="margin-bottom:14px">
       <div class="card-t">Períodos de intensificación — ${anio}</div>
       <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
@@ -2922,6 +2959,47 @@ function _fmtFecha(iso) {
   if (!iso) return '—';
   const d = new Date(iso + 'T12:00:00');
   return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+}
+
+function _fmtFechaHora(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+async function _guardarFechasCiclo() {
+  const inicio = document.getElementById('cl-fecha-inicio')?.value;
+  const fin    = document.getElementById('cl-fecha-fin')?.value;
+  if (inicio && fin && fin < inicio) {
+    alert('La fecha de cierre debe ser posterior a la de inicio.'); return;
+  }
+  const { error } = await sb.from('instituciones')
+    .update({ fecha_inicio_ciclo: inicio || null, fecha_fin_ciclo: fin || null })
+    .eq('id', USUARIO_ACTUAL.institucion_id);
+  if (error) { alert('Error al guardar: ' + error.message); return; }
+  _toastOk('Fechas del ciclo lectivo guardadas.');
+}
+
+async function _activarSistema() {
+  if (!confirm('¿Activar el sistema ahora? Los contadores de asistencia y alertas empezarán a correr desde este momento.')) return;
+  const btn = document.getElementById('btn-activar-sistema');
+  if (btn) { btn.disabled = true; btn.textContent = 'Activando...'; }
+  const { error } = await sb.from('instituciones')
+    .update({ fecha_activacion: new Date().toISOString() })
+    .eq('id', USUARIO_ACTUAL.institucion_id);
+  if (error) { alert('Error al activar: ' + error.message); if (btn) { btn.disabled = false; btn.textContent = 'Iniciar uso de la app'; } return; }
+  _toastOk('¡Sistema activado! Los contadores están corriendo.');
+  await _renderCicloLectivo();
+}
+
+async function _reactivarSistema() {
+  if (!confirm('¿Reiniciar la fecha de activación? Esto reemplazará la fecha actual. Los contadores se calcularán desde ahora.')) return;
+  const { error } = await sb.from('instituciones')
+    .update({ fecha_activacion: new Date().toISOString() })
+    .eq('id', USUARIO_ACTUAL.institucion_id);
+  if (error) { alert('Error: ' + error.message); return; }
+  _toastOk('Fecha de activación actualizada.');
+  await _renderCicloLectivo();
 }
 
 function _nuevoPeriodoIntensif() {
