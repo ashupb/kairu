@@ -271,8 +271,9 @@ async function verCursoDirector(cursoId, nivel) {
     </div>` : ''}
 
     <!-- Tabs -->
-    <div style="display:flex;gap:6px;margin-bottom:14px">
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn-p" style="font-size:11px" onclick="mostrarGrillaDirector('${cursoId}','${nivel}')">📊 Grilla completa</button>
+      <button class="btn-s" style="font-size:11px" onclick="abrirCargaRetroactiva('${cursoId}','${curso?.nombre||''}${curso?.division||''}','${nivel}')">📅 Carga retroactiva</button>
     </div>
 
     <!-- Resumen por alumno -->
@@ -611,6 +612,10 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
       </div>
     </div>
 
+    <div style="margin-bottom:10px">
+      <button class="btn-s" style="font-size:11px" onclick="abrirCargaRetroactiva('${cursoId}','${nombreCurso}','${nivel}')">📅 Carga retroactiva</button>
+    </div>
+
     ${!fechas.length ? '<div class="empty-state">Sin registros aún. Tomá la primera lista.</div>' : `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
       <button class="btn-s" style="font-size:11px" onclick="_descargarGrillaCSV()">⬇ Descargar</button>
@@ -772,6 +777,10 @@ async function rAsistDocente() {
         return `<button class="btn-s" style="font-size:11px"
           onclick="mostrarGrillaPreceptor('${cu.id}','${cu.nivel}','${cu.nombre}${cu.division}','rAsistDocente')">
           📊 ${cu.nombre}${cu.division}
+        </button>
+        <button class="btn-s" style="font-size:11px"
+          onclick="abrirCargaRetroactiva('${cu.id}','${cu.nombre}${cu.division}','${cu.nivel}')">
+          📅 Retro ${cu.nombre}${cu.division}
         </button>`;
       }).join('')}
     </div>` : ''}
