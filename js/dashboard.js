@@ -592,7 +592,7 @@ async function rDashEOE() {
       .order('fecha', { ascending: false })
       .limit(50),
     sb.from('intervenciones')
-      .select('id,descripcion,created_at,problematica_id,prob:problematicas(id,tipo,institucion_id,alumno:alumnos(nombre,apellido,curso:cursos(nombre,division,nivel)))')
+      .select('id,descripcion,created_at,problematica_id,prob:problematicas(id,tipo,descripcion,modalidad,institucion_id,alumno:alumnos(nombre,apellido,curso:cursos(nombre,division,nivel)))')
       .eq('tipo', 'derivacion_eoe')
       .order('created_at', { ascending: false })
       .limit(50),
@@ -699,24 +699,30 @@ async function rDashEOE() {
   const derivEOEHTML = derivEOE.length
     ? derivEOE.slice(0, 5).map(d => {
         const al  = d.prob?.alumno;
-        const nom = al ? `${al.apellido}, ${al.nombre}` : '—';
+        const probId = d.prob?.id || '';
+        const nom = al
+          ? `${al.apellido}, ${al.nombre}`
+          : d.prob?.descripcion
+            ? d.prob.descripcion.slice(0, 60) + (d.prob.descripcion.length > 60 ? '…' : '')
+            : `Caso ${d.prob?.modalidad === 'grupal' ? 'grupal' : d.prob?.modalidad === 'curso' ? 'por curso' : ''} · ${labelTipo(d.prob?.tipo)}`;
         const cu  = al?.curso;
-        const cur = cu ? `${cu.nombre}${cu.division || ''} · ${cu.nivel}` : '—';
+        const cur = cu ? `${cu.nombre}${cu.division || ''} · ${cu.nivel}` : (d.prob?.modalidad !== 'individual' ? 'Grupal / Curso' : '');
         const dias = Math.floor((Date.now() - new Date(d.created_at).getTime()) / 86400000);
         return `
-          <div class="card" style="padding:8px 12px;margin-bottom:4px;border-left:3px solid var(--azul)">
+          <div class="card" style="padding:8px 12px;margin-bottom:4px;border-left:3px solid var(--azul);cursor:pointer"
+               onclick="EX='pr-${probId}';goPage('prob')">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
               <div style="flex:1;min-width:0">
                 <div style="font-size:11px;font-weight:600">${nom}</div>
-                <div style="font-size:10px;color:var(--txt2)">${cur}</div>
+                ${cur ? `<div style="font-size:10px;color:var(--txt2)">${cur}</div>` : ''}
               </div>
-              <button class="btn-ghost" style="font-size:10px;padding:2px 6px;flex-shrink:0" onclick="EX='pr-${d.prob?.id}';goPage('prob')">Ver →</button>
+              <span style="color:var(--azul);font-size:14px;flex-shrink:0">›</span>
             </div>
-            ${d.descripcion ? `<div style="font-size:10px;color:var(--txt2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.descripcion}</div>` : ''}
+            ${d.descripcion ? `<div style="font-size:10px;color:var(--txt2);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${d.descripcion}</div>` : ''}
             <div style="font-size:10px;color:var(--txt3);margin-top:2px">${dias === 0 ? 'Hoy' : `Hace ${dias}d`}</div>
           </div>`;
       }).join('')
-      + (derivEOE.length > 5 ? `<div style="font-size:10px;color:var(--azul);margin-top:4px">+ ${derivEOE.length - 5} más</div>` : '')
+      + (derivEOE.length > 5 ? `<div style="font-size:10px;color:var(--azul);margin-top:4px;cursor:pointer" onclick="goPage('prob')">+ ${derivEOE.length - 5} más →</div>` : '')
     : '<div style="font-size:11px;color:var(--verde);padding:8px 0">✅ Sin derivaciones pendientes de atención.</div>';
 
   // ── Sección 3: Próximas actividades (agenda institucional) ──
