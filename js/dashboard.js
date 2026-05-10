@@ -95,10 +95,7 @@ function renderObjetivosStrip(objetivos) {
   const lista = (objetivos || []).filter(o => o.estado !== 'archivado' && o.estado !== 'logrado');
   if (!lista.length) return '';
 
-  const activos    = lista.filter(o => o.estado === 'activo').length;
-  const enRiesgo   = lista.filter(o => o.estado === 'en_riesgo').length;
   const empeorando = lista.filter(o => o.tendencia === 'empeorando');
-  const problemas  = lista.filter(o => o.estado === 'en_riesgo' || o.tendencia === 'empeorando');
 
   return `
     ${empeorando.length ? `
@@ -108,28 +105,19 @@ function renderObjetivosStrip(objetivos) {
       <div class="acc" style="margin-top:8px"><button class="btn-d" onclick="goPage('obj')">Ver objetivos →</button></div>
     </div>` : ''}
     <div class="card obj-strip" onclick="goPage('obj')" style="cursor:pointer;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <span style="font-size:12px;font-weight:600">◎ Objetivos institucionales</span>
-        <button class="btn-s" style="font-size:10px" onclick="event.stopPropagation();goPage('obj')">Ver todos →</button>
+        <button class="btn-ghost" style="font-size:10px" onclick="event.stopPropagation();goPage('obj')">Ver todos →</button>
       </div>
-      <div class="obj-barra">
-        <div style="flex:${activos||0.1};background:var(--verde);border-radius:4px 0 0 4px"></div>
-        <div style="flex:${enRiesgo||0};background:var(--rojo);border-radius:0 4px 4px 0"></div>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        ${lista.slice(0, 6).map(o => `
+          <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+            <span style="color:${o.estado==='en_riesgo'?'var(--rojo)':o.tendencia==='empeorando'?'var(--ambar)':'var(--verde)'};flex-shrink:0">●</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.nombre}</span>
+            ${o.estado==='en_riesgo' ? `<span class="tag tr" style="font-size:9px;flex-shrink:0">Riesgo</span>` : o.tendencia==='empeorando' ? `<span class="tag ta" style="font-size:9px;flex-shrink:0">Empeorando</span>` : ''}
+          </div>`).join('')}
+        ${lista.length > 6 ? `<div style="font-size:10px;color:var(--txt2);margin-top:2px">+ ${lista.length-6} más</div>` : ''}
       </div>
-      <div style="display:flex;gap:14px;font-size:10px;margin-top:6px;flex-wrap:wrap">
-        <span style="color:var(--verde)">● ${activos} activo${activos!==1?'s':''}</span>
-        ${enRiesgo ? `<span style="color:var(--rojo)">● ${enRiesgo} en riesgo</span>` : ''}
-        ${empeorando.length ? `<span style="color:var(--rojo)">↓ ${empeorando.length} empeorando</span>` : ''}
-      </div>
-      ${problemas.length ? `
-        <div style="margin-top:10px;border-top:1px solid var(--brd);padding-top:8px;display:flex;flex-direction:column;gap:5px">
-          ${problemas.slice(0,3).map(o => `
-            <div style="display:flex;align-items:center;gap:8px;font-size:11px">
-              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.nombre}</span>
-              <span class="tag ${o.estado==='en_riesgo'?'tr':'ta'}" style="font-size:9px;flex-shrink:0">${o.estado==='en_riesgo'?'En riesgo':'Empeorando'}</span>
-            </div>`).join('')}
-          ${problemas.length > 3 ? `<div style="font-size:10px;color:var(--verde);text-align:right">+ ${problemas.length-3} más →</div>` : ''}
-        </div>` : ''}
     </div>`;
 }
 
@@ -179,6 +167,60 @@ function renderAlertasProb(alertasProb) {
           </div>`;
         }).join('')}
         ${alertasProb.length > 4 ? `<div style="font-size:10px;color:var(--rojo);cursor:pointer" onclick="goPage('prob')">+ ${alertasProb.length - 4} más →</div>` : ''}
+      </div>
+    </div>`;
+}
+
+// ── Director: Alertas de asistencia ───────────────────
+function renderAlertasAsistDir(alertasAsist) {
+  if (!alertasAsist.length) return '';
+  return `
+    <div class="alr" style="margin-bottom:14px;border-left-color:var(--ambar)">
+      <div class="alr-t">⚠️ ${alertasAsist.length} alerta${alertasAsist.length > 1 ? 's' : ''} de inasistencia</div>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
+        ${alertasAsist.slice(0, 5).map(a => {
+          const al  = a.alumnos;
+          const cu  = al?.cursos;
+          const nom = al ? `${al.apellido}, ${al.nombre}` : '—';
+          const cur = cu ? `${cu.nombre}${cu.division || ''}` : '';
+          const niv = cu?.nivel || '';
+          return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;cursor:pointer" onclick="goPage('asist')">
+            <span class="tag ${a.tipo_alerta >= 3 ? 'tr' : 'ta'}" style="font-size:9px">${a.tipo_alerta >= 3 ? 'Crítico' : 'Aviso'}</span>
+            <span>${nom}${cur ? ' · ' + cur : ''}${niv ? ' · ' + niv : ''} · ${a.total_faltas} faltas</span>
+          </div>`;
+        }).join('')}
+        ${alertasAsist.length > 5 ? `<div style="font-size:10px;color:var(--ambar);cursor:pointer" onclick="goPage('asist')">+ ${alertasAsist.length - 5} más →</div>` : ''}
+      </div>
+    </div>`;
+}
+
+// ── Director: Panel por nivel con nuevas métricas ─────
+function renderNivelPanelSituaciones(nivel, problematicasFull) {
+  const nc = NIVEL_CONFIG[nivel] || { color:'#888', bg:'#f5f5f5', label: nivel };
+  const probsNivel  = problematicasFull.filter(p => p.alumno?.curso?.nivel === nivel);
+  const urgentes    = probsNivel.filter(p => p.urgencia === 'alta');
+  const seguimiento = probsNivel.filter(p => p.estado === 'en_seguimiento');
+  const sinAtender  = probsNivel.filter(p => p.estado === 'abierta');
+
+  return `
+    <div class="nivel-panel" style="border-top:3px solid ${nc.color}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:700;color:${nc.color}">${nc.label}</div>
+        <button class="btn-s" style="font-size:9px;padding:3px 10px" onclick="goPage('prob')">Ir →</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        <div class="ns" style="cursor:pointer" onclick="goPage('prob')">
+          <div class="ns-v" style="color:var(--rojo)">${urgentes.length}</div>
+          <div class="ns-l">Urgentes</div>
+        </div>
+        <div class="ns" style="cursor:pointer" onclick="goPage('prob')">
+          <div class="ns-v" style="color:var(--ambar)">${seguimiento.length}</div>
+          <div class="ns-l">En Seguimiento</div>
+        </div>
+        <div class="ns" style="cursor:pointer" onclick="goPage('prob')">
+          <div class="ns-v">${sinAtender.length}</div>
+          <div class="ns-l">Sin atender</div>
+        </div>
       </div>
     </div>`;
 }
@@ -259,9 +301,9 @@ async function rDashDirector() {
 
   const hoy = sem.hoy;
 
-  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes, asistHoyRes, noLectRes, cursosRes] = await Promise.all([
+  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes, asistHoyRes, noLectRes, cursosRes, alertasAsistRes] = await Promise.all([
     sb.from('problematicas')
-      .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
+      .select('id,urgencia,estado,alumno:alumnos(curso:cursos(nivel))')
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento']),
     sb.from('objetivos')
@@ -287,7 +329,11 @@ async function rDashDirector() {
       .eq('institucion_id', instId).eq('rol', 'docente').or('activo.is.null,activo.eq.true'),
     sb.from('asistencia').select('estado,curso_id').eq('fecha', hoy).is('hora_clase', null),
     sb.from('dias_no_lectivos').select('fecha').eq('institucion_id', instId),
-    sb.from('cursos').select('id', { count:'exact', head:true }).eq('institucion_id', instId),
+    sb.from('cursos').select('id,nivel').eq('institucion_id', instId),
+    sb.from('alertas_asistencia')
+      .select('alumno_id,tipo_alerta,total_faltas,alumnos(nombre,apellido,cursos(nombre,division,nivel))')
+      .eq('institucion_id', instId)
+      .order('tipo_alerta', { ascending: false }),
   ]);
 
   window._diasNoLectivos = new Set((noLectRes.data || []).map(r => r.fecha));
@@ -303,7 +349,10 @@ async function rDashDirector() {
   checkAlertasProb(instId).catch(() => {});
 
   const asistHoy = asistHoyRes.data || [];
-  const totalCursos = cursosRes.count ?? 0;
+  const cursosData   = cursosRes.data || [];
+  const totalCursos  = cursosData.length;
+  const nivelesActivos = [...new Set(cursosData.map(c => c.nivel))];
+  const alertasAsist = alertasAsistRes.error ? [] : (alertasAsistRes.data || []);
   const asistContador = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
   asistHoy.forEach(a => { if (asistContador[a.estado] !== undefined) asistContador[a.estado]++; });
   const pctAsist = totalAlumnos > 0
@@ -339,7 +388,8 @@ async function rDashDirector() {
   const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
 
   const nivelesPanel = ['inicial','primario','secundario']
-    .map(n => renderNivelPanel(n, probs)).join('');
+    .filter(n => nivelesActivos.includes(n))
+    .map(n => renderNivelPanelSituaciones(n, probs)).join('');
 
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
@@ -351,17 +401,18 @@ async function rDashDirector() {
       <div class="mc" style="cursor:pointer" onclick="goPage('leg')"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div></div>
       <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probs.length}</div><div class="mc-l">SITUACIONES</div>${sinActividad > 0 ? `<div style="font-size:9px;color:var(--rojo);font-weight:600;margin-top:2px">${sinActividad} inactivas</div>` : ''}<div style="font-size:9px;color:var(--verde);margin-top:${sinActividad > 0 ? '2' : '6'}px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--ambar)">${alertas.length}</div><div class="mc-l">ALERTAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:var(--ambar)">${alertas.length + alertasAsist.length}</div><div class="mc-l">ALERTAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
 
     ${renderProximasActividades(eventosSem, sem.hoy, null)}
     ${renderAlertasProb(alertas)}
+    ${renderAlertasAsistDir(alertasAsist)}
     ${renderPendientesRespuesta(pendientes)}
     ${renderObjetivosStrip(objetivos)}
 
     <div class="dash-cols">
       <div class="dash-col-l">
-        <div class="sec-lb">Estado por nivel</div>
+        <div class="sec-lb">Situaciones problemáticas registradas</div>
         ${nivelesPanel}
         <div class="acc" style="margin-top:4px">
           <button class="btn-s" style="font-size:11px" onclick="goPage('prob')">△ Problemáticas</button>

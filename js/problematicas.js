@@ -186,6 +186,9 @@ async function rProb() {
         togProb('pr-' + _pid);
         setTimeout(() => document.getElementById('det-' + _pid)?.scrollIntoView({ behavior:'smooth', block:'start' }), 400);
       }, 100);
+    } else if (EX?.startsWith('pr-')) {
+      const _pid = EX.replace('pr-', '');
+      setTimeout(() => cargarDetProb(_pid), 50);
     }
 
     checkAlertasProb(USUARIO_ACTUAL.institucion_id).catch(() => {});
