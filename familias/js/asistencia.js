@@ -1,0 +1,13 @@
+async function rAsistencia() {
+  const el = document.getElementById('page-asistencia');
+  el.innerHTML = `
+    <div class="page-body">
+      <div class="page-header">
+        <h1 class="page-title">Asistencia</h1>
+      </div>
+      <div class="coming-soon-card">
+        <div class="coming-soon-icon">📅</div>
+        <p class="coming-soon-text">Próximamente disponible</p>
+      </div>
+    </div>`;
+}
