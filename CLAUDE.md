@@ -14,11 +14,42 @@ El objetivo es que cualquier instancia nueva de Claude pueda arrancar desde este
 
 **Backend**: Supabase (PostgreSQL + Auth + RLS). El cliente global es `sb`, inicializado en `js/config.js`.
 
+## Estructura del repositorio — DOS APPS en un mismo repo
+
+```
+kairu_demo/
+├── index.html          ← App INTERNA (Kairu institucional)
+├── js/                 ← Módulos de la app interna
+├── css/
+├── familias/           ← App FAMILIAS (portal para padres/tutores)
+│   ├── index.html
+│   ├── css/app.css
+│   └── js/             ← auth.js, main.js, inicio.js, comunicados.js, etc.
+├── KAIRU_FAMILIAS/     ← Carpeta legacy/espejo. NO usar para editar.
+└── migrations/
+```
+
+### Reglas de edición — CRÍTICAS
+
+- **App interna** → editar en `kairu_demo/` (raíz del repo)
+- **App familias** → editar en `kairu_demo/familias/` — **NUNCA** en `Desktop/KAIRU_FAMILIAS/` (fuera del repo)
+- `Desktop/KAIRU_FAMILIAS/` es una carpeta fuera del repo git. Si Claude editó ahí por error, copiar los cambios a `kairu_demo/familias/` antes de commitear.
+- La carpeta `kairu_demo/KAIRU_FAMILIAS/` es un espejo legacy; si se edita `familias/`, sincronizar también esa carpeta.
+
+### Deploy — Cloudflare Pages (automático en cada push)
+
+| App | Cloudflare root directory | Rama |
+|---|---|---|
+| App interna | `/` (raíz del repo) | main |
+| App familias | `/familias` | main |
+
+**Workflow**: editar archivos → `git add . && git commit && git push` → Cloudflare deploya ambas automáticamente.
+
 ## Desarrollo
 
 No hay comandos de build, lint ni tests. Para desarrollar:
 - Abrir `index.html` en el navegador (Live Server de VSCode o similar)
-- Las credenciales de Supabase están en `js/config.js`
+- Las credenciales de Supabase están en `js/config.js` (interna) y `familias/js/config.js` (familias)
 - Los cambios en JS se ven al recargar la página
 
 ## Arquitectura

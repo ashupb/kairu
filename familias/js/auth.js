@@ -99,22 +99,7 @@ async function logout() {
   USUARIO_FAMILIAR   = null;
   ALUMNO_ACTUAL      = null;
   INSTITUCION_ACTUAL = null;
-  document.getElementById('topbar').style.display     = 'none';
-  document.getElementById('bottom-nav').style.display = 'none';
   goPage('login');
-}
-
-// ── Cambiar alumno activo ─────────────────────────────────────────
-function setAlumno(alumnoId) {
-  const alumno = USUARIO_FAMILIAR?.alumnos?.find(a => a.id === alumnoId);
-  if (!alumno) return;
-  ALUMNO_ACTUAL = alumno;
-  renderTopBar();
-  const renderers = {
-    inicio: rInicio, comunicados: rComunicados, seguimiento: rSeguimiento,
-    asistencia: rAsistencia, agenda: rAgenda, mensajes: rMensajes, contactos: rContactos,
-  };
-  if (renderers[CUR_PAGE]) renderers[CUR_PAGE]();
 }
 
 // ── Toggle visibilidad contraseña ─────────────────────────────────
