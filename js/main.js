@@ -19,6 +19,7 @@ const PAGE_LABELS = {
   admin:     'Datos institucionales',
   agenda:    'Agenda institucional',
   notas:     'Calificaciones',
+  avisos:    'Comunicados a familias',
 };
 
 // ── ARRANQUE ─────────────────────────────────────────
@@ -74,7 +75,8 @@ async function goPage(id) {
     leg:       rLeg,
     eoe:       rEOE,
     admin:     rAdmin,
-    agenda:    rAgenda, 
+    agenda:    rAgenda,
+    avisos:    rAvisos,
   };
   if (renderers[id]) await renderers[id]();
 
