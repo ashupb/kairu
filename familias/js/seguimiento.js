@@ -18,12 +18,6 @@ const _ESTADO_LBL = {
   a_recursar:         'A recursar',
 };
 
-// Mapeo de numero de período a etiqueta
-// periodos_evaluativos.numero: 1 = 1° cuatrimestre, 2 = 2° cuatrimestre
-const _PERIODO_NUM_LBL = {
-  1: '1° cuatrimestre',
-  2: '2° cuatrimestre',
-};
 
 // ── Renderer principal ────────────────────────────────────────────────
 async function rSeguimiento() {
@@ -44,10 +38,10 @@ async function rSeguimiento() {
 
   try {
     const [califRes, trayRes] = await Promise.all([
-      // calificaciones.periodo_id → periodos_evaluativos (no periodos_intensificacion)
-      // Filtro ausente en JS para incluir filas con ausente=null
+      // calificaciones.periodo_id → periodos_evaluativos
+      // Incluir id del período para agrupar correctamente (numero puede ser null)
       sb.from('calificaciones')
-        .select('nota, ausente, materia_id, materias(nombre), instancias_evaluativas(nombre), periodos_evaluativos(nombre, anio, numero)')
+        .select('nota, ausente, materia_id, materias(nombre), periodos_evaluativos(id, nombre, anio, numero)')
         .eq('alumno_id', alumnoId)
         .not('nota', 'is', null),
 
@@ -70,17 +64,24 @@ async function rSeguimiento() {
       return;
     }
 
-    // ── Agrupar calificaciones: año → materia → numero_periodo → [notas] ──
+    // ── Agrupar calificaciones: año → materia → periodo_id → [notas] ──
+    // Usar periodo_id como clave (numero puede ser null en algunos registros)
     const califsPorAnio = {};
+    const _periodInfo   = {}; // pid → { nombre, numero }
+
     califs.forEach(c => {
-      const anio   = c.periodos_evaluativos?.anio;
-      const numero = c.periodos_evaluativos?.numero ?? 0;
-      const mat    = c.materias?.nombre || '—';
+      const p    = c.periodos_evaluativos;
+      const anio = p?.anio;
+      const pid  = p?.id || '_sin';
+      const mat  = c.materias?.nombre || '—';
       if (!anio) return;
-      if (!califsPorAnio[anio])               califsPorAnio[anio]               = {};
-      if (!califsPorAnio[anio][mat])          califsPorAnio[anio][mat]          = {};
-      if (!califsPorAnio[anio][mat][numero])  califsPorAnio[anio][mat][numero]  = [];
-      califsPorAnio[anio][mat][numero].push(Number(c.nota));
+      if (p?.id && !_periodInfo[pid]) {
+        _periodInfo[pid] = { nombre: p.nombre || 'Período', numero: p.numero };
+      }
+      if (!califsPorAnio[anio])             califsPorAnio[anio]             = {};
+      if (!califsPorAnio[anio][mat])        califsPorAnio[anio][mat]        = {};
+      if (!califsPorAnio[anio][mat][pid])   califsPorAnio[anio][mat][pid]   = [];
+      califsPorAnio[anio][mat][pid].push(Number(c.nota));
     });
 
     // ── Agrupar trayectoria: ciclo → [registros] ─────────────────────
@@ -104,7 +105,7 @@ async function rSeguimiento() {
           <h1 class="page-title">Seguimiento académico</h1>
         </div>
         ${pendientes.length ? _seguimientoPendientes(pendientes) : ''}
-        ${aniosCalif.map(anio => _califAnioCard(anio, califsPorAnio[anio])).join('')}
+        ${aniosCalif.map(anio => _califAnioCard(anio, califsPorAnio[anio], _periodInfo)).join('')}
         ${tray.length ? _trayectoriaSection(porCiclo) : ''}
       </div>`;
 
@@ -120,23 +121,35 @@ async function rSeguimiento() {
 }
 
 // ── Sección: Calificaciones de un año ────────────────────────────────
-function _califAnioCard(anio, materiaMap) {
-  // Ordenar por numero de período (1, 2, 0 para sin período)
-  const numerosOrden = [1, 2, 0];
+function _califAnioCard(anio, materiaMap, periodInfo) {
+  // Recopilar todos los periodo_ids que aparecen en este año, ordenados
+  // Orden: por numero (si está definido), luego alfabético por nombre
+  const pidsEnAnio = new Set();
+  Object.values(materiaMap).forEach(periodos => {
+    Object.keys(periodos).forEach(pid => pidsEnAnio.add(pid));
+  });
+  const pidsOrdenados = [...pidsEnAnio].sort((a, b) => {
+    const pa = periodInfo[a] || {};
+    const pb = periodInfo[b] || {};
+    if (pa.numero != null && pb.numero != null) return pa.numero - pb.numero;
+    if (pa.numero != null) return -1;
+    if (pb.numero != null) return 1;
+    return (pa.nombre || '').localeCompare(pb.nombre || '');
+  });
 
   const rows = Object.entries(materiaMap)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([mat, periodos]) => {
-      const periodLines = numerosOrden
-        .filter(num => periodos[num]?.length)
-        .map(num => {
-          const notas = periodos[num];
+      const periodLines = pidsOrdenados
+        .filter(pid => periodos[pid]?.length)
+        .map(pid => {
+          const notas = periodos[pid];
           const prom  = notas.reduce((a, b) => a + b, 0) / notas.length;
           const chips = notas.map(n => _notaBadge(n)).join('');
           const promBadge = notas.length > 1
             ? `<span class="nota-bdg ${_notaClase(prom)} nota-bdg--prom">${_fmtVal(prom)}</span>`
             : '';
-          const lbl = _PERIODO_NUM_LBL[num] || 'Otro período';
+          const lbl = periodInfo[pid]?.nombre || 'Período';
           return `
             <div class="seg-periodo-row">
               <span class="seg-periodo-lbl">${lbl}</span>
