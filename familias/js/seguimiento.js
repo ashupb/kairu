@@ -18,13 +18,11 @@ const _ESTADO_LBL = {
   a_recursar:         'A recursar',
 };
 
-// Orden en que se muestran los períodos dentro de cada materia
-const _TIPO_ORDEN = ['inicio_c1', 'fin_c1', 'diciembre', 'febrero'];
-const _TIPO_LBL = {
-  inicio_c1: '1° cuatrimestre',
-  fin_c1:    '2° cuatrimestre',
-  diciembre: 'Diciembre (intens.)',
-  febrero:   'Febrero (intens.)',
+// Mapeo de numero de período a etiqueta
+// periodos_evaluativos.numero: 1 = 1° cuatrimestre, 2 = 2° cuatrimestre
+const _PERIODO_NUM_LBL = {
+  1: '1° cuatrimestre',
+  2: '2° cuatrimestre',
 };
 
 // ── Renderer principal ────────────────────────────────────────────────
@@ -46,10 +44,10 @@ async function rSeguimiento() {
 
   try {
     const [califRes, trayRes] = await Promise.all([
-      // Calificaciones individuales: unir con materia, instancia y período
-      // Filtro ausente en JS (no en query) para incluir filas con ausente=null
+      // calificaciones.periodo_id → periodos_evaluativos (no periodos_intensificacion)
+      // Filtro ausente en JS para incluir filas con ausente=null
       sb.from('calificaciones')
-        .select('nota, ausente, materia_id, materias(nombre), instancias_evaluativas(nombre), periodos_intensificacion(tipo, ciclo_lectivo)')
+        .select('nota, ausente, materia_id, materias(nombre), instancias_evaluativas(nombre), periodos_evaluativos(nombre, anio, numero)')
         .eq('alumno_id', alumnoId)
         .not('nota', 'is', null),
 
@@ -72,17 +70,17 @@ async function rSeguimiento() {
       return;
     }
 
-    // ── Agrupar calificaciones: año → materia → tipo_periodo → [notas] ──
+    // ── Agrupar calificaciones: año → materia → numero_periodo → [notas] ──
     const califsPorAnio = {};
     califs.forEach(c => {
-      const anio = c.periodos_intensificacion?.ciclo_lectivo;
-      const tipo = c.periodos_intensificacion?.tipo;
-      const mat  = c.materias?.nombre || '—';
-      if (!anio || !tipo) return;
-      if (!califsPorAnio[anio])             califsPorAnio[anio]             = {};
-      if (!califsPorAnio[anio][mat])        califsPorAnio[anio][mat]        = {};
-      if (!califsPorAnio[anio][mat][tipo])  califsPorAnio[anio][mat][tipo]  = [];
-      califsPorAnio[anio][mat][tipo].push(Number(c.nota));
+      const anio   = c.periodos_evaluativos?.anio;
+      const numero = c.periodos_evaluativos?.numero ?? 0;
+      const mat    = c.materias?.nombre || '—';
+      if (!anio) return;
+      if (!califsPorAnio[anio])               califsPorAnio[anio]               = {};
+      if (!califsPorAnio[anio][mat])          califsPorAnio[anio][mat]          = {};
+      if (!califsPorAnio[anio][mat][numero])  califsPorAnio[anio][mat][numero]  = [];
+      califsPorAnio[anio][mat][numero].push(Number(c.nota));
     });
 
     // ── Agrupar trayectoria: ciclo → [registros] ─────────────────────
@@ -123,21 +121,25 @@ async function rSeguimiento() {
 
 // ── Sección: Calificaciones de un año ────────────────────────────────
 function _califAnioCard(anio, materiaMap) {
+  // Ordenar por numero de período (1, 2, 0 para sin período)
+  const numerosOrden = [1, 2, 0];
+
   const rows = Object.entries(materiaMap)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([mat, periodos]) => {
-      const periodLines = _TIPO_ORDEN
-        .filter(tipo => periodos[tipo]?.length)
-        .map(tipo => {
-          const notas = periodos[tipo];
+      const periodLines = numerosOrden
+        .filter(num => periodos[num]?.length)
+        .map(num => {
+          const notas = periodos[num];
           const prom  = notas.reduce((a, b) => a + b, 0) / notas.length;
           const chips = notas.map(n => _notaBadge(n)).join('');
           const promBadge = notas.length > 1
             ? `<span class="nota-bdg ${_notaClase(prom)} nota-bdg--prom">${_fmtVal(prom)}</span>`
             : '';
+          const lbl = _PERIODO_NUM_LBL[num] || 'Otro período';
           return `
             <div class="seg-periodo-row">
-              <span class="seg-periodo-lbl">${_TIPO_LBL[tipo]}</span>
+              <span class="seg-periodo-lbl">${lbl}</span>
               <div class="seg-notas-wrap">${chips}${promBadge}</div>
             </div>`;
         });
