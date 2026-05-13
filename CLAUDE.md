@@ -123,6 +123,8 @@ El rol `eoe` tiene acceso multi-nivel (igual que `director_general`) en asistenc
 | `eventos_institucionales` | Eventos de agenda con `nivel`, `convocados_ids[]`, `convocatoria_grupos[]` |
 | `config_asistencia` | Configuración por nivel e institución — ver columnas abajo |
 | `tipos_justificacion` | Tipos de justificación de ausencia |
+| `tipos_instancia_evaluativa` | Tipos de instancia evaluativa configurables por institución (`nombre`, `activo`, `es_recuperatorio`, `orden`). Gestionados desde configuracion.js. **Nota**: `instancias_evaluativas.tipo_id` apunta a esta tabla (FK corregida en v20). La tabla legacy `tipos_evaluacion` queda en desuso. |
+| `instancias_evaluativas` | Instancias evaluativas de un curso × materia × período. FK `tipo_id` → `tipos_instancia_evaluativa`. Tiene columna denormalizada `es_recuperatorio`. |
 
 ### config_asistencia — columnas relevantes
 

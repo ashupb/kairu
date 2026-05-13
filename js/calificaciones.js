@@ -228,7 +228,7 @@ async function rNotas() {
   const rol    = USUARIO_ACTUAL.rol;
 
   const [tiposRes, periodosRes, cfgNotasRes] = await Promise.all([
-    sb.from('tipos_evaluacion').select('*').eq('institucion_id', instId).eq('activo', true).order('nombre'),
+    sb.from('tipos_instancia_evaluativa').select('*').eq('institucion_id', instId).eq('activo', true).order('nombre'),
     sb.from('periodos_evaluativos').select('*').eq('institucion_id', instId).eq('anio', 2026).order('nivel').order('numero'),
     sb.from('config_asistencia').select('*').eq('institucion_id', instId),
   ]);
@@ -496,7 +496,7 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
     const [alumnosRes, instanciasRes, califRes, configRes, cierreRes, promManualRes] = await Promise.all([
       sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
       sb.from('instancias_evaluativas')
-        .select('*, tipos_evaluacion(nombre,es_recuperatorio)')
+        .select('*, tipos_instancia_evaluativa(nombre,es_recuperatorio)')
         .eq('curso_id', cursoId).eq('materia_id', materiaId)
         .eq('periodo_id', PERIODO_SEL).order('fecha'),
       sb.from('calificaciones').select('*')
@@ -544,7 +544,7 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
       instancias.forEach(inst => {
         const calif = califIdx[`${al.id}_${inst.id}`];
         if (!calif || calif.ausente || calif.nota === null) return;
-        const esRecup = inst.tipos_evaluacion?.es_recuperatorio;
+        const esRecup = inst.tipos_instancia_evaluativa?.es_recuperatorio;
         if (esRecup && recReempl && inst.instancia_original_id) {
           usadas[inst.instancia_original_id] = calif.nota; // reemplaza
         } else if (!esRecup) {
@@ -624,13 +624,13 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
               <tr>
                 <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
                 ${instancias.map(inst => `
-                  <th class="${inst.tipos_evaluacion?.es_recuperatorio ? 'th-recup' : ''}"
-                    title="${inst.tipos_evaluacion?.nombre || ''}"
+                  <th class="${inst.tipos_instancia_evaluativa?.es_recuperatorio ? 'th-recup' : ''}"
+                    title="${inst.tipos_instancia_evaluativa?.nombre || ''}"
                     style="width:68px;min-width:68px;max-width:68px">
                     <div style="font-size:9px;width:60px;line-height:1.3;overflow:hidden;
                       display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
                       word-break:normal;overflow-wrap:normal;margin:0 auto">
-                      ${inst.tipos_evaluacion?.nombre || '—'}
+                      ${inst.tipos_instancia_evaluativa?.nombre || '—'}
                     </div>
                     <div style="font-size:9px;opacity:.6">${formatFechaCorta(inst.fecha)}</div>
                   </th>`).join('')}
@@ -821,7 +821,7 @@ async function guardarNotaModal(alumnoId, instanciaId, cursoId, materiaId, perio
 async function abrirCargaBulk(cursoId, materiaId, periodoId) {
   const [{ data: todasInstancias }, { data: alumnos }] = await Promise.all([
     sb.from('instancias_evaluativas')
-      .select('*, tipos_evaluacion(nombre)')
+      .select('*, tipos_instancia_evaluativa(nombre)')
       .eq('curso_id', cursoId).eq('materia_id', materiaId)
       .eq('periodo_id', periodoId).order('fecha'),
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
@@ -860,7 +860,7 @@ async function abrirCargaBulk(cursoId, materiaId, periodoId) {
       <div class="sec-lb">Instancia evaluativa</div>
       <select id="bulk-inst-sel" class="sel-estilizado" style="margin-bottom:14px">
         ${instancias.map(i => `
-          <option value="${i.id}">${i.tipos_evaluacion?.nombre} · ${formatFechaLatam(i.fecha)}</option>
+          <option value="${i.id}">${i.tipos_instancia_evaluativa?.nombre} · ${formatFechaLatam(i.fecha)}</option>
         `).join('')}
       </select>
 
@@ -941,7 +941,7 @@ async function guardarBulk(cursoId, materiaId, periodoId) {
 async function abrirEditarBulk(cursoId, materiaId, periodoId) {
   const [{ data: instancias }, { data: alumnos }] = await Promise.all([
     sb.from('instancias_evaluativas')
-      .select('*, tipos_evaluacion(nombre)')
+      .select('*, tipos_instancia_evaluativa(nombre)')
       .eq('curso_id', cursoId).eq('materia_id', materiaId)
       .eq('periodo_id', periodoId).order('fecha'),
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
@@ -977,7 +977,7 @@ async function abrirEditarBulk(cursoId, materiaId, periodoId) {
       <div class="sec-lb">Instancia evaluativa</div>
       <select id="bulk-inst-sel" style="margin-bottom:14px" onchange="recargarFormEdit()">
         ${instancias.map(i => `
-          <option value="${i.id}">${i.tipos_evaluacion?.nombre} · ${formatFechaLatam(i.fecha)}</option>
+          <option value="${i.id}">${i.tipos_instancia_evaluativa?.nombre} · ${formatFechaLatam(i.fecha)}</option>
         `).join('')}
       </select>
 
@@ -1027,7 +1027,7 @@ function recargarFormEdit() {
 async function crearInstancia(cursoId, materiaId, periodoId, nivel) {
   // Recargar tipos si están vacíos
   if (!TIPOS_EVAL.length) {
-    const { data } = await sb.from('tipos_evaluacion')
+    const { data } = await sb.from('tipos_instancia_evaluativa')
       .select('*').eq('institucion_id', USUARIO_ACTUAL.institucion_id)
       .eq('activo', true).order('nombre');
     TIPOS_EVAL = data || [];
@@ -1036,7 +1036,7 @@ async function crearInstancia(cursoId, materiaId, periodoId, nivel) {
   const hoy = hoyISO();
 
   const { data: instExist } = await sb.from('instancias_evaluativas')
-    .select('*, tipos_evaluacion(nombre)')
+    .select('*, tipos_instancia_evaluativa(nombre)')
     .eq('curso_id', cursoId)
     .eq('periodo_id', periodoId)
     .eq('creado_por', USUARIO_ACTUAL.id)
@@ -1100,8 +1100,8 @@ async function crearInstancia(cursoId, materiaId, periodoId, nivel) {
             style="width:100%;padding:10px 12px;border:1.5px solid var(--brd);border-radius:10px;font-size:13px;
               background:var(--surf);color:var(--txt);font-family:inherit;box-sizing:border-box;cursor:pointer">
             <option value="">— Elegí instancia original —</option>
-            ${(instExist || []).filter(i => !i.tipos_evaluacion?.es_recuperatorio).map(i =>
-              `<option value="${i.id}">${i.tipos_evaluacion?.nombre} · ${formatFechaLatam(i.fecha)}</option>`
+            ${(instExist || []).filter(i => !i.tipos_instancia_evaluativa?.es_recuperatorio).map(i =>
+              `<option value="${i.id}">${i.tipos_instancia_evaluativa?.nombre} · ${formatFechaLatam(i.fecha)}</option>`
             ).join('')}
           </select>
         </div>
@@ -1117,7 +1117,7 @@ async function crearInstancia(cursoId, materiaId, periodoId, nivel) {
           <div style="font-size:10px;font-weight:700;color:var(--ambar);margin-bottom:6px">Ya tenés programado</div>
           ${instExist.map(i => `
             <div style="font-size:11px;color:var(--txt);display:flex;align-items:center;gap:6px;margin-bottom:3px">
-              <span style="color:var(--ambar)">·</span> ${i.tipos_evaluacion?.nombre} · ${formatFechaLatam(i.fecha)}
+              <span style="color:var(--ambar)">·</span> ${i.tipos_instancia_evaluativa?.nombre} · ${formatFechaLatam(i.fecha)}
             </div>`).join('')}
         </div>` : ''}
 
@@ -1712,7 +1712,7 @@ async function verAlumnoNotas(alumnoId, cursoId, materiaId, periodoId) {
     .select('*, cursos(nombre,division,nivel)').eq('id', alumnoId).single();
 
   let query = sb.from('calificaciones')
-    .select('*, instancias_evaluativas(nombre,fecha,tipos_evaluacion(nombre,es_recuperatorio)), materias(nombre)')
+    .select('*, instancias_evaluativas(nombre,fecha,tipos_instancia_evaluativa(nombre,es_recuperatorio)), materias(nombre)')
     .eq('alumno_id', alumnoId);
   if (periodoId) query = query.eq('periodo_id', periodoId);
 
@@ -1738,7 +1738,7 @@ async function verAlumnoNotas(alumnoId, cursoId, materiaId, periodoId) {
       ? '<div class="empty-state">Sin calificaciones registradas</div>'
       : Object.entries(porMateria).map(([materia, { notas }]) => {
           const vals = notas.filter(n => !n.ausente && n.nota !== null &&
-            !n.instancias_evaluativas?.tipos_evaluacion?.es_recuperatorio).map(n => n.nota);
+            !n.instancias_evaluativas?.tipos_instancia_evaluativa?.es_recuperatorio).map(n => n.nota);
           const prom = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
           return `
             <div class="card" style="margin-bottom:10px">
@@ -1750,12 +1750,12 @@ async function verAlumnoNotas(alumnoId, cursoId, materiaId, periodoId) {
               </div>
               ${notas.map(n => {
                 const inst = n.instancias_evaluativas;
-                const esR  = inst?.tipos_evaluacion?.es_recuperatorio;
+                const esR  = inst?.tipos_instancia_evaluativa?.es_recuperatorio;
                 return `
                   <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--brd)">
                     <div style="flex:1">
                       <div style="font-size:11px;font-weight:500">
-                        ${inst?.tipos_evaluacion?.nombre || '—'} · ${inst?.nombre || ''}
+                        ${inst?.tipos_instancia_evaluativa?.nombre || '—'} · ${inst?.nombre || ''}
                         ${esR ? '<span class="tag tp" style="font-size:9px;margin-left:4px">Recup.</span>' : ''}
                       </div>
                       <div style="font-size:10px;color:var(--txt2)">${formatFechaLatam(inst?.fecha)}</div>
@@ -2923,7 +2923,7 @@ async function verGrillaMateriaPreceptor(cursoId, materiaId, nombreMateria, peri
   const [alumnosRes, instanciasRes, califRes, cierreRes] = await Promise.all([
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
     sb.from('instancias_evaluativas')
-      .select('*, tipos_evaluacion(nombre,es_recuperatorio)')
+      .select('*, tipos_instancia_evaluativa(nombre,es_recuperatorio)')
       .eq('curso_id', cursoId).eq('materia_id', materiaId).eq('periodo_id', periodoId).order('fecha'),
     sb.from('calificaciones').select('*')
       .eq('curso_id', cursoId).eq('materia_id', materiaId).eq('periodo_id', periodoId),
@@ -2942,7 +2942,7 @@ async function verGrillaMateriaPreceptor(cursoId, materiaId, nombreMateria, peri
   const promedios = {};
   alumnos.forEach(al => {
     const notas = instancias
-      .filter(inst => !inst.tipos_evaluacion?.es_recuperatorio)
+      .filter(inst => !inst.tipos_instancia_evaluativa?.es_recuperatorio)
       .map(inst => { const cf = califIdx[`${al.id}_${inst.id}`]; return (cf && !cf.ausente && cf.nota !== null) ? cf.nota : null; })
       .filter(n => n !== null);
     promedios[al.id] = notas.length ? notas.reduce((a, b) => a + b, 0) / notas.length : null;
@@ -2995,9 +2995,9 @@ async function verGrillaMateriaPreceptor(cursoId, materiaId, nombreMateria, peri
               <tr>
                 <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
                 ${instancias.map(inst => `
-                  <th class="${inst.tipos_evaluacion?.es_recuperatorio ? 'th-recup' : ''}"
+                  <th class="${inst.tipos_instancia_evaluativa?.es_recuperatorio ? 'th-recup' : ''}"
                     style="width:68px;min-width:68px">
-                    <div style="font-size:9px;line-height:1.3">${inst.tipos_evaluacion?.nombre || '—'}</div>
+                    <div style="font-size:9px;line-height:1.3">${inst.tipos_instancia_evaluativa?.nombre || '—'}</div>
                     <div style="font-size:9px;opacity:.6">${formatFechaCorta(inst.fecha)}</div>
                   </th>`).join('')}
                 <th style="font-size:9px">Prom.</th>
