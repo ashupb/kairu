@@ -15,14 +15,28 @@ async function rComunicados() {
       ? `nivel.is.null,nivel.eq.${nivelAlumno}`
       : 'nivel.is.null';
 
-    const { data, error } = await sb
+    // Intentar con join a comunicado_imagenes; si la tabla no existe aún, caer sin imágenes múltiples
+    let data, error;
+    ({ data, error } = await sb
       .from('comunicados')
       .select('id, titulo, cuerpo, imagen_url, nivel, created_at, usuarios(nombre_completo), comunicado_imagenes(id, imagen_url, orden)')
       .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
       .eq('tipo', 'institucional')
       .or(nivelFilter)
       .order('created_at', { ascending: false })
-      .limit(30);
+      .limit(30));
+
+    if (error) {
+      // Fallback sin join (tabla comunicado_imagenes todavía no existe en BD)
+      ({ data, error } = await sb
+        .from('comunicados')
+        .select('id, titulo, cuerpo, imagen_url, nivel, created_at, usuarios(nombre_completo)')
+        .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
+        .eq('tipo', 'institucional')
+        .or(nivelFilter)
+        .order('created_at', { ascending: false })
+        .limit(30));
+    }
 
     if (error) throw error;
 
