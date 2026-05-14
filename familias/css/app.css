@@ -657,11 +657,38 @@ body.dark .feed-item { border-bottom-color: rgba(255,255,255,0.05); }
 .feed-img {
   display: block;
   width: 100%;
-  height: 152px;
-  object-fit: cover;
+  height: 200px;
+  object-fit: contain;
   border-radius: var(--radius-md);
   margin-bottom: 10px;
+  background: rgba(0,0,0,0.03);
 }
+body.dark .feed-img { background: rgba(255,255,255,0.04); }
+
+/* Feed carousel — múltiples imágenes */
+.feed-car-wrap { position: relative; margin-bottom: 10px; border-radius: var(--radius-md); overflow: hidden; }
+.feed-car { display: flex; overflow-x: scroll; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.feed-car::-webkit-scrollbar { display: none; }
+.feed-car-slide { flex: 0 0 100%; }
+.feed-car-slide img { display: block; width: 100%; height: 200px; object-fit: contain; background: rgba(0,0,0,0.03); }
+body.dark .feed-car-slide img { background: rgba(255,255,255,0.04); }
+.feed-car-btn {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  background: rgba(0,0,0,0.42); color: #fff; border: none;
+  width: 30px; height: 30px; border-radius: 50%;
+  font-size: 20px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2; transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.feed-car-btn:active { background: rgba(0,0,0,0.65); }
+.feed-car-btn--prev { left: 6px; }
+.feed-car-btn--next { right: 6px; }
+.feed-car-dots { display: flex; justify-content: center; gap: 5px; padding: 6px 0 0; }
+.feed-car-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(0,0,0,0.18); transition: background 0.15s; }
+.feed-car-dot.active { background: var(--color-green); }
+body.dark .feed-car-dot { background: rgba(255,255,255,0.2); }
+body.dark .feed-car-dot.active { background: var(--color-green); }
 
 .feed-meta {
   display: flex;

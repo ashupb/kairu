@@ -33,13 +33,25 @@ async function rInicio() {
         .gte('fecha', inicioMes)
         .lte('fecha', finMes),
 
-      sb.from('comunicados')
-        .select('id, titulo, cuerpo, imagen_url, created_at')
-        .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
-        .eq('tipo', 'institucional')
-        .or(nivelFilter)
-        .order('created_at', { ascending: false })
-        .limit(4),
+      (async () => {
+        let res = await sb.from('comunicados')
+          .select('id, titulo, cuerpo, imagen_url, created_at, comunicado_imagenes(id, imagen_url, orden)')
+          .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
+          .eq('tipo', 'institucional')
+          .or(nivelFilter)
+          .order('created_at', { ascending: false })
+          .limit(4);
+        if (res.error) {
+          res = await sb.from('comunicados')
+            .select('id, titulo, cuerpo, imagen_url, created_at')
+            .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
+            .eq('tipo', 'institucional')
+            .or(nivelFilter)
+            .order('created_at', { ascending: false })
+            .limit(4);
+        }
+        return res;
+      })(),
 
       sb.from('eventos_institucionales')
         .select('id, titulo, nivel, fecha_inicio, tipo')
@@ -57,8 +69,11 @@ async function rInicio() {
     const tardanzas = asist.filter(a => a.estado === 'tardanza').length;
     const pct       = total > 0 ? Math.round(presentes / total * 100) : null;
 
-    // Comunicados: detectar cuáles ya fueron leídos
-    const comunicados = comRes.data || [];
+    // Normalizar imágenes múltiples
+    const comunicados = (comRes.data || []).map(c => ({
+      ...c,
+      comunicado_imagenes: (c.comunicado_imagenes || []).sort((a, b) => a.orden - b.orden),
+    }));
     let leidosIds = new Set();
     if (comunicados.length) {
       const { data: lecturas } = await sb
@@ -83,6 +98,8 @@ async function rInicio() {
         ${_novedadesFeed(comunicados, leidosIds)}
         ${_eventoSnippet(proximoEvento)}
       </div>`;
+
+    _feedInitCarousels(comunicados);
 
   } catch (e) {
     el.innerHTML = `
@@ -138,6 +155,12 @@ function _asistResumen(pct, ausentes, tardanzas, total, inicioMes) {
     </div>`;
 }
 
+function _comImgsInicio(c) {
+  if (c.comunicado_imagenes?.length) return c.comunicado_imagenes.map(i => i.imagen_url);
+  if (c.imagen_url) return [c.imagen_url];
+  return [];
+}
+
 function _novedadesFeed(comunicados, leidosIds) {
   if (!comunicados.length) return `
     <div class="card">
@@ -147,12 +170,31 @@ function _novedadesFeed(comunicados, leidosIds) {
 
   const items = comunicados.map(c => {
     const sinLeer = !leidosIds.has(c.id);
+    const imgs    = _comImgsInicio(c);
     const excerpt = c.cuerpo
       ? (c.cuerpo.length > 110 ? c.cuerpo.slice(0, 110).trimEnd() + '…' : c.cuerpo)
       : '';
+
+    let imgHtml = '';
+    if (imgs.length === 1) {
+      imgHtml = `<img class="feed-img" src="${imgs[0]}" alt="" loading="lazy">`;
+    } else if (imgs.length > 1) {
+      imgHtml = `
+        <div class="feed-car-wrap" onclick="event.stopPropagation()">
+          <div class="feed-car" id="feed-car-${c.id}">
+            ${imgs.map(url => `<div class="feed-car-slide"><img src="${url}" alt="" loading="lazy"></div>`).join('')}
+          </div>
+          <button class="feed-car-btn feed-car-btn--prev" onclick="_feedCarGo('${c.id}',-1,event)">&#8249;</button>
+          <button class="feed-car-btn feed-car-btn--next" onclick="_feedCarGo('${c.id}',1,event)">&#8250;</button>
+          <div class="feed-car-dots" id="feed-dots-${c.id}">
+            ${imgs.map((_, i) => `<span class="feed-car-dot${i === 0 ? ' active' : ''}"></span>`).join('')}
+          </div>
+        </div>`;
+    }
+
     return `
       <div class="feed-item" onclick="goPage('comunicados')">
-        ${c.imagen_url ? `<img class="feed-img" src="${c.imagen_url}" alt="" loading="lazy">` : ''}
+        ${imgHtml}
         <div class="feed-meta">
           <span class="badge badge-success">INSTITUCIONAL</span>
           <span class="feed-date">${fechaRelativa(c.created_at)}</span>
@@ -171,6 +213,34 @@ function _novedadesFeed(comunicados, leidosIds) {
       </div>
       <div class="feed-items">${items}</div>
     </div>`;
+}
+
+function _feedCarGo(id, dir, ev) {
+  if (ev) ev.stopPropagation();
+  const car = document.getElementById(`feed-car-${id}`);
+  const dotsWrap = document.getElementById(`feed-dots-${id}`);
+  if (!car) return;
+  const slides = car.querySelectorAll('.feed-car-slide');
+  const current = Math.round(car.scrollLeft / car.offsetWidth);
+  const next = Math.max(0, Math.min(slides.length - 1, current + dir));
+  car.scrollTo({ left: car.offsetWidth * next, behavior: 'smooth' });
+  if (dotsWrap) {
+    dotsWrap.querySelectorAll('.feed-car-dot').forEach((d, i) => d.classList.toggle('active', i === next));
+  }
+}
+
+function _feedInitCarousels(comunicados) {
+  comunicados.forEach(c => {
+    if (_comImgsInicio(c).length <= 1) return;
+    const car = document.getElementById(`feed-car-${c.id}`);
+    const dotsWrap = document.getElementById(`feed-dots-${c.id}`);
+    if (!car || !dotsWrap) return;
+    const dots = dotsWrap.querySelectorAll('.feed-car-dot');
+    car.addEventListener('scroll', () => {
+      const idx = Math.round(car.scrollLeft / car.offsetWidth);
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    }, { passive: true });
+  });
 }
 
 function fechaRelativa(isoStr) {
