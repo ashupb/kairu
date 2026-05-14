@@ -69,6 +69,8 @@ async function rComunicados() {
       </div>
       <div id="com-detalle" style="display:none"></div>`;
 
+    _comInitThumbCarousels(comunicados);
+
     // Marcar no leídos como leídos (post-render, no bloquea la UI)
     const noLeidos = comunicados.filter(c => !leidosIds.has(c.id));
     if (noLeidos.length) {
@@ -101,15 +103,28 @@ function _comCard(c, leidosIds) {
   const nivelTxt = c.nivel
     ? (_COM_NIVEL_LABEL[c.nivel] || c.nivel).toUpperCase()
     : 'TODOS LOS NIVELES';
-  const autor    = c.usuarios?.nombre_completo || '';
-  const thumbUrl = _comImgs(c)[0] || null;
+  const autor = c.usuarios?.nombre_completo || '';
+  const imgs  = _comImgs(c);
+
+  let thumbHtml;
+  if (imgs.length === 0) {
+    thumbHtml = `<div class="com-thumb-empty">📢</div>`;
+  } else if (imgs.length === 1) {
+    thumbHtml = `<img src="${imgs[0]}" alt="" loading="lazy">`;
+  } else {
+    thumbHtml = `
+      <div class="com-thumb-car" id="com-tc-${c.id}">
+        ${imgs.map(url => `<img src="${url}" alt="" loading="lazy">`).join('')}
+      </div>
+      <div class="com-thumb-dots" id="com-td-${c.id}">
+        ${imgs.map((_, i) => `<span class="com-thumb-dot${i === 0 ? ' active' : ''}"></span>`).join('')}
+      </div>`;
+  }
 
   return `
     <div class="card com-card${sinLeer ? ' com-card--unread' : ''}" onclick="_comVerDetalle('${c.id}')">
       <div class="com-thumb">
-        ${thumbUrl
-          ? `<img src="${thumbUrl}" alt="" loading="lazy">`
-          : `<div class="com-thumb-empty">📢</div>`}
+        ${thumbHtml}
       </div>
       <div class="com-body">
         <div class="com-meta">
@@ -176,6 +191,20 @@ function _comCerrarDetalle() {
   const lista = document.getElementById('com-lista');
   if (det)   { det.style.display = 'none'; det.innerHTML = ''; }
   if (lista) lista.style.display = '';
+}
+
+function _comInitThumbCarousels(comunicados) {
+  comunicados.forEach(c => {
+    if (_comImgs(c).length <= 1) return;
+    const car  = document.getElementById(`com-tc-${c.id}`);
+    const wrap = document.getElementById(`com-td-${c.id}`);
+    if (!car || !wrap) return;
+    const dots = wrap.querySelectorAll('.com-thumb-dot');
+    car.addEventListener('scroll', () => {
+      const idx = Math.round(car.scrollLeft / car.offsetWidth);
+      dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    }, { passive: true });
+  });
 }
 
 function _comInitCarousel(id) {

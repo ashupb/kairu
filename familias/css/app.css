@@ -688,10 +688,18 @@ body.dark .feed-item { border-bottom-color: rgba(255,255,255,0.05); }
 .com-card--unread { border-left: 3px solid var(--color-green); }
 
 /* Columna izquierda: cuadrado de imagen */
-.com-thumb { width: 100px; min-width: 100px; flex-shrink: 0; background: rgba(0,0,0,0.04); }
+.com-thumb { width: 100px; min-width: 100px; flex-shrink: 0; height: 110px; background: rgba(0,0,0,0.04); position: relative; overflow: hidden; }
 body.dark .com-thumb { background: rgba(255,255,255,0.06); }
-.com-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.com-thumb > img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .com-thumb-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 26px; opacity: 0.2; }
+
+/* Mini carousel dentro de la card */
+.com-thumb-car { display: flex; overflow-x: scroll; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; width: 100%; height: 100%; scrollbar-width: none; }
+.com-thumb-car::-webkit-scrollbar { display: none; }
+.com-thumb-car img { flex: 0 0 100%; width: 100%; height: 100%; object-fit: contain; scroll-snap-align: start; display: block; }
+.com-thumb-dots { position: absolute; bottom: 4px; left: 0; right: 0; display: flex; justify-content: center; gap: 3px; pointer-events: none; }
+.com-thumb-dot { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.95); box-shadow: 0 0 2px rgba(0,0,0,0.4); opacity: 0.5; transition: opacity 0.15s; }
+.com-thumb-dot.active { opacity: 1; }
 
 /* Columna derecha: texto */
 .com-body { flex: 1; min-width: 0; padding: 10px 13px 12px; }
@@ -721,7 +729,7 @@ body.dark .com-thumb { background: rgba(255,255,255,0.06); }
 }
 .com-det-carousel::-webkit-scrollbar { display: none; }
 .com-det-slide { flex: 0 0 100%; scroll-snap-align: start; }
-.com-det-slide img { width: 100%; height: 220px; object-fit: cover; display: block; }
+.com-det-slide img { width: 100%; max-height: 340px; height: auto; object-fit: contain; background: rgba(0,0,0,0.04); display: block; }
 .com-det-dots {
   display: flex; justify-content: center; gap: 6px; padding: 8px 0;
   background: var(--card-bg);
