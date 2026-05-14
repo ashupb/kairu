@@ -684,28 +684,26 @@ body.dark .feed-item { border-bottom-color: rgba(255,255,255,0.05); }
 .feed-excerpt { font-size: 12px; color: var(--color-text-medium); line-height: 1.45; }
 
 /* ── Comunicados page ───────────────────────────────────────────── */
-.com-card { padding: 0; overflow: hidden; margin-bottom: 12px; }
+.com-card { display: flex; flex-direction: row; align-items: stretch; padding: 0; overflow: hidden; margin-bottom: 10px; }
 .com-card--unread { border-left: 3px solid var(--color-green); }
 
-/* Landscape / default: ancho completo, ratio natural, sin recorte */
-.com-img { display: block; width: 100%; height: auto; }
+/* Columna izquierda: cuadrado de imagen */
+.com-thumb { width: 100px; min-width: 100px; flex-shrink: 0; background: rgba(0,0,0,0.04); }
+body.dark .com-thumb { background: rgba(255,255,255,0.06); }
+.com-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.com-thumb-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 26px; opacity: 0.2; }
 
-/* Portrait (detectado vía onload): layout columna, imagen a la derecha */
-.com-card--portrait { display: flex; flex-direction: row; }
-.com-card--portrait .com-img {
-  width: 38%; max-width: 160px;
-  align-self: stretch; object-fit: cover; flex-shrink: 0;
-  order: 2;
+/* Columna derecha: texto */
+.com-body { flex: 1; min-width: 0; padding: 10px 13px 12px; }
+.com-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.com-fecha { font-size: 10px; color: var(--color-text-muted); margin-left: auto; }
+.com-new-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-danger); flex-shrink: 0; }
+.com-titulo { font-size: 14px; font-weight: 700; color: var(--color-dark); line-height: 1.3; letter-spacing: -0.01em; margin-bottom: 4px; }
+.com-excerpt {
+  font-size: 12px; color: var(--color-text-medium); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.com-card--portrait .com-body { flex: 1; min-width: 0; order: 1; }
-
-.com-body { padding: 14px 16px 16px; }
-.com-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-.com-fecha { font-size: 11px; color: var(--color-text-muted); margin-left: auto; }
-.com-new-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-danger); flex-shrink: 0; }
-.com-titulo { font-size: 16px; font-weight: 700; color: var(--color-dark); line-height: 1.3; margin-bottom: 8px; letter-spacing: -0.01em; }
-.com-cuerpo { font-size: 13px; color: var(--color-text-medium); line-height: 1.6; white-space: pre-line; }
-.com-autor { font-size: 11px; color: var(--color-text-muted); margin-top: 10px; font-style: italic; }
+.com-autor { font-size: 10px; color: var(--color-text-muted); margin-top: 6px; font-style: italic; }
 
 /* ── Password toggle ────────────────────────────────────────────── */
 .form-input-wrap { position: relative; }

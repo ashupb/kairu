@@ -78,8 +78,11 @@ function _comCard(c, leidosIds) {
 
   return `
     <div class="card com-card${sinLeer ? ' com-card--unread' : ''}">
-      ${c.imagen_url ? `<img class="com-img" src="${c.imagen_url}" alt="" loading="lazy"
-        onload="this.closest('.com-card').classList.toggle('com-card--portrait', this.naturalHeight > this.naturalWidth * 1.15)">` : ''}
+      <div class="com-thumb">
+        ${c.imagen_url
+          ? `<img src="${c.imagen_url}" alt="" loading="lazy">`
+          : `<div class="com-thumb-empty">📢</div>`}
+      </div>
       <div class="com-body">
         <div class="com-meta">
           <span class="badge badge-success">${nivelTxt}</span>
@@ -87,7 +90,7 @@ function _comCard(c, leidosIds) {
           <span class="com-fecha">${fechaRelativa(c.created_at)}</span>
         </div>
         <p class="com-titulo">${c.titulo}</p>
-        ${c.cuerpo ? `<p class="com-cuerpo">${c.cuerpo}</p>` : ''}
+        ${c.cuerpo ? `<p class="com-excerpt">${c.cuerpo}</p>` : ''}
         ${autor ? `<p class="com-autor">— ${autor}</p>` : ''}
       </div>
     </div>`;
