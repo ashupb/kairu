@@ -36,6 +36,17 @@ async function rNovedades() {
         .limit(30));
     }
 
+    // Fallback final: sin filtro de nivel
+    if (error) {
+      ({ data, error } = await sb
+        .from('comunicados')
+        .select('id, titulo, cuerpo, imagen_url, nivel, created_at, usuarios(nombre_completo)')
+        .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
+        .eq('tipo', 'novedad')
+        .order('created_at', { ascending: false })
+        .limit(30));
+    }
+
     if (error) throw error;
 
     const novedades = (data || []).map(c => ({

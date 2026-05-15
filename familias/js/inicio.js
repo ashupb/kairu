@@ -59,6 +59,15 @@ async function rInicio() {
             .order('created_at', { ascending: false })
             .limit(4);
         }
+        // Fallback final: sin filtro de nivel (por si la columna nivel tiene algún problema)
+        if (res.error) {
+          res = await sb.from('comunicados')
+            .select('id, titulo, cuerpo, imagen_url, created_at')
+            .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
+            .eq('tipo', 'novedad')
+            .order('created_at', { ascending: false })
+            .limit(4);
+        }
         return res;
       })(),
 

@@ -6,6 +6,8 @@ let _AVISOS_DATA    = [];   // novedades
 let _COM_INT_DATA   = [];   // comunicados por curso
 let _COM_INT_CURSOS = [];   // cursos disponibles para selector
 let _AVISOS_TAB     = 'novedades';
+let _AVISOS_FILTRO_NOV = '';  // '' = todos, 'inicial', 'primario', 'secundario'
+let _AVISOS_FILTRO_COM = '';  // '' = todos, 'inicial', 'primario', 'secundario'
 const _AV_NIVEL_LABEL = { inicial: 'Inicial', primario: 'Primario', secundario: 'Secundario' };
 
 async function rAvisos() {
@@ -73,10 +75,10 @@ async function rAvisos() {
         <div id="av-form-wrap"></div>
 
         <div id="av-pane-novedades">
-          ${_avisosNovListaHtml(novedades, perms)}
+          ${_avisosNovPaneHtml(novedades, perms)}
         </div>
         <div id="av-pane-comunicados" style="display:none">
-          ${_avisosComListaHtml(_COM_INT_DATA, perms)}
+          ${_avisosComPaneHtml(_COM_INT_DATA, perms)}
         </div>
       </div>`;
 
@@ -87,7 +89,10 @@ async function rAvisos() {
 
 // ── Tabs ──────────────────────────────────────────────
 function _tabStyle(active) {
-  return `flex:1;padding:10px 6px;font-size:13px;font-weight:600;border:none;background:transparent;cursor:pointer;border-bottom:2px solid ${active ? 'var(--green)' : 'transparent'};color:${active ? 'var(--green)' : 'var(--txt2)'};margin-bottom:-1.5px;transition:color .15s,border-color .15s`;
+  if (active) {
+    return `flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:none;background:rgba(34,153,87,0.09);cursor:pointer;border-bottom:2.5px solid var(--green);color:var(--green);margin-bottom:-1.5px;border-radius:6px 6px 0 0;transition:color .15s,border-color .15s,background .15s`;
+  }
+  return `flex:1;padding:10px 6px;font-size:13px;font-weight:500;border:none;background:transparent;cursor:pointer;border-bottom:2px solid transparent;color:var(--txt2);margin-bottom:-1.5px;border-radius:6px 6px 0 0;transition:color .15s,border-color .15s,background .15s`;
 }
 
 function _avisosTab(tab) {
@@ -98,6 +103,61 @@ function _avisosTab(tab) {
   document.getElementById('av-tab-comunicados').style.cssText = _tabStyle(tab === 'comunicados');
   const formWrap = document.getElementById('av-form-wrap');
   if (formWrap) formWrap.innerHTML = '';
+}
+
+// ── Filtro pills ──────────────────────────────────────
+function _avFiltroStyle(active) {
+  return active
+    ? `padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;border:none;background:var(--green);color:#fff;cursor:pointer;transition:background .15s`
+    : `padding:4px 14px;border-radius:20px;font-size:12px;font-weight:500;border:1.5px solid var(--brd);background:var(--bg2,#f5f5f5);color:var(--txt2);cursor:pointer;transition:background .15s`;
+}
+
+function _avisosNovPaneHtml(todos, perms) {
+  const filtrada = _AVISOS_FILTRO_NOV ? todos.filter(c => c.nivel === _AVISOS_FILTRO_NOV) : todos;
+  const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.nivel === n));
+  const filtroHtml = todos.length > 0 && nivelesPresentes.length > 0 ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="av-fn" data-val="" onclick="_avNovFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV === '')}">Todos los niveles</button>
+      ${nivelesPresentes.map(n => `
+        <button class="av-fn" data-val="${n}" onclick="_avNovFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV === n)}">${_AV_NIVEL_LABEL[n]}</button>
+      `).join('')}
+    </div>` : '';
+  return `${filtroHtml}<div id="av-nov-lista">${_avisosNovListaHtml(filtrada, perms)}</div>`;
+}
+
+function _avisosComPaneHtml(todos, perms) {
+  const filtrada = _AVISOS_FILTRO_COM ? todos.filter(c => c.cursos?.nivel === _AVISOS_FILTRO_COM) : todos;
+  const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.cursos?.nivel === n));
+  const filtroHtml = todos.length > 0 && nivelesPresentes.length > 1 ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      <button class="av-fc" data-val="" onclick="_avComFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM === '')}">Todos</button>
+      ${nivelesPresentes.map(n => `
+        <button class="av-fc" data-val="${n}" onclick="_avComFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM === n)}">${_AV_NIVEL_LABEL[n]}</button>
+      `).join('')}
+    </div>` : '';
+  return `${filtroHtml}<div id="av-com-lista">${_avisosComListaHtml(filtrada, perms)}</div>`;
+}
+
+function _avNovFiltrar(nivel) {
+  _AVISOS_FILTRO_NOV = nivel;
+  const perms = _avisosPermisos();
+  const lista = nivel ? _AVISOS_DATA.filter(c => c.nivel === nivel) : _AVISOS_DATA;
+  const listaEl = document.getElementById('av-nov-lista');
+  if (listaEl) listaEl.innerHTML = _avisosNovListaHtml(lista, perms);
+  document.querySelectorAll('.av-fn').forEach(b => {
+    b.style.cssText = _avFiltroStyle(b.dataset.val === nivel);
+  });
+}
+
+function _avComFiltrar(nivel) {
+  _AVISOS_FILTRO_COM = nivel;
+  const perms = _avisosPermisos();
+  const lista = nivel ? _COM_INT_DATA.filter(c => c.cursos?.nivel === nivel) : _COM_INT_DATA;
+  const listaEl = document.getElementById('av-com-lista');
+  if (listaEl) listaEl.innerHTML = _avisosComListaHtml(lista, perms);
+  document.querySelectorAll('.av-fc').forEach(b => {
+    b.style.cssText = _avFiltroStyle(b.dataset.val === nivel);
+  });
 }
 
 // ── Permisos ──────────────────────────────────────────
@@ -124,17 +184,29 @@ function _avisosFormNovedad(editData = null) {
 
   const imgsActualesHtml = isEdit ? _avisosEditImgsHtml(c) : '';
 
+  const nivelesDisp = _COM_INT_CURSOS.length
+    ? [...new Set(_COM_INT_CURSOS.map(cu => cu.nivel))].filter(Boolean)
+    : ['inicial', 'primario', 'secundario'];
+
   wrap.innerHTML = `
     <div class="card" style="margin-bottom:16px">
       <div class="card-t">${isEdit ? 'Editar novedad' : 'Nueva novedad'}</div>
       <div style="margin-bottom:12px">
-        <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">NIVEL DESTINATARIO</label>
-        <select id="av-nivel">
-          <option value="">Todos los niveles</option>
-          <option value="inicial"    ${c?.nivel==='inicial'    ?'selected':''}>Solo Inicial</option>
-          <option value="primario"   ${c?.nivel==='primario'   ?'selected':''}>Solo Primario</option>
-          <option value="secundario" ${c?.nivel==='secundario' ?'selected':''}>Solo Secundario</option>
-        </select>
+        <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">NIVELES DESTINATARIOS</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;padding:10px;border:1px solid var(--brd);border-radius:var(--rad)">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="av-niv-todos" onchange="_avNivTodosChange(this)"
+              ${!c?.nivel ? 'checked' : ''}>
+            Todos los niveles
+          </label>
+          ${['inicial','primario','secundario'].map(n => `
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" class="av-niv-spec" value="${n}" onchange="_avNivSpecChange()"
+              ${c?.nivel === n ? 'checked' : ''}>
+            ${_AV_NIVEL_LABEL[n]}
+          </label>`).join('')}
+        </div>
+        <p style="font-size:11px;color:var(--txt3);margin-top:5px">Si marcás niveles específicos, se publica una novedad por nivel seleccionado.</p>
       </div>
       <div style="margin-bottom:12px">
         <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">TÍTULO *</label>
@@ -189,21 +261,57 @@ function _avisosFormComunicado(editData = null) {
   const c = editData;
   const isEdit = !!c;
 
-  const cursosOpts = _COM_INT_CURSOS.map(cu => {
-    const nombre = `${cu.nombre}${cu.division ? ' ' + cu.division : ''} (${_AV_NIVEL_LABEL[cu.nivel] || cu.nivel})`;
-    return `<option value="${cu.id}" ${c?.curso_id === cu.id ? 'selected' : ''}>${nombre}</option>`;
-  }).join('');
-
-  wrap.innerHTML = `
-    <div class="card" style="margin-bottom:16px">
-      <div class="card-t">${isEdit ? 'Editar comunicado' : 'Nuevo comunicado'}</div>
+  let destinatariosHtml;
+  if (isEdit) {
+    const cursosOpts = _COM_INT_CURSOS.map(cu => {
+      const nombre = `${cu.nombre}${cu.division ? ' ' + cu.division : ''} (${_AV_NIVEL_LABEL[cu.nivel] || cu.nivel})`;
+      return `<option value="${cu.id}" ${c?.curso_id === cu.id ? 'selected' : ''}>${nombre}</option>`;
+    }).join('');
+    destinatariosHtml = `
       <div style="margin-bottom:12px">
         <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">CURSO DESTINATARIO *</label>
         <select id="av-curso">
           <option value="">Seleccioná un curso…</option>
           ${cursosOpts}
         </select>
-      </div>
+      </div>`;
+  } else {
+    // Agrupar cursos por nivel para nuevo comunicado
+    const porNivel = {};
+    _COM_INT_CURSOS.forEach(cu => {
+      const n = cu.nivel || '_';
+      if (!porNivel[n]) porNivel[n] = [];
+      porNivel[n].push(cu);
+    });
+    const checkboxHtml = Object.entries(porNivel).map(([nivel, cursos]) => `
+      <div style="margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${_AV_NIVEL_LABEL[nivel] || nivel}</div>
+        ${cursos.map(cu => `
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-radius:4px">
+            <input type="checkbox" class="av-com-curso" value="${cu.id}">
+            <span style="font-size:13px">${cu.nombre}${cu.division ? ' ' + cu.division : ''}</span>
+          </label>`).join('')}
+      </div>`).join('');
+    destinatariosHtml = `
+      <div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+          <label style="font-size:11px;font-weight:600;color:var(--txt2);letter-spacing:.05em">CURSOS DESTINATARIOS *</label>
+          <span>
+            <button type="button" onclick="_avComSelAll(true)" style="font-size:11px;color:var(--green);border:none;background:none;cursor:pointer;padding:0">Seleccionar todos</button>
+            <span style="color:var(--txt3);margin:0 4px">·</span>
+            <button type="button" onclick="_avComSelAll(false)" style="font-size:11px;color:var(--txt2);border:none;background:none;cursor:pointer;padding:0">Ninguno</button>
+          </span>
+        </div>
+        <div style="max-height:180px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad);padding:10px">
+          ${checkboxHtml || '<p style="font-size:13px;color:var(--txt3)">No hay cursos disponibles.</p>'}
+        </div>
+      </div>`;
+  }
+
+  wrap.innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-t">${isEdit ? 'Editar comunicado' : 'Nuevo comunicado'}</div>
+      ${destinatariosHtml}
       <div style="margin-bottom:12px">
         <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">TÍTULO *</label>
         <input type="text" id="av-titulo" value="${c?.titulo||''}" placeholder="Asunto del comunicado" maxlength="120">
@@ -221,6 +329,33 @@ function _avisosFormComunicado(editData = null) {
     </div>`;
 
   document.getElementById('av-titulo')?.focus();
+}
+
+function _avComSelAll(check) {
+  document.querySelectorAll('.av-com-curso').forEach(cb => { cb.checked = check; });
+}
+
+// ── Helpers interacción de checkboxes de nivel ────────
+function _avNivTodosChange(cb) {
+  if (cb.checked) {
+    document.querySelectorAll('.av-niv-spec').forEach(c => { c.checked = false; });
+  }
+}
+
+function _avNivSpecChange() {
+  const anySpec = Array.from(document.querySelectorAll('.av-niv-spec')).some(c => c.checked);
+  const todos = document.getElementById('av-niv-todos');
+  if (todos) todos.checked = !anySpec;
+}
+
+// Devuelve array de niveles seleccionados. [] o ['todos'] = null. Múltiples = array de strings.
+function _avGetNivelesSeleccionados() {
+  const todos = document.getElementById('av-niv-todos');
+  if (todos?.checked) return [null]; // null = todos los niveles
+  const specs = Array.from(document.querySelectorAll('.av-niv-spec'))
+    .filter(c => c.checked)
+    .map(c => c.value);
+  return specs.length ? specs : [null]; // si nada marcado, trata como todos
 }
 
 // ── Preview imágenes ──────────────────────────────────
@@ -241,28 +376,36 @@ async function _avisosGuardar() {
   const btn    = document.getElementById('av-btn-pub');
   const titulo = document.getElementById('av-titulo')?.value.trim();
   const cuerpo = document.getElementById('av-cuerpo')?.value.trim() || null;
-  const nivel  = document.getElementById('av-nivel')?.value || null;
+  const niveles = _avGetNivelesSeleccionados(); // array de valores (null o strings)
   const files  = Array.from(document.getElementById('av-imagen')?.files || []);
 
   if (!titulo) { alert('El título es obligatorio.'); return; }
   btn.disabled = true; btn.textContent = 'Publicando…';
 
   try {
-    const { data: inserted, error } = await sb
-      .from('comunicados')
-      .insert({ institucion_id: USUARIO_ACTUAL.institucion_id, autor_id: USUARIO_ACTUAL.id, tipo: 'novedad', nivel, titulo, cuerpo, requiere_firma: false })
-      .select('id').single();
-    if (error) throw error;
-
+    // Comprimir imágenes una sola vez
+    const blobs = [];
     for (let i = 0; i < files.length; i++) {
-      try {
-        const blob = await _avisosComprimir(files[i]);
-        const path = `${USUARIO_ACTUAL.institucion_id}/${Date.now()}_${i}.jpg`;
-        const { error: storErr } = await sb.storage.from('comunicados').upload(path, blob, { contentType: 'image/jpeg' });
-        if (storErr) continue;
-        const { data: urlData } = sb.storage.from('comunicados').getPublicUrl(path);
-        await sb.from('comunicado_imagenes').insert({ comunicado_id: inserted.id, imagen_url: urlData.publicUrl, orden: i });
-      } catch (_) {}
+      try { blobs.push(await _avisosComprimir(files[i])); } catch (_) {}
+    }
+
+    // Insertar una novedad por cada nivel seleccionado
+    for (const nivel of niveles) {
+      const { data: inserted, error } = await sb
+        .from('comunicados')
+        .insert({ institucion_id: USUARIO_ACTUAL.institucion_id, autor_id: USUARIO_ACTUAL.id, tipo: 'novedad', nivel, titulo, cuerpo, requiere_firma: false })
+        .select('id').single();
+      if (error) throw error;
+
+      for (let i = 0; i < blobs.length; i++) {
+        try {
+          const path = `${USUARIO_ACTUAL.institucion_id}/${Date.now()}_${nivel||'todos'}_${i}.jpg`;
+          const { error: storErr } = await sb.storage.from('comunicados').upload(path, blobs[i], { contentType: 'image/jpeg' });
+          if (storErr) continue;
+          const { data: urlData } = sb.storage.from('comunicados').getPublicUrl(path);
+          await sb.from('comunicado_imagenes').insert({ comunicado_id: inserted.id, imagen_url: urlData.publicUrl, orden: i });
+        } catch (_) {}
+      }
     }
 
     await rAvisos();
@@ -274,20 +417,31 @@ async function _avisosGuardar() {
 
 // ── Guardar nuevo comunicado de curso ─────────────────
 async function _avisosGuardarComunicado() {
-  const btn     = document.getElementById('av-btn-pub');
-  const cursoId = document.getElementById('av-curso')?.value;
-  const titulo  = document.getElementById('av-titulo')?.value.trim();
-  const cuerpo  = document.getElementById('av-cuerpo')?.value.trim();
+  const btn    = document.getElementById('av-btn-pub');
+  const titulo = document.getElementById('av-titulo')?.value.trim();
+  const cuerpo = document.getElementById('av-cuerpo')?.value.trim();
 
-  if (!cursoId)        { alert('Seleccioná un curso destinatario.'); return; }
-  if (!titulo || !cuerpo) { alert('El título y el mensaje son obligatorios.'); return; }
+  // Soporte multi-curso (nuevos checkboxes) y fallback a select único (edición)
+  const cursoIds = Array.from(document.querySelectorAll('.av-com-curso:checked')).map(cb => cb.value);
+  const cursoIdSingle = document.getElementById('av-curso')?.value;
+  const ids = cursoIds.length ? cursoIds : (cursoIdSingle ? [cursoIdSingle] : []);
+
+  if (!ids.length)         { alert('Seleccioná al menos un curso destinatario.'); return; }
+  if (!titulo || !cuerpo)  { alert('El título y el mensaje son obligatorios.'); return; }
 
   btn.disabled = true; btn.textContent = 'Enviando…';
 
   try {
-    const { error } = await sb
-      .from('comunicados')
-      .insert({ institucion_id: USUARIO_ACTUAL.institucion_id, autor_id: USUARIO_ACTUAL.id, tipo: 'comunicado', curso_id: cursoId, titulo, cuerpo, requiere_firma: false });
+    const inserts = ids.map(cursoId => ({
+      institucion_id: USUARIO_ACTUAL.institucion_id,
+      autor_id: USUARIO_ACTUAL.id,
+      tipo: 'comunicado',
+      curso_id: cursoId,
+      titulo,
+      cuerpo,
+      requiere_firma: false,
+    }));
+    const { error } = await sb.from('comunicados').insert(inserts);
     if (error) throw error;
     await rAvisos();
     _avisosTab('comunicados');
@@ -320,7 +474,9 @@ async function _avisosGuardarEdicion(id) {
   const btn    = document.getElementById('av-btn-pub');
   const titulo = document.getElementById('av-titulo')?.value.trim();
   const cuerpo = document.getElementById('av-cuerpo')?.value.trim() || null;
-  const nivel  = document.getElementById('av-nivel')?.value || null;
+  // En edición: solo se actualiza el primer nivel seleccionado (no crea múltiples)
+  const nivelesSelec = _avGetNivelesSeleccionados();
+  const nivel = nivelesSelec[0] ?? null;
   const files  = Array.from(document.getElementById('av-imagen')?.files || []);
 
   if (!titulo) { alert('El título es obligatorio.'); return; }
