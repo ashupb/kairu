@@ -85,7 +85,6 @@ async function rAgenda() {
     .eq('institucion_id', instId)
     .lte('fecha_inicio', hasta)
     .or(`fecha_fin.gte.${desde},fecha_inicio.gte.${desde}`)
-    .overlaps('convocatoria_grupos', ['familias', 'comunidad'])
     .order('fecha_inicio');
 
   // Filtrar por nivel del alumno activo
@@ -344,7 +343,14 @@ function _famAgEstilos() {
   const st = document.createElement('style');
   st.id = 'fam-agenda-styles';
   st.textContent = `
-    .fam-ag-wrap { padding-bottom: 60px; }
+    .fam-ag-wrap {
+      padding: 14px 14px 60px;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    @media (min-width: 768px) {
+      .fam-ag-wrap { padding: 20px 28px 60px; }
+    }
 
     .fam-ag-header {
       display: flex; align-items: center; justify-content: space-between;
