@@ -24,9 +24,6 @@ async function rInicio() {
     const hoy         = new Date();
     const hoyStr      = hoy.toISOString().split('T')[0];
     const anio        = hoy.getFullYear();
-    const mes         = String(hoy.getMonth() + 1).padStart(2, '0');
-    const inicioMes   = `${anio}-${mes}-01`;
-    const finMes      = new Date(anio, hoy.getMonth() + 1, 0).toISOString().split('T')[0];
     const nivelAlumno = ALUMNO_ACTUAL.cursos?.nivel;
     const cursoId     = ALUMNO_ACTUAL.cursos?.id;
 
@@ -36,10 +33,11 @@ async function rInicio() {
 
     const [asistRes, novRes, comRes, eventRes] = await Promise.all([
       sb.from('asistencia')
-        .select('estado')
+        .select('estado,fecha,hora_clase')
         .eq('alumno_id', ALUMNO_ACTUAL.id)
-        .gte('fecha', inicioMes)
-        .lte('fecha', finMes),
+        .gte('fecha', `${anio}-01-01`)
+        .lte('fecha', hoyStr)
+        .order('fecha', { ascending: false }),
 
       // Novedades institucionales (tipo='novedad', filtro por nivel)
       (async () => {
@@ -90,13 +88,13 @@ async function rInicio() {
         .limit(5),
     ]);
 
-    // Asistencia del mes
-    const asist     = asistRes.data || [];
-    const total     = asist.length;
-    const presentes = asist.filter(a => ['presente', 'tardanza', 'media_falta'].includes(a.estado)).length;
+    // Asistencia acumulada del año lectivo (solo registros diarios, sin hora_clase)
+    const asist     = (asistRes.data || []).filter(r => !r.hora_clase);
+    const diasUnicos = [...new Set(asist.map(r => r.fecha))];
+    const diasPresentes = [...new Set(asist.filter(r => ['presente','tardanza','media_falta'].includes(r.estado)).map(r => r.fecha))].length;
     const ausentes  = asist.filter(a => a.estado === 'ausente').length;
     const tardanzas = asist.filter(a => a.estado === 'tardanza').length;
-    const pct       = total > 0 ? Math.round(presentes / total * 100) : null;
+    const pct       = diasUnicos.length > 0 ? Math.round(diasPresentes / diasUnicos.length * 100) : null;
 
     // Normalizar imágenes en novedades
     _INICIO_NOVEDADES = (novRes.data || []).map(c => ({
@@ -139,7 +137,7 @@ async function rInicio() {
           <p class="saludo-fecha">${fmtFecha(hoyStr)}</p>
         </div>
         ${_alumnoCard()}
-        ${_asistResumen(pct, ausentes, tardanzas, total, inicioMes)}
+        ${_asistResumen(pct, ausentes, tardanzas, anio)}
         ${_feedSection(_INICIO_NOVEDADES, leidosNovIds, _INICIO_COMUNICADOS, leidosComIds)}
         ${_eventoSnippet(proximoEvento)}
       </div>`;
@@ -185,19 +183,19 @@ function _alumnoCard() {
     </div>`;
 }
 
-function _asistResumen(pct, ausentes, tardanzas, total, inicioMes) {
+function _asistResumen(pct, ausentes, tardanzas, anio) {
   const color = pct === null ? '' : pct >= 85 ? 'success' : pct >= 75 ? 'warning' : 'danger';
   return `
     <div class="card" onclick="goPage('asistencia')" style="cursor:pointer">
       <div class="card-header">
         <div>
           <span class="card-label">ASISTENCIA</span>
-          <span class="card-sublabel" style="margin-left:6px">${fmtMes(inicioMes)}</span>
+          <span class="card-sublabel" style="margin-left:6px">Año lectivo ${anio}</span>
         </div>
         <button class="card-link">Ver detalle →</button>
       </div>
-      ${total === 0
-        ? `<p class="empty-msg">Sin registros este mes.</p>`
+      ${pct === null
+        ? `<p class="empty-msg">Sin registros este año.</p>`
         : `<div class="asist-grid">
             <div class="asist-stat ${color ? 'asist-stat--' + color : ''}">
               <span class="asist-num">${pct}%</span>
