@@ -10,6 +10,7 @@ let AGENDA_MES           = new Date().getMonth();
 let AGENDA_ANIO          = new Date().getFullYear();
 let TIPOS_EVENTO         = [];
 let USUARIOS_INST        = [];
+let CURSOS_INST          = [];
 let _agendaEventosSem    = [];
 let _agendaEventoAbierto = null;
 
@@ -96,12 +97,14 @@ async function rAgenda() {
   const instId = USUARIO_ACTUAL.institucion_id;
   const rol    = USUARIO_ACTUAL.rol;
 
-  const [tiposRes, usuariosRes] = await Promise.all([
+  const [tiposRes, usuariosRes, cursosRes] = await Promise.all([
     sb.from('tipos_evento').select('*').eq('institucion_id', instId).eq('activo', true).order('nombre'),
     sb.from('usuarios').select('id, nombre_completo, rol, nivel, avatar_iniciales').eq('institucion_id', instId).order('nombre_completo'),
+    sb.from('cursos').select('id, nombre, division, nivel').eq('institucion_id', instId).order('nivel').order('nombre'),
   ]);
   TIPOS_EVENTO  = tiposRes.data  || [];
   USUARIOS_INST = usuariosRes.data || [];
+  CURSOS_INST   = cursosRes.data  || [];
 
   const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
   const hoy = hoyISO();
@@ -399,8 +402,10 @@ async function verEvento(id) {
   }
   _agendaEventoAbierto = id;
 
-  const { data: e } = await sb.from('eventos_institucionales')
-    .select('*, usuarios(nombre_completo)').eq('id', id).single();
+  const [{ data: e }, { data: rsvps }] = await Promise.all([
+    sb.from('eventos_institucionales').select('*, usuarios(nombre_completo), alumnos(nombre_completo, cursos(nombre, division))').eq('id', id).single(),
+    sb.from('evento_respuestas').select('usuario_id, respuesta, mensaje').eq('evento_id', id),
+  ]);
   if (!e) return;
 
   const nc   = NIVEL_CONFIG[e.nivel] || NIVEL_CONFIG.todos;
@@ -417,6 +422,61 @@ async function verEvento(id) {
 
   const puedeEditar = ['director_general','directivo_nivel','preceptor'].includes(USUARIO_ACTUAL.rol) || e.creado_por === USUARIO_ACTUAL.id;
 
+  // RSVP: visible solo para quienes están en el evento
+  const miId    = USUARIO_ACTUAL.id;
+  const esInvit = (e.convocados_ids||[]).includes(miId) || (e.responsables_ids||[]).includes(miId) || e.creado_por === miId;
+  const rsvpArr = rsvps || [];
+  let rsvpHtml  = '';
+
+  if (esInvit) {
+    if (e.es_cita_individual) {
+      // Cita individual: mostrar respuesta de la familia
+      const alumnoNom = e.alumnos?.nombre_completo || '—';
+      const curso     = e.alumnos?.cursos;
+      const cursoTxt  = curso ? `${curso.nombre}${curso.division?' '+curso.division:''}` : '';
+      const respFam   = rsvpArr.find(r => !Object.values(USUARIOS_INST).find(u => u.id === r.usuario_id));
+      const estadoFam = respFam?.respuesta || 'pendiente';
+      const msgFam    = respFam?.mensaje || '';
+      const estadoLabel = { pendiente: '⏳ Sin respuesta', acepta: '✅ Aceptó', rechaza: '❌ Rechazó' }[estadoFam] || estadoFam;
+      rsvpHtml = `
+        <div style="margin-top:10px;padding:10px;background:var(--surf2);border-radius:var(--rad);border-top:1px solid var(--brd)">
+          <div class="sec-lb" style="margin:0 0 6px">Alumno/a convocado/a</div>
+          <div style="font-size:12px;font-weight:600">${alumnoNom}${cursoTxt ? ` · ${cursoTxt}` : ''}</div>
+          <div style="margin-top:8px">
+            <div class="sec-lb" style="margin:0 0 4px">Respuesta de la familia</div>
+            <span style="font-size:12px">${estadoLabel}</span>
+            ${msgFam ? `<div style="margin-top:4px;font-size:11px;color:var(--txt2);font-style:italic">"${msgFam}"</div>` : ''}
+          </div>
+        </div>`;
+    } else if ((e.convocatoria_grupos||[]).includes('familias')) {
+      // Evento colectivo con familias: contador de RSVP
+      const asistire   = rsvpArr.filter(r => r.respuesta === 'asistire').length;
+      const noAsistire = rsvpArr.filter(r => r.respuesta === 'no_asistire').length;
+      rsvpHtml = `
+        <div style="margin-top:10px;padding:10px;background:var(--surf2);border-radius:var(--rad);border-top:1px solid var(--brd)">
+          <div class="sec-lb" style="margin:0 0 8px">Respuestas de familias</div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            <div style="text-align:center">
+              <div style="font-size:20px;font-weight:700;color:var(--verde)">${asistire}</div>
+              <div style="font-size:10px;color:var(--txt3)">Asistiré</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:20px;font-weight:700;color:#d63b2f">${noAsistire}</div>
+              <div style="font-size:10px;color:var(--txt3)">No asistiré</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:20px;font-weight:700;color:var(--txt3)">${rsvpArr.length}</div>
+              <div style="font-size:10px;color:var(--txt3)">Total respuestas</div>
+            </div>
+          </div>
+        </div>`;
+    }
+  }
+
+  const horaTxt = e.hora
+    ? `${e.hora.slice(0,5)}${e.hora_fin ? ' — '+e.hora_fin.slice(0,5) : ''}`
+    : '';
+
   document.getElementById('detalle-evento').innerHTML = `
     <div class="card" style="border-left:4px solid ${nc.color};margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -425,6 +485,7 @@ async function verEvento(id) {
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
             <span style="font-size:10px;padding:2px 10px;border-radius:20px;background:${nc.bg};color:${nc.color};border:1px solid ${nc.color}40">${nc.label}</span>
             ${tipo ? `<span class="tag tgr">${tipo.nombre}</span>` : ''}
+            ${e.es_cita_individual ? `<span class="tag tp">👤 Cita individual</span>` : ''}
           </div>
         </div>
         <button onclick="document.getElementById('detalle-evento').innerHTML='';_agendaEventoAbierto=null;"
@@ -437,7 +498,7 @@ async function verEvento(id) {
           <div style="font-size:12px">
             ${formatFechaLatam(e.fecha_inicio)}
             ${e.fecha_fin && e.fecha_fin !== e.fecha_inicio ? ' → '+formatFechaLatam(e.fecha_fin) : ''}
-            ${e.hora ? ' · '+e.hora : ''}
+            ${horaTxt ? ' · '+horaTxt : ''}
           </div>
         </div>
         <div>
@@ -466,6 +527,7 @@ async function verEvento(id) {
       </div>
 
       ${e.descripcion ? `<div style="margin-top:10px;font-size:11px;color:var(--txt2);line-height:1.6;border-top:1px solid var(--brd);padding-top:10px">${e.descripcion}</div>` : ''}
+      ${rsvpHtml}
 
       ${puedeEditar ? `
       <div class="acc" style="margin-top:12px">
@@ -491,54 +553,133 @@ async function editarEvento(id) {
 
 // ─── FORMULARIO ───────────────────────────────────────
 function abrirFormEvento(eventoExistente = null) {
-  const rol        = USUARIO_ACTUAL?.rol;
-  const esDirector = rol === 'director_general';
-  const esEdicion  = !!eventoExistente;
-  const e          = eventoExistente || {};
+  const rol          = USUARIO_ACTUAL?.rol;
+  const esDirector   = rol === 'director_general';
+  const esEdicion    = !!eventoExistente;
+  const e            = eventoExistente || {};
+  const esIndividual = !!e.es_cita_individual;
 
   const nivelesDisp = esDirector
     ? ['todos','inicial','primario','secundario']
     : [USUARIO_ACTUAL.nivel || 'todos'];
 
+  // Horario fin opts (misma lista que hora)
+  const horaFinOpts = HORAS_OPTS.map(h =>
+    `<option value="${h}" ${(e.hora_fin||'').startsWith(h.slice(0,5))?'selected':''}>${h}</option>`
+  ).join('');
+
+  // Selector de cursos para familias (colectivo)
+  const cursosFamSelec = e.cursos_familias_ids || [];
+  const cursosFamHtml = CURSOS_INST.map(c => {
+    const lbl = `${c.nombre}${c.division ? ' '+c.division : ''} (${c.nivel})`;
+    return `<label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;padding:3px 0">
+      <input type="checkbox" class="ev-curso-fam-chk" value="${c.id}" ${cursosFamSelec.includes(c.id)?'checked':''}>
+      ${lbl}
+    </label>`;
+  }).join('');
+
+  // Selector de cursos para cita individual
+  const citaCursoSel = e.alumno_id ? (CURSOS_INST.find(c => c.id === e._curso_id)?.id || '') : '';
+
   document.getElementById('form-evento').innerHTML = `
     <div class="card" style="margin-bottom:14px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px">
         ${esEdicion ? '✏️ Editar evento' : 'Nuevo evento'}
       </div>
+
+      ${!esEdicion ? `
+      <div style="display:flex;gap:6px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--brd)">
+        <button type="button" id="ev-mode-col" class="chip${!esIndividual?' on':''}" onclick="_agModoColectivo()">Evento colectivo</button>
+        <button type="button" id="ev-mode-cit" class="chip${esIndividual?' on':''}" onclick="_agModoCita()">Cita individual</button>
+      </div>` : ''}
 
       <div class="form-grid-2-ag">
 
         <div style="grid-column:1/-1">
           <div class="sec-lb">Nombre del evento *</div>
-          <input type="text" id="ev-nombre" placeholder="Ej: Día del Maestro" value="${e.nombre || ''}">
+          <input type="text" id="ev-nombre" placeholder="${esIndividual ? 'Ej: Reunión con familia de...' : 'Ej: Día del Maestro'}" value="${e.nombre || ''}">
         </div>
 
-        <div>
-          <div class="sec-lb">Tipo de evento</div>
-          <select id="ev-tipo" class="sel-estilizado">
-            <option value="">— Seleccioná —</option>
-            ${TIPOS_EVENTO.map(t => `<option value="${t.id}" ${e.tipo_id===t.id?'selected':''}>${t.nombre}</option>`).join('')}
-          </select>
-          <div style="font-size:10px;color:var(--verde);margin-top:4px;cursor:pointer" onclick="abrirNuevoTipo()">+ Agregar tipo</div>
-          <div id="form-nuevo-tipo"></div>
-        </div>
+        <!-- ── SECCIÓN COLECTIVO ───────────────────────────── -->
+        <div id="ev-seccion-colectivo" style="${esIndividual ? 'display:none' : ''}grid-column:1/-1;display:contents">
 
-        <div>
-          <div class="sec-lb">Nivel</div>
-          ${esDirector ? (() => {
-            const selNiveles = (e.nivel||'todos').split(',').map(n=>n.trim());
-            const todos = selNiveles.includes('todos');
-            return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
-              ${['todos','inicial','primario','secundario'].map(n => `
-                <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
-                  <input type="checkbox" class="ev-nivel-chk" value="${n}" ${(todos&&n==='todos')||selNiveles.includes(n)?'checked':''}>
-                  ${NIVEL_CONFIG[n]?.label || 'Todos'}
-                </label>`).join('')}
-            </div>`;
-          })() : `<select id="ev-nivel" class="sel-estilizado">
-            ${nivelesDisp.map(n => `<option value="${n}" ${(e.nivel||'todos')===n?'selected':''}>${NIVEL_CONFIG[n]?.label||n}</option>`).join('')}
-          </select>`}
+          <div>
+            <div class="sec-lb">Tipo de evento</div>
+            <select id="ev-tipo" class="sel-estilizado">
+              <option value="">— Seleccioná —</option>
+              ${TIPOS_EVENTO.map(t => `<option value="${t.id}" ${e.tipo_id===t.id?'selected':''}>${t.nombre}</option>`).join('')}
+            </select>
+            <div style="font-size:10px;color:var(--verde);margin-top:4px;cursor:pointer" onclick="abrirNuevoTipo()">+ Agregar tipo</div>
+            <div id="form-nuevo-tipo"></div>
+          </div>
+
+          <div>
+            <div class="sec-lb">Nivel</div>
+            ${esDirector ? (() => {
+              const selNiveles = (e.nivel||'todos').split(',').map(n=>n.trim());
+              const todos = selNiveles.includes('todos');
+              return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+                ${['todos','inicial','primario','secundario'].map(n => `
+                  <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+                    <input type="checkbox" class="ev-nivel-chk" value="${n}" ${(todos&&n==='todos')||selNiveles.includes(n)?'checked':''}>
+                    ${NIVEL_CONFIG[n]?.label || 'Todos'}
+                  </label>`).join('')}
+              </div>`;
+            })() : `<select id="ev-nivel" class="sel-estilizado">
+              ${nivelesDisp.map(n => `<option value="${n}" ${(e.nivel||'todos')===n?'selected':''}>${NIVEL_CONFIG[n]?.label||n}</option>`).join('')}
+            </select>`}
+          </div>
+
+          <div style="grid-column:1/-1">
+            <div class="sec-lb">Convocatoria — grupos</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button type="button" class="chip" onclick="toggleTodosGrupos(this)">Todos</button>
+              ${GRUPOS_CONV.map(g => `
+                <button type="button" class="chip ${(e.convocatoria_grupos||[]).includes(g.id)?'on':''}"
+                  data-grupo="${g.id}"
+                  onclick="this.classList.toggle('on');_agOnGrupoToggle(this)">${g.label}
+                </button>`).join('')}
+            </div>
+          </div>
+
+          <div id="ev-cursos-fam-wrap" style="grid-column:1/-1;${(e.convocatoria_grupos||[]).includes('familias') ? '' : 'display:none'}">
+            <div class="sec-lb">¿Familias de qué cursos?</div>
+            <div style="font-size:11px;color:var(--txt3);margin-bottom:6px">Dejá vacío para convocar a todas las familias del nivel seleccionado.</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2px;max-height:160px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad);padding:8px">
+              ${cursosFamHtml || '<span style="font-size:11px;color:var(--txt3)">No hay cursos cargados.</span>'}
+            </div>
+          </div>
+
         </div>
+        <!-- ── FIN SECCIÓN COLECTIVO ──────────────────────── -->
+
+        <!-- ── SECCIÓN CITA INDIVIDUAL ────────────────────── -->
+        <div id="ev-seccion-individual" style="${!esIndividual ? 'display:none' : ''}grid-column:1/-1;display:${!esIndividual?'none':'contents'}">
+
+          <div>
+            <div class="sec-lb">Curso *</div>
+            <select id="ev-cita-curso" class="sel-estilizado" onchange="_agCitaCursoChange(this.value)">
+              <option value="">— Seleccioná curso —</option>
+              ${CURSOS_INST.map(c => `<option value="${c.id}">${c.nombre}${c.division?' '+c.division:''} · ${c.nivel}</option>`).join('')}
+            </select>
+          </div>
+
+          <div id="ev-cita-alumno-wrap">
+            <div class="sec-lb">Alumno/a *</div>
+            <select id="ev-cita-alumno" class="sel-estilizado">
+              <option value="">— Seleccioná primero un curso —</option>
+            </select>
+          </div>
+
+          <div style="grid-column:1/-1">
+            <div class="sec-lb">Problemática asociada (opcional)</div>
+            <select id="ev-cita-prob" class="sel-estilizado">
+              <option value="">— Sin asociar —</option>
+            </select>
+          </div>
+
+        </div>
+        <!-- ── FIN SECCIÓN CITA INDIVIDUAL ───────────────── -->
 
         <div>
           <div class="sec-lb">Fecha inicio *</div>
@@ -551,30 +692,27 @@ function abrirFormEvento(eventoExistente = null) {
         </div>
 
         <div>
-          <div class="sec-lb">Hora</div>
+          <div class="sec-lb">Hora de inicio</div>
           <select id="ev-hora" class="sel-estilizado">
             <option value="">— Sin hora —</option>
-            ${HORAS_OPTS.map(h => `<option value="${h}" ${e.hora===h?'selected':''}>${h}</option>`).join('')}
+            ${HORAS_OPTS.map(h => `<option value="${h}" ${(e.hora||'').startsWith(h.slice(0,5))?'selected':''}>${h}</option>`).join('')}
           </select>
         </div>
 
         <div>
+          <div class="sec-lb">Hora de fin</div>
+          <select id="ev-hora-fin" class="sel-estilizado">
+            <option value="">— Sin hora fin —</option>
+            ${horaFinOpts}
+          </select>
+        </div>
+
+        <div style="grid-column:1/-1">
           <div class="sec-lb">Lugar</div>
           <input type="text" id="ev-lugar" placeholder="Ej: Salón de actos" value="${e.lugar||''}">
         </div>
 
-        <div style="grid-column:1/-1">
-          <div class="sec-lb">Convocatoria — grupos</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button type="button" class="chip" onclick="toggleTodosGrupos(this)">Todos</button>
-            ${GRUPOS_CONV.map(g => `
-              <button type="button" class="chip ${(e.convocatoria_grupos||[]).includes(g.id)?'on':''}"
-                data-grupo="${g.id}" onclick="this.classList.toggle('on')">${g.label}
-              </button>`).join('')}
-          </div>
-        </div>
-
-        <div style="grid-column:1/-1">
+        <div id="ev-seccion-conv-personas" style="grid-column:1/-1">
           <div class="sec-lb">Personas convocadas</div>
           <div class="usr-search-wrap">
             <input type="text" class="usr-search-inp" id="busq-conv"
@@ -591,7 +729,7 @@ function abrirFormEvento(eventoExistente = null) {
           </div>
         </div>
 
-        <div style="grid-column:1/-1">
+        <div id="ev-seccion-responsables" style="${esIndividual ? 'display:none' : ''}grid-column:1/-1">
           <div class="sec-lb">Responsable(s)</div>
           <div class="usr-search-wrap">
             <input type="text" class="usr-search-inp" id="busq-resp"
@@ -624,6 +762,81 @@ function abrirFormEvento(eventoExistente = null) {
     </div>`;
 
   document.addEventListener('click', cerrarDropdowns);
+
+  // Si es edición de cita individual, cargar alumnos del curso
+  if (esIndividual && e.alumno_id) {
+    _agCitaCursoChange(e._curso_id || '', e.alumno_id);
+  }
+}
+
+// ─── MODO COLECTIVO / CITA INDIVIDUAL ─────────────────
+function _agModoColectivo() {
+  document.getElementById('ev-mode-col').classList.add('on');
+  document.getElementById('ev-mode-cit').classList.remove('on');
+  document.getElementById('ev-seccion-colectivo').style.display = 'contents';
+  document.getElementById('ev-seccion-individual').style.display = 'none';
+  document.getElementById('ev-seccion-responsables').style.display = '';
+}
+
+function _agModoCita() {
+  document.getElementById('ev-mode-col').classList.remove('on');
+  document.getElementById('ev-mode-cit').classList.add('on');
+  document.getElementById('ev-seccion-colectivo').style.display = 'none';
+  document.getElementById('ev-seccion-individual').style.display = 'contents';
+  document.getElementById('ev-seccion-responsables').style.display = 'none';
+}
+
+function _agOnGrupoToggle(btn) {
+  if (btn.dataset.grupo !== 'familias') return;
+  const wrap = document.getElementById('ev-cursos-fam-wrap');
+  if (wrap) wrap.style.display = btn.classList.contains('on') ? '' : 'none';
+}
+
+function _agGetCursosFamilias() {
+  return Array.from(document.querySelectorAll('.ev-curso-fam-chk:checked')).map(c => c.value);
+}
+
+async function _agCitaCursoChange(cursoId, preselAlumnoId = null) {
+  const alumnoSel = document.getElementById('ev-cita-alumno');
+  const probSel   = document.getElementById('ev-cita-prob');
+  if (!alumnoSel) return;
+  if (!cursoId) {
+    alumnoSel.innerHTML = '<option value="">— Seleccioná primero un curso —</option>';
+    return;
+  }
+  alumnoSel.innerHTML = '<option value="">Cargando...</option>';
+  const { data: alumnos } = await sb
+    .from('alumnos').select('id, nombre_completo')
+    .eq('curso_id', cursoId).eq('activo', true).order('nombre_completo');
+  alumnoSel.innerHTML = '<option value="">— Seleccioná alumno/a —</option>' +
+    (alumnos||[]).map(a =>
+      `<option value="${a.id}" ${preselAlumnoId===a.id?'selected':''}>${a.nombre_completo}</option>`
+    ).join('');
+
+  // Cargar problemáticas abiertas del alumno si ya está seleccionado
+  if (preselAlumnoId && probSel) _agCargarProbsAlumno(preselAlumnoId);
+  if (alumnoSel) {
+    alumnoSel.onchange = () => {
+      const aid = alumnoSel.value;
+      if (aid && probSel) _agCargarProbsAlumno(aid);
+    };
+  }
+}
+
+async function _agCargarProbsAlumno(alumnoId) {
+  const sel = document.getElementById('ev-cita-prob');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Cargando...</option>';
+  const { data } = await sb
+    .from('problematicas')
+    .select('id, descripcion, estado')
+    .eq('alumno_id', alumnoId)
+    .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+    .order('created_at', { ascending: false })
+    .limit(20);
+  const abiertas = (data||[]).filter(p => p.estado !== 'cerrada');
+  sel.innerHTML = '<option value="">— Sin asociar —</option>' +
+    abiertas.map(p => `<option value="${p.id}">${p.descripcion?.slice(0,60) || 'Sin descripción'}</option>`).join('');
 }
 
 // ─── DROPDOWNS DE USUARIOS ────────────────────────────
@@ -755,14 +968,34 @@ async function guardarEvento(eventoId) {
   }
 
   const hora         = document.getElementById('ev-hora')?.value || null;
+  const horaFin      = document.getElementById('ev-hora-fin')?.value || null;
   const grupos       = Array.from(document.querySelectorAll('[data-grupo].on')).map(b => b.dataset.grupo);
   const convocados   = Array.from(document.getElementById('chips-conv')?.querySelectorAll('[data-uid]')||[]).map(b => b.dataset.uid);
   const responsables = Array.from(document.getElementById('chips-resp')?.querySelectorAll('[data-uid]')||[]).map(b => b.dataset.uid);
 
+  const esIndividual = document.getElementById('ev-mode-cit')?.classList.contains('on') || false;
+
   const nivelChks = [...document.querySelectorAll('.ev-nivel-chk:checked')].map(c => c.value);
-  const nivelVal  = nivelChks.length
+  let nivelVal    = nivelChks.length
     ? (nivelChks.includes('todos') ? 'todos' : nivelChks.join(','))
     : (document.getElementById('ev-nivel')?.value || 'todos');
+
+  // Para cita individual: obtener nivel del curso seleccionado
+  let alumnoId        = null;
+  let problematicaId  = null;
+  let cursosFamilias  = _agGetCursosFamilias();
+
+  if (esIndividual) {
+    alumnoId       = document.getElementById('ev-cita-alumno')?.value || null;
+    problematicaId = document.getElementById('ev-cita-prob')?.value || null;
+    const cursoId  = document.getElementById('ev-cita-curso')?.value;
+    const cursoObj = CURSOS_INST.find(c => c.id === cursoId);
+    nivelVal       = cursoObj?.nivel || 'todos';
+    cursosFamilias = [];
+    if (!alumnoId) { alert('Seleccioná el alumno/a para la cita.'); return; }
+    // Las citas individuales siempre tienen 'familias' en convocatoria
+    if (!grupos.includes('familias')) grupos.push('familias');
+  }
 
   const payload = {
     nombre,
@@ -771,11 +1004,16 @@ async function guardarEvento(eventoId) {
     fecha_inicio:        fechaNorm,
     fecha_fin:           fechaFin,
     hora:                hora || null,
+    hora_fin:            horaFin || null,
     lugar:               document.getElementById('ev-lugar')?.value || null,
     descripcion:         document.getElementById('ev-desc')?.value || null,
     convocatoria_grupos: grupos,
     convocados_ids:      convocados,
     responsables_ids:    responsables,
+    es_cita_individual:  esIndividual,
+    alumno_id:           alumnoId,
+    problematica_id:     problematicaId || null,
+    cursos_familias_ids: cursosFamilias.length ? cursosFamilias : null,
   };
 
   let error, data;

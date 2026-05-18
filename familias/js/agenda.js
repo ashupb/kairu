@@ -81,17 +81,26 @@ async function rAgenda() {
 
   const { data: rawEvs } = await sb
     .from('eventos_institucionales')
-    .select('id, nombre, fecha_inicio, fecha_fin, hora, lugar, nivel, descripcion, convocatoria_grupos')
+    .select('id, nombre, fecha_inicio, fecha_fin, hora, hora_fin, lugar, nivel, descripcion, convocatoria_grupos, cursos_familias_ids')
     .eq('institucion_id', instId)
+    .eq('es_cita_individual', false)
     .lte('fecha_inicio', hasta)
     .or(`fecha_fin.gte.${desde},fecha_inicio.gte.${desde}`)
     .order('fecha_inicio');
 
-  // Filtrar por nivel del alumno activo
+  const cursoIdAlumno = ALUMNO_ACTUAL?.cursos?.id;
+
+  // Solo eventos para familias (por convocatoria) + nivel + cursos específicos
   _famAgEvs = (rawEvs || []).filter(e => {
-    if (!e.nivel || e.nivel === 'todos') return true;
-    if (!miNivel) return true;
-    return e.nivel.split(',').map(n => n.trim()).includes(miNivel);
+    const grupos = e.convocatoria_grupos || [];
+    if (!grupos.some(g => ['familias', 'todos', 'comunidad'].includes(g))) return false;
+    if (miNivel && e.nivel && e.nivel !== 'todos') {
+      if (!e.nivel.split(',').map(n => n.trim()).includes(miNivel)) return false;
+    }
+    if (e.cursos_familias_ids?.length) {
+      if (!cursoIdAlumno || !e.cursos_familias_ids.includes(cursoIdAlumno)) return false;
+    }
+    return true;
   });
 
   // Si el día seleccionado cayó fuera del mes, resetear
@@ -291,13 +300,44 @@ async function famVerEvento(id) {
   if (!e) return;
 
   const nc = FAM_NIVEL_CFG[e.nivel] || FAM_NIVEL_CFG.todos;
-  const GRUPO_LABELS = {
-    familias: 'Familias', comunidad: 'Comunidad educativa',
-    alumnos: 'Alumnos', docentes: 'Docentes',
-    preceptores: 'Preceptores', equipo_directivo: 'Equipo directivo',
-  };
-  const grupos = (e.convocatoria_grupos || [])
-    .map(g => GRUPO_LABELS[g] || g).join(', ');
+
+  // Hora con rango si hay hora_fin
+  const horaTxt = e.hora
+    ? `${e.hora.slice(0,5)}${e.hora_fin ? ' — '+e.hora_fin.slice(0,5) : ''}`
+    : '';
+
+  // Fetch RSVP actual del familiar
+  let miRsvp = null;
+  try {
+    const { data: rsvpData } = await sb
+      .from('evento_respuestas')
+      .select('respuesta')
+      .eq('evento_id', id)
+      .eq('usuario_id', USUARIO_FAMILIAR.id)
+      .maybeSingle();
+    miRsvp = rsvpData?.respuesta || null;
+  } catch(_) {}
+
+  const rsvpHtml = `
+    <div style="margin-top:14px;padding-top:12px;border-top:1.5px solid var(--color-border,rgba(0,0,0,0.07))">
+      <div style="font-size:11px;font-weight:600;color:var(--color-text-medium);margin-bottom:8px">¿Asistís?</div>
+      <div style="display:flex;gap:8px">
+        <button id="rsvp-asistire-${id}" onclick="_famRsvpEvento('${id}','asistire')"
+          style="flex:1;padding:9px;border-radius:8px;border:1.5px solid ${miRsvp==='asistire'?'var(--color-green)':'rgba(0,0,0,0.12)'};
+            background:${miRsvp==='asistire'?'#e8f5ee':'var(--color-white)'};
+            color:${miRsvp==='asistire'?'var(--color-green)':'var(--color-text-medium)'};
+            font-size:13px;font-weight:600;cursor:pointer;transition:all .15s">
+          ✓ Asistiré
+        </button>
+        <button id="rsvp-no-${id}" onclick="_famRsvpEvento('${id}','no_asistire')"
+          style="flex:1;padding:9px;border-radius:8px;border:1.5px solid ${miRsvp==='no_asistire'?'#d63b2f':'rgba(0,0,0,0.12)'};
+            background:${miRsvp==='no_asistire'?'#fdf0ee':'var(--color-white)'};
+            color:${miRsvp==='no_asistire'?'#d63b2f':'var(--color-text-medium)'};
+            font-size:13px;font-weight:600;cursor:pointer;transition:all .15s">
+          ✕ No asistiré
+        </button>
+      </div>
+    </div>`;
 
   detEl.innerHTML = `
     <div class="fam-ag-detalle-card" style="border-left:4px solid ${nc.color}">
@@ -312,12 +352,12 @@ async function famVerEvento(id) {
       <div class="fam-ag-det-grid">
         <div class="fam-ag-det-item">
           <div class="fam-ag-det-lb">Fecha</div>
-          <div>${_famFmtLatam(e.fecha_inicio)}${e.fecha_fin && e.fecha_fin !== e.fecha_inicio ? ' → '+_famFmtLatam(e.fecha_fin) : ''}${e.hora ? ' · '+e.hora.slice(0,5) : ''}</div>
+          <div>${_famFmtLatam(e.fecha_inicio)}${e.fecha_fin && e.fecha_fin !== e.fecha_inicio ? ' → '+_famFmtLatam(e.fecha_fin) : ''}${horaTxt ? ' · '+horaTxt : ''}</div>
         </div>
         ${e.lugar ? `<div class="fam-ag-det-item"><div class="fam-ag-det-lb">Lugar</div><div>📍 ${e.lugar}</div></div>` : ''}
-        ${grupos ? `<div class="fam-ag-det-item"><div class="fam-ag-det-lb">Convocados</div><div>${grupos}</div></div>` : ''}
       </div>
       ${e.descripcion ? `<div class="fam-ag-det-desc">${e.descripcion}</div>` : ''}
+      ${rsvpHtml}
     </div>`;
 }
 
@@ -335,6 +375,36 @@ function famIrHoy() {
   FAM_AGENDA_ANIO = hoy.getFullYear();
   FAM_AGENDA_DIA  = _famHoyISO();
   rAgenda();
+}
+
+// ─── RSVP EVENTO COLECTIVO ────────────────────────────────────────
+async function _famRsvpEvento(eventoId, respuesta) {
+  const btnA  = document.getElementById(`rsvp-asistire-${eventoId}`);
+  const btnN  = document.getElementById(`rsvp-no-${eventoId}`);
+  if (btnA) btnA.disabled = true;
+  if (btnN) btnN.disabled = true;
+  try {
+    await sb.from('evento_respuestas').upsert(
+      [{ evento_id: eventoId, usuario_id: USUARIO_FAMILIAR.id, respuesta }],
+      { onConflict: 'evento_id,usuario_id' }
+    );
+    // Actualizar estilos sin re-fetch
+    const esA = respuesta === 'asistire';
+    if (btnA) {
+      btnA.style.border    = `1.5px solid ${esA?'var(--color-green)':'rgba(0,0,0,0.12)'}`;
+      btnA.style.background = esA ? '#e8f5ee' : 'var(--color-white)';
+      btnA.style.color      = esA ? 'var(--color-green)' : 'var(--color-text-medium)';
+    }
+    if (btnN) {
+      btnN.style.border    = `1.5px solid ${!esA?'#d63b2f':'rgba(0,0,0,0.12)'}`;
+      btnN.style.background = !esA ? '#fdf0ee' : 'var(--color-white)';
+      btnN.style.color      = !esA ? '#d63b2f' : 'var(--color-text-medium)';
+    }
+  } catch(_) {
+    alert('No se pudo guardar tu respuesta. Intentá de nuevo.');
+  }
+  if (btnA) btnA.disabled = false;
+  if (btnN) btnN.disabled = false;
 }
 
 // ─── ESTILOS ──────────────────────────────────────────────────────
