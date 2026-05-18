@@ -730,6 +730,13 @@ body.dark .tab-bar { border-bottom-color: rgba(255,255,255,0.08); }
 }
 body.dark .badge-com { background: rgba(59,130,246,0.2); color: #60a5fa; }
 
+.badge-nov {
+  display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px;
+  font-weight: 700; letter-spacing: 0.04em;
+  background: rgba(34,153,87,0.12); color: #1a7a46;
+}
+body.dark .badge-nov { background: rgba(34,153,87,0.2); color: #4ade80; }
+
 /* ── Comunicado texto (sin imagen, en familias) ─────────────────── */
 .com-text-card { padding: 14px 16px; margin-bottom: 10px; }
 .com-text-card .com-titulo { margin-bottom: 6px; }

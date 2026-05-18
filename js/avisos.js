@@ -184,30 +184,27 @@ function _avisosFormNovedad(editData = null) {
 
   const imgsActualesHtml = isEdit ? _avisosEditImgsHtml(c) : '';
 
-  const nivelesDisp = _COM_INT_CURSOS.length
-    ? [...new Set(_COM_INT_CURSOS.map(cu => cu.nivel))].filter(Boolean)
-    : ['inicial', 'primario', 'secundario'];
+  // En edición: selector de nivel simple. En nuevo: selector nivel→curso de dos pasos.
+  const destinatariosHtml = isEdit ? `
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">NIVEL DESTINATARIO</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;padding:10px;border:1px solid var(--brd);border-radius:var(--rad)">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="av-niv-todos" onchange="_avNivTodosChange(this)" ${!c?.nivel ? 'checked' : ''}>
+          Todos los niveles
+        </label>
+        ${['inicial','primario','secundario'].map(n => `
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" class="av-niv-spec" value="${n}" onchange="_avNivSpecChange()" ${c?.nivel === n ? 'checked' : ''}>
+            ${_AV_NIVEL_LABEL[n]}
+          </label>`).join('')}
+      </div>
+    </div>` : _avDestinoSelectorHtml();
 
   wrap.innerHTML = `
     <div class="card" style="margin-bottom:16px">
       <div class="card-t">${isEdit ? 'Editar novedad' : 'Nueva novedad'}</div>
-      <div style="margin-bottom:12px">
-        <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">NIVELES DESTINATARIOS</label>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;padding:10px;border:1px solid var(--brd);border-radius:var(--rad)">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="av-niv-todos" onchange="_avNivTodosChange(this)"
-              ${!c?.nivel ? 'checked' : ''}>
-            Todos los niveles
-          </label>
-          ${['inicial','primario','secundario'].map(n => `
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-            <input type="checkbox" class="av-niv-spec" value="${n}" onchange="_avNivSpecChange()"
-              ${c?.nivel === n ? 'checked' : ''}>
-            ${_AV_NIVEL_LABEL[n]}
-          </label>`).join('')}
-        </div>
-        <p style="font-size:11px;color:var(--txt3);margin-top:5px">Si marcás niveles específicos, se publica una novedad por nivel seleccionado.</p>
-      </div>
+      ${destinatariosHtml}
       <div style="margin-bottom:12px">
         <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">TÍTULO *</label>
         <input type="text" id="av-titulo" value="${c?.titulo||''}" placeholder="Título de la novedad" maxlength="120">
@@ -261,6 +258,7 @@ function _avisosFormComunicado(editData = null) {
   const c = editData;
   const isEdit = !!c;
 
+  // En edición: selector simple. En nuevo: selector nivel→curso de dos pasos.
   let destinatariosHtml;
   if (isEdit) {
     const cursosOpts = _COM_INT_CURSOS.map(cu => {
@@ -276,36 +274,7 @@ function _avisosFormComunicado(editData = null) {
         </select>
       </div>`;
   } else {
-    // Agrupar cursos por nivel para nuevo comunicado
-    const porNivel = {};
-    _COM_INT_CURSOS.forEach(cu => {
-      const n = cu.nivel || '_';
-      if (!porNivel[n]) porNivel[n] = [];
-      porNivel[n].push(cu);
-    });
-    const checkboxHtml = Object.entries(porNivel).map(([nivel, cursos]) => `
-      <div style="margin-bottom:8px">
-        <div style="font-size:11px;font-weight:600;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${_AV_NIVEL_LABEL[nivel] || nivel}</div>
-        ${cursos.map(cu => `
-          <label style="display:flex;align-items:center;gap:8px;padding:5px 2px;cursor:pointer;border-radius:4px">
-            <input type="checkbox" class="av-com-curso" value="${cu.id}">
-            <span style="font-size:13px">${cu.nombre}${cu.division ? ' ' + cu.division : ''}</span>
-          </label>`).join('')}
-      </div>`).join('');
-    destinatariosHtml = `
-      <div style="margin-bottom:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
-          <label style="font-size:11px;font-weight:600;color:var(--txt2);letter-spacing:.05em">CURSOS DESTINATARIOS *</label>
-          <span>
-            <button type="button" onclick="_avComSelAll(true)" style="font-size:11px;color:var(--green);border:none;background:none;cursor:pointer;padding:0">Seleccionar todos</button>
-            <span style="color:var(--txt3);margin:0 4px">·</span>
-            <button type="button" onclick="_avComSelAll(false)" style="font-size:11px;color:var(--txt2);border:none;background:none;cursor:pointer;padding:0">Ninguno</button>
-          </span>
-        </div>
-        <div style="max-height:180px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad);padding:10px">
-          ${checkboxHtml || '<p style="font-size:13px;color:var(--txt3)">No hay cursos disponibles.</p>'}
-        </div>
-      </div>`;
+    destinatariosHtml = _avDestinoSelectorHtml();
   }
 
   wrap.innerHTML = `
@@ -331,31 +300,164 @@ function _avisosFormComunicado(editData = null) {
   document.getElementById('av-titulo')?.focus();
 }
 
-function _avComSelAll(check) {
-  document.querySelectorAll('.av-com-curso').forEach(cb => { cb.checked = check; });
-}
-
 // ── Helpers interacción de checkboxes de nivel ────────
 function _avNivTodosChange(cb) {
   if (cb.checked) {
     document.querySelectorAll('.av-niv-spec').forEach(c => { c.checked = false; });
   }
+  const sec = document.getElementById('av-cursos-sec');
+  if (sec) sec.style.display = 'none';
 }
 
 function _avNivSpecChange() {
   const anySpec = Array.from(document.querySelectorAll('.av-niv-spec')).some(c => c.checked);
   const todos = document.getElementById('av-niv-todos');
   if (todos) todos.checked = !anySpec;
+  const sec = document.getElementById('av-cursos-sec');
+  if (sec) {
+    sec.style.display = anySpec ? '' : 'none';
+    if (anySpec) _avActualizarCursosSec();
+  }
 }
 
-// Devuelve array de niveles seleccionados. [] o ['todos'] = null. Múltiples = array de strings.
+// Devuelve array de niveles seleccionados (para edición de novedades)
 function _avGetNivelesSeleccionados() {
   const todos = document.getElementById('av-niv-todos');
-  if (todos?.checked) return [null]; // null = todos los niveles
+  if (todos?.checked) return [null];
   const specs = Array.from(document.querySelectorAll('.av-niv-spec'))
-    .filter(c => c.checked)
-    .map(c => c.value);
-  return specs.length ? specs : [null]; // si nada marcado, trata como todos
+    .filter(c => c.checked).map(c => c.value);
+  return specs.length ? specs : [null];
+}
+
+// ── Selector nivel→curso (formulario nuevo) ───────────
+function _avDestinoSelectorHtml() {
+  const nivelesDisp = [...new Set(_COM_INT_CURSOS.map(c => c.nivel))].filter(Boolean)
+    .sort((a, b) => ['inicial','primario','secundario'].indexOf(a) - ['inicial','primario','secundario'].indexOf(b));
+
+  return `
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;font-weight:600;color:var(--txt2);display:block;margin-bottom:5px;letter-spacing:.05em">NIVEL DESTINATARIO *</label>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;padding:10px;border:1px solid var(--brd);border-radius:var(--rad)">
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="av-niv-todos" onchange="_avNivTodosChange(this)" checked>
+          Todos los niveles
+        </label>
+        ${nivelesDisp.map(n => `
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+            <input type="checkbox" class="av-niv-spec" value="${n}" onchange="_avNivSpecChange()">
+            ${_AV_NIVEL_LABEL[n] || n}
+          </label>`).join('')}
+      </div>
+    </div>
+    <div id="av-cursos-sec" style="display:none;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <label style="font-size:11px;font-weight:600;color:var(--txt2);letter-spacing:.05em">CURSOS DESTINATARIOS</label>
+        <span>
+          <button type="button" onclick="_avCursosSelAll(true)" style="font-size:11px;color:var(--green);border:none;background:none;cursor:pointer;padding:0">Todos</button>
+          <span style="color:var(--txt3);margin:0 4px">·</span>
+          <button type="button" onclick="_avCursosSelAll(false)" style="font-size:11px;color:var(--txt2);border:none;background:none;cursor:pointer;padding:0">Ninguno</button>
+        </span>
+      </div>
+      <div id="av-cursos-lista" style="max-height:220px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad);padding:10px">
+      </div>
+    </div>`;
+}
+
+function _avActualizarCursosSec() {
+  const nivelesSelec = Array.from(document.querySelectorAll('.av-niv-spec:checked')).map(c => c.value);
+  const lista = document.getElementById('av-cursos-lista');
+  if (!lista) return;
+
+  const cursosFiltrados = _COM_INT_CURSOS.filter(c => nivelesSelec.includes(c.nivel));
+  if (!cursosFiltrados.length) {
+    lista.innerHTML = '<p style="font-size:13px;color:var(--txt3)">No hay cursos para los niveles seleccionados.</p>';
+    return;
+  }
+
+  const porNivel = {};
+  cursosFiltrados.forEach(c => {
+    if (!porNivel[c.nivel]) porNivel[c.nivel] = [];
+    porNivel[c.nivel].push(c);
+  });
+
+  lista.innerHTML = Object.entries(porNivel).map(([nivel, cursos]) => `
+    <div style="margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:4px">
+        <input type="checkbox" class="av-niv-todos-cursos" data-nivel="${nivel}" checked
+          onchange="_avTodosNivCursosChange('${nivel}', this)">
+        <span style="font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em">Todos los cursos de ${_AV_NIVEL_LABEL[nivel]}</span>
+      </label>
+      <div style="padding-left:16px">
+        ${cursos.map(cu => `
+          <label style="display:flex;align-items:center;gap:8px;padding:3px 2px;cursor:pointer;border-radius:4px">
+            <input type="checkbox" class="av-com-curso" value="${cu.id}" data-nivel="${nivel}" checked
+              onchange="_avCursoChkChange('${nivel}')">
+            <span style="font-size:13px">${cu.nombre}${cu.division ? ' ' + cu.division : ''}</span>
+          </label>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function _avTodosNivCursosChange(nivel, cb) {
+  document.querySelectorAll(`.av-com-curso[data-nivel="${nivel}"]`).forEach(c => { c.checked = cb.checked; });
+}
+
+function _avCursoChkChange(nivel) {
+  const todos = document.querySelector(`.av-niv-todos-cursos[data-nivel="${nivel}"]`);
+  if (!todos) return;
+  const all     = document.querySelectorAll(`.av-com-curso[data-nivel="${nivel}"]`);
+  const checked = document.querySelectorAll(`.av-com-curso[data-nivel="${nivel}"]:checked`);
+  todos.checked       = all.length > 0 && all.length === checked.length;
+  todos.indeterminate = checked.length > 0 && checked.length < all.length;
+}
+
+function _avCursosSelAll(check) {
+  document.querySelectorAll('.av-com-curso').forEach(cb => { cb.checked = check; });
+  document.querySelectorAll('.av-niv-todos-cursos').forEach(cb => { cb.checked = check; cb.indeterminate = false; });
+}
+
+function _avGetDestinosNovedad() {
+  const todosNiv = document.getElementById('av-niv-todos');
+  if (todosNiv?.checked) return [{ nivel: null, cursoId: null }];
+
+  const resultados = [];
+  const nivelesSelec = Array.from(document.querySelectorAll('.av-niv-spec:checked')).map(c => c.value);
+
+  for (const nivel of nivelesSelec) {
+    const todosNivCursos = document.querySelector(`.av-niv-todos-cursos[data-nivel="${nivel}"]`);
+    if (todosNivCursos?.checked) {
+      resultados.push({ nivel, cursoId: null });
+    } else {
+      const cursosChecked = Array.from(document.querySelectorAll(`.av-com-curso[data-nivel="${nivel}"]:checked`));
+      if (cursosChecked.length === 0) {
+        resultados.push({ nivel, cursoId: null });
+      } else {
+        cursosChecked.forEach(cb => resultados.push({ nivel, cursoId: cb.value }));
+      }
+    }
+  }
+
+  return resultados.length ? resultados : [{ nivel: null, cursoId: null }];
+}
+
+function _avGetDestinosCursoIds() {
+  const todosNiv = document.getElementById('av-niv-todos');
+  if (todosNiv?.checked) return _COM_INT_CURSOS.map(c => c.id);
+
+  const resultados = [];
+  const nivelesSelec = Array.from(document.querySelectorAll('.av-niv-spec:checked')).map(c => c.value);
+
+  for (const nivel of nivelesSelec) {
+    const todosNivCursos = document.querySelector(`.av-niv-todos-cursos[data-nivel="${nivel}"]`);
+    if (todosNivCursos?.checked) {
+      _COM_INT_CURSOS.filter(c => c.nivel === nivel).forEach(c => resultados.push(c.id));
+    } else {
+      Array.from(document.querySelectorAll(`.av-com-curso[data-nivel="${nivel}"]:checked`))
+        .forEach(cb => resultados.push(cb.value));
+    }
+  }
+
+  return resultados;
 }
 
 // ── Preview imágenes ──────────────────────────────────
@@ -373,27 +475,25 @@ function _avisosPreview(input) {
 
 // ── Guardar nueva novedad ─────────────────────────────
 async function _avisosGuardar() {
-  const btn    = document.getElementById('av-btn-pub');
-  const titulo = document.getElementById('av-titulo')?.value.trim();
-  const cuerpo = document.getElementById('av-cuerpo')?.value.trim() || null;
-  const niveles = _avGetNivelesSeleccionados(); // array de valores (null o strings)
-  const files  = Array.from(document.getElementById('av-imagen')?.files || []);
+  const btn      = document.getElementById('av-btn-pub');
+  const titulo   = document.getElementById('av-titulo')?.value.trim();
+  const cuerpo   = document.getElementById('av-cuerpo')?.value.trim() || null;
+  const destinos = _avGetDestinosNovedad(); // [{nivel, cursoId}]
+  const files    = Array.from(document.getElementById('av-imagen')?.files || []);
 
   if (!titulo) { alert('El título es obligatorio.'); return; }
   btn.disabled = true; btn.textContent = 'Publicando…';
 
   try {
-    // Comprimir imágenes una sola vez
     const blobs = [];
-    for (let i = 0; i < files.length; i++) {
-      try { blobs.push(await _avisosComprimir(files[i])); } catch (_) {}
+    for (const file of files) {
+      try { blobs.push(await _avisosComprimir(file)); } catch (_) {}
     }
 
-    // Insertar una novedad por cada nivel seleccionado
-    for (const nivel of niveles) {
+    for (const { nivel, cursoId } of destinos) {
       const { data: inserted, error } = await sb
         .from('comunicados')
-        .insert({ institucion_id: USUARIO_ACTUAL.institucion_id, autor_id: USUARIO_ACTUAL.id, tipo: 'novedad', nivel, titulo, cuerpo, requiere_firma: false })
+        .insert({ institucion_id: USUARIO_ACTUAL.institucion_id, autor_id: USUARIO_ACTUAL.id, tipo: 'novedad', nivel: nivel || null, curso_id: cursoId || null, titulo, cuerpo, requiere_firma: false })
         .select('id').single();
       if (error) throw error;
 
@@ -421,10 +521,10 @@ async function _avisosGuardarComunicado() {
   const titulo = document.getElementById('av-titulo')?.value.trim();
   const cuerpo = document.getElementById('av-cuerpo')?.value.trim();
 
-  // Soporte multi-curso (nuevos checkboxes) y fallback a select único (edición)
-  const cursoIds = Array.from(document.querySelectorAll('.av-com-curso:checked')).map(cb => cb.value);
-  const cursoIdSingle = document.getElementById('av-curso')?.value;
-  const ids = cursoIds.length ? cursoIds : (cursoIdSingle ? [cursoIdSingle] : []);
+  // Nuevo: usa selector nivel→curso. Edición: fallback a select único.
+  const idsPorSelector = _avGetDestinosCursoIds();
+  const cursoIdSingle  = document.getElementById('av-curso')?.value;
+  const ids = idsPorSelector.length ? idsPorSelector : (cursoIdSingle ? [cursoIdSingle] : []);
 
   if (!ids.length)         { alert('Seleccioná al menos un curso destinatario.'); return; }
   if (!titulo || !cuerpo)  { alert('El título y el mensaje son obligatorios.'); return; }
