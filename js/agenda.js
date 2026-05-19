@@ -806,8 +806,8 @@ async function _agCitaCursoChange(cursoId, preselAlumnoId = null) {
   }
   alumnoSel.innerHTML = '<option value="">Cargando...</option>';
   const { data: alumnos, error } = await sb
-    .from('alumnos').select('id, nombre_completo')
-    .eq('curso_id', cursoId).neq('activo', false).order('nombre_completo');
+    .from('alumnos').select('id, nombre, apellido')
+    .eq('curso_id', cursoId).neq('activo', false).order('apellido').order('nombre');
   if (error) {
     alumnoSel.innerHTML = '<option value="">Error al cargar alumnos</option>';
     return;
@@ -818,7 +818,7 @@ async function _agCitaCursoChange(cursoId, preselAlumnoId = null) {
   }
   alumnoSel.innerHTML = '<option value="">— Seleccioná alumno/a —</option>' +
     alumnos.map(a =>
-      `<option value="${a.id}" ${preselAlumnoId===a.id?'selected':''}>${a.nombre_completo}</option>`
+      `<option value="${a.id}" ${preselAlumnoId===a.id?'selected':''}>${a.apellido}, ${a.nombre}</option>`
     ).join('');
 
   if (preselAlumnoId) _agCargarProbsAlumno(preselAlumnoId);
