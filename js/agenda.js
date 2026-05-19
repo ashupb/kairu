@@ -658,6 +658,9 @@ function abrirFormEvento(eventoExistente = null) {
 
   document.getElementById('form-evento').innerHTML = `
     <div class="card" style="margin-bottom:14px">
+      <input type="hidden" id="ev-es-individual-hidden" value="${esIndividual ? '1' : '0'}">
+      ${esEdicion && esIndividual ? `<input type="hidden" id="ev-alumno-id-hidden" value="${e.alumno_id || ''}">` : ''}
+
       <div style="font-size:13px;font-weight:700;margin-bottom:12px">
         ${esEdicion ? '✏️ Editar evento' : 'Nuevo evento'}
       </div>
@@ -1049,7 +1052,9 @@ async function guardarEvento(eventoId) {
   const convocados   = Array.from(document.getElementById('chips-conv')?.querySelectorAll('[data-uid]')||[]).map(b => b.dataset.uid);
   const responsables = Array.from(document.getElementById('chips-resp')?.querySelectorAll('[data-uid]')||[]).map(b => b.dataset.uid);
 
-  const esIndividual = document.getElementById('ev-mode-cit')?.classList.contains('on') || false;
+  const esIndividual = document.getElementById('ev-mode-cit')?.classList.contains('on')
+    || document.getElementById('ev-es-individual-hidden')?.value === '1'
+    || false;
 
   const nivelChks = [...document.querySelectorAll('.ev-nivel-chk:checked')].map(c => c.value);
   let nivelVal    = nivelChks.length
@@ -1062,7 +1067,9 @@ async function guardarEvento(eventoId) {
   let cursosFamilias  = _agGetCursosFamilias();
 
   if (esIndividual) {
-    alumnoId       = document.getElementById('ev-cita-alumno')?.value || null;
+    alumnoId       = document.getElementById('ev-cita-alumno')?.value
+                     || document.getElementById('ev-alumno-id-hidden')?.value
+                     || null;
     problematicaId = document.getElementById('ev-cita-prob')?.value || null;
     const cursoId  = document.getElementById('ev-cita-curso')?.value;
     const cursoObj = CURSOS_INST.find(c => c.id === cursoId);
