@@ -207,13 +207,14 @@ async function _convCancelar(eventoId) {
 
     let saveErr;
     if (existing?.id) {
-      const res = await sb.from('evento_respuestas')
-        .update({ respuesta: 'cancela', mensaje: mensaje || null })
-        .eq('id', existing.id);
+      const upd = { respuesta: 'cancela' };
+      if (mensaje) upd.mensaje = mensaje;
+      const res = await sb.from('evento_respuestas').update(upd).eq('id', existing.id);
       saveErr = res.error;
     } else {
-      const res = await sb.from('evento_respuestas')
-        .insert({ evento_id: eventoId, usuario_id: USUARIO_FAMILIAR.id, respuesta: 'cancela', mensaje: mensaje || null });
+      const ins = { evento_id: eventoId, usuario_id: USUARIO_FAMILIAR.id, respuesta: 'cancela' };
+      if (mensaje) ins.mensaje = mensaje;
+      const res = await sb.from('evento_respuestas').insert(ins);
       saveErr = res.error;
     }
     if (saveErr) throw saveErr;
@@ -239,7 +240,8 @@ async function _convCancelar(eventoId) {
     rConvocatorias();
   } catch (err) {
     console.error('convCancelar error:', err);
-    alert('No se pudo enviar el aviso. Intentá de nuevo.');
+    const det = err?.message || err?.details || err?.code || JSON.stringify(err);
+    alert('No se pudo enviar el aviso.\n' + det);
     if (btn) { btn.disabled = false; btn.textContent = 'Enviar aviso'; }
   }
 }
@@ -271,13 +273,14 @@ async function _convResponder(eventoId, respuesta) {
 
     let saveErr;
     if (existing?.id) {
-      const res = await sb.from('evento_respuestas')
-        .update({ respuesta, mensaje: mensaje || null })
-        .eq('id', existing.id);
+      const upd = { respuesta };
+      if (mensaje) upd.mensaje = mensaje;
+      const res = await sb.from('evento_respuestas').update(upd).eq('id', existing.id);
       saveErr = res.error;
     } else {
-      const res = await sb.from('evento_respuestas')
-        .insert({ evento_id: eventoId, usuario_id: USUARIO_FAMILIAR.id, respuesta, mensaje: mensaje || null });
+      const ins = { evento_id: eventoId, usuario_id: USUARIO_FAMILIAR.id, respuesta };
+      if (mensaje) ins.mensaje = mensaje;
+      const res = await sb.from('evento_respuestas').insert(ins);
       saveErr = res.error;
     }
     if (saveErr) throw saveErr;
@@ -306,7 +309,8 @@ async function _convResponder(eventoId, respuesta) {
     rConvocatorias();
   } catch (err) {
     console.error('convResponder error:', err);
-    alert('No se pudo enviar la respuesta. Intentá de nuevo.');
+    const det = err?.message || err?.details || err?.code || JSON.stringify(err);
+    alert('No se pudo enviar la respuesta.\n' + det);
     card?.querySelectorAll('button').forEach(b => b.disabled = false);
   }
 }
