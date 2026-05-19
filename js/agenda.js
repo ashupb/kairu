@@ -403,7 +403,7 @@ async function verEvento(id) {
   _agendaEventoAbierto = id;
 
   const [{ data: e }, { data: rsvps }] = await Promise.all([
-    sb.from('eventos_institucionales').select('*, usuarios(nombre_completo), alumnos(nombre_completo, cursos(nombre, division))').eq('id', id).single(),
+    sb.from('eventos_institucionales').select('*, usuarios(nombre_completo), alumnos(nombre, apellido, cursos(nombre, division))').eq('id', id).single(),
     sb.from('evento_respuestas').select('usuario_id, respuesta, mensaje').eq('evento_id', id),
   ]);
   if (!e) return;
@@ -431,13 +431,13 @@ async function verEvento(id) {
   if (esInvit) {
     if (e.es_cita_individual) {
       // Cita individual: mostrar respuesta de la familia
-      const alumnoNom = e.alumnos?.nombre_completo || '—';
+      const alumnoNom = e.alumnos ? `${e.alumnos.apellido || ''}, ${e.alumnos.nombre || ''}`.replace(/^,\s*/, '') : '—';
       const curso     = e.alumnos?.cursos;
       const cursoTxt  = curso ? `${curso.nombre}${curso.division?' '+curso.division:''}` : '';
       const respFam   = rsvpArr.find(r => !Object.values(USUARIOS_INST).find(u => u.id === r.usuario_id));
       const estadoFam = respFam?.respuesta || 'pendiente';
       const msgFam    = respFam?.mensaje || '';
-      const estadoLabel = { pendiente: '⏳ Sin respuesta', acepta: '✅ Aceptó', rechaza: '❌ Rechazó' }[estadoFam] || estadoFam;
+      const estadoLabel = { pendiente: '⏳ Sin respuesta', acepta: '✅ Aceptó', rechaza: '❌ Rechazó', cancela: '⚠ Canceló / Solicita reprogramar' }[estadoFam] || estadoFam;
       rsvpHtml = `
         <div style="margin-top:10px;padding:10px;background:var(--surf2);border-radius:var(--rad);border-top:1px solid var(--brd)">
           <div class="sec-lb" style="margin:0 0 6px">Alumno/a convocado/a</div>
