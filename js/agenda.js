@@ -440,7 +440,7 @@ async function verEvento(id) {
       const estadoLabel = { pendiente: '⏳ Sin respuesta', acepta: '✅ Aceptó', rechaza: '❌ Rechazó', cancela: '⚠ Canceló / Solicita reprogramar', propone: '↩ Propone otro horario' }[estadoFam] || estadoFam;
 
       let accionesStaffHtml = '';
-      if (estadoFam === 'propone' && respFam) {
+      if ((estadoFam === 'propone' || estadoFam === 'cancela') && respFam) {
         accionesStaffHtml = `
           <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
             <button onclick="_agAceptarPropuesta('${e.id}','${respFam.usuario_id}')"
@@ -452,7 +452,7 @@ async function verEvento(id) {
               ✏️ Proponer otro horario
             </button>
           </div>`;
-      } else if ((estadoFam === 'cancela' || estadoFam === 'rechaza') && puedeEditar) {
+      } else if (estadoFam === 'rechaza' && puedeEditar) {
         accionesStaffHtml = `
           <div style="margin-top:10px">
             <button onclick="editarEvento('${e.id}')"
