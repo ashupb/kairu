@@ -577,6 +577,10 @@ async function eliminarEvento(id) {
 async function editarEvento(id) {
   const { data: e } = await sb.from('eventos_institucionales').select('*').eq('id', id).single();
   if (!e) return;
+  if (e.es_cita_individual && e.alumno_id) {
+    const { data: alu } = await sb.from('alumnos').select('curso_id').eq('id', e.alumno_id).single();
+    if (alu?.curso_id) e._curso_id = alu.curso_id;
+  }
   document.getElementById('detalle-evento').innerHTML = '';
   abrirFormEvento(e);
 }
@@ -743,7 +747,7 @@ function abrirFormEvento(eventoExistente = null) {
             <div class="sec-lb">Curso *</div>
             <select id="ev-cita-curso" class="sel-estilizado" onchange="_agCitaCursoChange(this.value)">
               <option value="">— Seleccioná curso —</option>
-              ${CURSOS_INST.map(c => `<option value="${c.id}">${c.nombre}${c.division?' '+c.division:''} · ${c.nivel}</option>`).join('')}
+              ${CURSOS_INST.map(c => `<option value="${c.id}" ${c.id === citaCursoSel ? 'selected' : ''}>${c.nombre}${c.division?' '+c.division:''} · ${c.nivel}</option>`).join('')}
             </select>
           </div>
 
@@ -1108,6 +1112,23 @@ async function guardarEvento(eventoId) {
 
   if (eventoId) {
     ({ error } = await sb.from('eventos_institucionales').update(payload).eq('id', eventoId));
+    if (!error && esIndividual && alumnoId) {
+      const { data: vinculos } = await sb.from('familia_alumno').select('usuario_id').eq('alumno_id', alumnoId);
+      const famIds = (vinculos || []).map(v => v.usuario_id).filter(Boolean);
+      if (famIds.length) {
+        const fechaStr = (() => { const d = new Date(fechaNorm + 'T12:00:00'); return `${d.getDate()}/${d.getMonth()+1}/${String(d.getFullYear()).slice(2)}`; })();
+        await sb.from('notificaciones').insert(
+          famIds.map(uid => ({
+            usuario_id:       uid,
+            tipo:             'cita_actualizada',
+            titulo:           `Cita actualizada: ${nombre}`,
+            descripcion:      `Nuevo horario: ${fechaStr}${hora ? ' · ' + hora.slice(0,5) : ''}${payload.lugar ? ' · ' + payload.lugar : ''}.`,
+            referencia_id:    eventoId,
+            referencia_tabla: 'eventos_institucionales',
+          }))
+        );
+      }
+    }
   } else {
     ({ data, error } = await sb.from('eventos_institucionales').insert({
       ...payload,
@@ -1142,6 +1163,23 @@ async function guardarEvento(eventoId) {
             referencia_tabla: 'eventos_institucionales',
           }))
         );
+      }
+      // Notificar a la familia del alumno si es cita individual
+      if (esIndividual && alumnoId) {
+        const { data: vinculos } = await sb.from('familia_alumno').select('usuario_id').eq('alumno_id', alumnoId);
+        const famIds = (vinculos || []).map(v => v.usuario_id).filter(Boolean);
+        if (famIds.length) {
+          await sb.from('notificaciones').insert(
+            famIds.map(uid => ({
+              usuario_id:       uid,
+              tipo:             'nueva_cita',
+              titulo:           `Citación: ${nombre}`,
+              descripcion:      `${fechaStr}${data.hora ? ' · ' + data.hora.slice(0,5) : ''}${data.lugar ? ' · ' + data.lugar : ''} — Ingresá a Convocatorias para confirmar tu asistencia.`,
+              referencia_id:    data.id,
+              referencia_tabla: 'eventos_institucionales',
+            }))
+          );
+        }
       }
     }
   }

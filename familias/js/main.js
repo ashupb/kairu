@@ -1,6 +1,7 @@
 // ── Estado de navegación ──────────────────────────────────────────
 let CUR_PAGE = 'login';
 let UNREAD_COUNT = 0;
+let CONV_NOTIF_COUNT = 0;
 let _DEEP_LINK_ID = null; // ID del ítem a destacar tras la próxima navegación
 
 // ── Ítems del nav ─────────────────────────────────────────────────
@@ -26,7 +27,7 @@ const NAV_ITEMS = [
     svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`
   },
   {
-    id: 'convocatorias', label: 'Convocatorias',
+    id: 'convocatorias', label: 'Convocatorias', badge: 'conv',
     svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`
   },
   {
@@ -138,8 +139,9 @@ function renderSidebarNav() {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
   nav.innerHTML = NAV_ITEMS.map(item => {
-    const badge = item.badge && UNREAD_COUNT > 0
-      ? `<span class="nav-badge" data-page="${item.id}">${UNREAD_COUNT > 9 ? '9+' : UNREAD_COUNT}</span>`
+    const badgeCount = item.badge === 'conv' ? CONV_NOTIF_COUNT : UNREAD_COUNT;
+    const badge = item.badge && badgeCount > 0
+      ? `<span class="nav-badge" data-page="${item.id}">${badgeCount > 9 ? '9+' : badgeCount}</span>`
       : '';
     return `
       <button class="sidebar-nav-item ${CUR_PAGE === item.id ? 'active' : ''}"
@@ -157,6 +159,22 @@ function updateSidebarActive(id) {
     const isActive = btn.getAttribute('onclick') === `goPage('${id}')`;
     btn.classList.toggle('active', isActive);
   });
+}
+
+// ── Badge Convocatorias: cuenta notificaciones de citas no leídas ─────────────
+async function fetchConvNotifCount() {
+  if (!USUARIO_FAMILIAR) return;
+  try {
+    const { data } = await sb
+      .from('notificaciones')
+      .select('id')
+      .eq('usuario_id', USUARIO_FAMILIAR.id)
+      .eq('leida', false)
+      .eq('referencia_tabla', 'eventos_institucionales');
+    CONV_NOTIF_COUNT = (data || []).length;
+    renderSidebarNav();
+    updateSidebarActive(CUR_PAGE);
+  } catch (_) {}
 }
 
 // ── Campana: solo cuenta comunicados (tipo='comunicado') del curso del alumno ──
@@ -267,6 +285,7 @@ function iniciarApp() {
   renderSidebar();
   startClock();
   fetchUnreadCount();
+  fetchConvNotifCount();
   goPage('inicio');
 }
 
