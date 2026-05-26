@@ -170,3 +170,5 @@ bccac6f  modificaciones_varias
 
 Variables CSS en `css/app.css`. Tipografía: **DM Sans** + **DM Mono** (Google Fonts).
 Paleta, componentes y reglas completas en `.claude/skills/kairu-design/SKILL.md`.
+
+## TEST PR 26/5/2026
