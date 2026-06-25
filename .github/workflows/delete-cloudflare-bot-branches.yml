@@ -1,0 +1,16 @@
+name: Delete Cloudflare bot branches
+
+on:
+  create:
+
+jobs:
+  delete-bot-branch:
+    if: startsWith(github.ref, 'refs/heads/cloudflare/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete branch
+        run: gh api repos/${{ github.repository }}/git/refs/heads/${{ github.ref_name }} -X DELETE
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
