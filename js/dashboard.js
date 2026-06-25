@@ -399,7 +399,7 @@ async function rDashDirector() {
 
     <div class="metrics m4" style="margin-bottom:14px">
       <div class="mc" style="cursor:pointer" onclick="goPage('leg')"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div></div>
+      <div class="mc" style="cursor:pointer" onclick="_adminTab='docentes';goPage('admin')"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probs.length}</div><div class="mc-l">SITUACIONES</div>${sinActividad > 0 ? `<div style="font-size:9px;color:var(--rojo);font-weight:600;margin-top:2px">${sinActividad} inactivas</div>` : ''}<div style="font-size:9px;color:var(--verde);margin-top:${sinActividad > 0 ? '2' : '6'}px;font-weight:600">Ir →</div></div>
       <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:var(--ambar)">${alertas.length + alertasAsist.length}</div><div class="mc-l">ALERTAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>

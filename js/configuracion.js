@@ -26,6 +26,8 @@ let _adminTab       = null;
 let _adminCursos    = [];
 let _adminUsuarios  = [];
 let _adminMaterias  = [];
+let _adminDocentes  = [];
+let _docFiltroNivel = 'todos';
 let _configExtraOk  = null; // detecta si la columna config_extra existe
 
 async function _detectarConfigExtra() {
@@ -94,6 +96,7 @@ function _adminTabs() {
     { id: 'parametros',   label: 'Parámetros',       roles: ['director_general', 'directivo_nivel'] },
     { id: 'suplencias',    label: 'Suplencias',    roles: ['director_general', 'directivo_nivel'] },
     { id: 'ciclo_lectivo', label: 'Ciclo Lectivo', roles: ['director_general', 'directivo_nivel'] },
+    { id: 'docentes',      label: 'Docentes',      roles: ['director_general'] },
   ];
 
   const resultado = rolBase.filter(t => t.roles.includes(r));
@@ -169,6 +172,7 @@ async function _renderAdminSection(tabId) {
     parametros:    _renderParametros,
     suplencias:    _renderSuplencias,
     ciclo_lectivo: _renderCicloLectivo,
+    docentes:      _renderDocentes,
   };
   if (fns[tabId]) await fns[tabId]();
 }
@@ -716,6 +720,94 @@ async function _guardarUsuario(userId, esNuevo) {
   }
 }
 
+
+// ══════════════════════════════════════════════════════
+// SECCIÓN: DOCENTES
+// ══════════════════════════════════════════════════════
+async function _renderDocentes() {
+  const sec = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const { data, error } = await sb.from('usuarios')
+    .select('id, nombre_completo, nivel, username, email, activo, en_licencia, avatar_iniciales')
+    .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+    .eq('rol', 'docente')
+    .order('nombre_completo');
+
+  if (error) { _admError(sec, error.message); return; }
+  _adminDocentes  = data || [];
+  _docFiltroNivel = 'todos';
+  _renderDocentesList();
+}
+
+function _renderDocentesList() {
+  const sec     = document.getElementById('adm-section-content');
+  const niveles = ['inicial', 'primario', 'secundario'];
+
+  const filtrados = _docFiltroNivel === 'todos'
+    ? _adminDocentes
+    : _adminDocentes.filter(d => d.nivel === _docFiltroNivel);
+
+  sec.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <select onchange="_docFiltroNivel=this.value;_renderDocentesList()" style="width:auto;padding:6px 28px 6px 10px">
+        <option value="todos">Todos los niveles</option>
+        ${niveles.map(n => `<option value="${n}" ${n === _docFiltroNivel ? 'selected' : ''}>${NIVEL_LABELS_ADM[n]}</option>`).join('')}
+      </select>
+      <span style="font-size:11px;color:var(--txt2)">${filtrados.length} docente${filtrados.length !== 1 ? 's' : ''}</span>
+    </div>
+    ${_htmlDocentesList(filtrados)}`;
+}
+
+function _htmlDocentesList(docentes) {
+  if (!docentes.length) return '<div class="empty-state">Sin docentes encontrados</div>';
+
+  if (_docFiltroNivel !== 'todos') {
+    return `<div class="card" style="padding:0;overflow:hidden">
+      ${docentes.map(_htmlDocenteRow).join('')}
+    </div>`;
+  }
+
+  const grupos = [
+    { key: 'inicial',    label: 'Inicial',    color: NIVEL_COLORS_ADM.inicial },
+    { key: 'primario',   label: 'Primario',   color: NIVEL_COLORS_ADM.primario },
+    { key: 'secundario', label: 'Secundario', color: NIVEL_COLORS_ADM.secundario },
+    { key: null,         label: 'Sin nivel',  color: 'var(--txt2)' },
+  ];
+
+  return grupos.map(g => {
+    const lista = docentes.filter(d => (d.nivel || null) === g.key);
+    if (!lista.length) return '';
+    return `<div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+        color:${g.color};margin-bottom:6px;padding-bottom:4px;border-bottom:2px solid ${g.color}">
+        ${g.label}
+      </div>
+      <div class="card" style="padding:0;overflow:hidden">
+        ${lista.map(_htmlDocenteRow).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function _htmlDocenteRow(d) {
+  const iniciales  = d.avatar_iniciales || generarIniciales(d.nombre_completo || '');
+  const nivelColor = d.nivel ? NIVEL_COLORS_ADM[d.nivel] : 'var(--gris)';
+  const inactivo   = d.activo === false;
+  const enLicencia = d.en_licencia === true;
+  return `<div class="adm-user-row">
+    <div class="av av32" style="background:${nivelColor};color:#fff;flex-shrink:0">${iniciales}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:12px;font-weight:600;${inactivo ? 'color:var(--txt3);text-decoration:line-through' : ''}">${_esc(d.nombre_completo) || '—'}</div>
+      <div style="font-size:10px;color:var(--txt2)">${d.username ? '@' + d.username : (d.email || '')}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0">
+      ${d.nivel ? `<span class="tag" style="background:${nivelColor}22;color:${nivelColor};border-color:${nivelColor}44">${NIVEL_LABELS_ADM[d.nivel]}</span>` : ''}
+      ${inactivo ? '<span class="tag tr">Inactivo</span>' : ''}
+      ${enLicencia ? '<span class="tag" style="background:#f59e0b22;color:#b45309;border-color:#f59e0b44">En licencia</span>' : ''}
+    </div>
+  </div>`;
+}
 
 // ══════════════════════════════════════════════════════
 // SECCIÓN: CURSOS
