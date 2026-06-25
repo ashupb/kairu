@@ -1,0 +1,7 @@
+name = "kairu"
+compatibility_date = "2025-06-25"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./"
+not_found_handling = "single-page-application"
