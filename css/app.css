@@ -150,22 +150,22 @@ body {
 /* Headline */
 .l-headline {
   font-family: 'DM Sans', sans-serif;
-  font-size: 24px;
+  font-size: 34px;
   font-weight: 500;
   color: #F0F8F3;
-  line-height: 1.25;
-  margin-bottom: 10px;
-  letter-spacing: -0.01em;
+  line-height: 1.2;
+  margin-bottom: 14px;
+  letter-spacing: -0.02em;
 }
 .l-headline-accent { color: #229957; }
 
 /* Subheadline */
 .l-subheadline {
   font-family: 'DM Sans', sans-serif;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 300;
   color: #7D9487;
-  margin-bottom: 28px;
+  margin-bottom: 32px;
   line-height: 1.5;
 }
 
@@ -178,11 +178,11 @@ body {
 .l-pill {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   background: rgba(22,35,26,0.85);
   border: 1px solid rgba(125,148,135,0.18);
   border-radius: 10px;
-  padding: 11px 14px;
+  padding: 13px 16px;
 }
 .l-pill-icon {
   width: 30px;
@@ -197,15 +197,15 @@ body {
 }
 .l-pill-title {
   font-family: 'DM Mono', monospace;
-  font-size: 11px;
+  font-size: 12px;
   color: #E6F5EE;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 .l-pill-sub {
   font-family: 'DM Sans', sans-serif;
-  font-size: 11px;
+  font-size: 12px;
   color: #7D9487;
   line-height: 1.4;
 }
@@ -309,7 +309,7 @@ body {
   .l-left-inner { padding: 28px 24px 20px; }
   .l-pills { display: none; }
   .l-subheadline { margin-bottom: 4px; }
-  .l-headline { font-size: 19px; }
+  .l-headline { font-size: 24px; }
   .l-right { width: 100%; min-height: auto; flex: 1; }
   .l-form-wrap { padding: 28px 24px 40px; }
 }
