@@ -1,4 +1,0 @@
-# Kairu — Cloudflare Pages (static site)
-# Este archivo existe para evitar que el bot de Workers auto-configure el proyecto.
-name = "kairu"
-pages_build_output_dir = "."
