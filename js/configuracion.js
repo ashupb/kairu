@@ -96,7 +96,7 @@ function _adminTabs() {
     { id: 'parametros',   label: 'Parámetros',       roles: ['director_general', 'directivo_nivel'] },
     { id: 'suplencias',    label: 'Suplencias',    roles: ['director_general', 'directivo_nivel'] },
     { id: 'ciclo_lectivo', label: 'Ciclo Lectivo', roles: ['director_general', 'directivo_nivel'] },
-    { id: 'docentes',      label: 'Docentes',      roles: ['director_general'] },
+    { id: 'docentes',      label: 'Docentes',      roles: ['director_general', 'directivo_nivel'] },
   ];
 
   const resultado = rolBase.filter(t => t.roles.includes(r));

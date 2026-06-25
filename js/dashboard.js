@@ -532,8 +532,8 @@ async function rDashDirectivo() {
 
     <div class="metrics m4" style="margin-bottom:14px">
       <div class="mc" style="cursor:pointer" onclick="goPage('leg')"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES ACTIVOS</div></div>
-      <div class="mc"><div class="mc-v" style="color:${totalSuplencias > 0 ? 'var(--ambar)' : 'var(--txt2)'}">${totalSuplencias}</div><div class="mc-l">SUPLENCIAS</div></div>
+      <div class="mc" style="cursor:pointer" onclick="_adminTab='docentes';goPage('admin')"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="_adminTab='suplencias';goPage('admin')"><div class="mc-v" style="color:${totalSuplencias > 0 ? 'var(--ambar)' : 'var(--txt2)'}">${totalSuplencias}</div><div class="mc-l">SUPLENCIAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probsNivel.length}</div><div class="mc-l">SITUACIONES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
 
