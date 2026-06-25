@@ -1417,20 +1417,28 @@ async function verificarAlertas(alumnoIds, instId, nivel) {
     else if (totalFaltas >= config.umbral_alerta_2) tipoAlerta = 2;
     else if (totalFaltas >= config.umbral_alerta_1) tipoAlerta = 1;
 
-    if (tipoAlerta > 0) {
-      const { data: existente } = await sb.from('alertas_asistencia')
-        .select('id,total_faltas').eq('alumno_id', alumnoId).eq('tipo_alerta', tipoAlerta).maybeSingle();
-      if (!existente) {
-        await sb.from('alertas_asistencia').insert({
-          institucion_id: instId, alumno_id: alumnoId,
-          tipo_alerta: tipoAlerta, total_faltas: totalFaltas,
-        });
-        // Notificar al preceptor del curso y a los secretarios
-        _notificarAlertaInasistencia(alumnoId, instId, tipoAlerta, totalFaltas).catch(() => {});
-      } else if (existente.total_faltas !== totalFaltas) {
-        await sb.from('alertas_asistencia')
-          .update({ total_faltas: totalFaltas })
-          .eq('id', existente.id);
+    // Buscar cualquier alerta existente para este alumno (sin filtrar por tipo)
+    const { data: existente } = await sb.from('alertas_asistencia')
+      .select('id,total_faltas,tipo_alerta').eq('alumno_id', alumnoId).maybeSingle();
+
+    if (tipoAlerta === 0) {
+      // El alumno bajó todos los umbrales — borrar alerta si existe
+      if (existente) {
+        await sb.from('alertas_asistencia').delete().eq('id', existente.id);
+      }
+    } else if (!existente) {
+      await sb.from('alertas_asistencia').insert({
+        institucion_id: instId, alumno_id: alumnoId,
+        tipo_alerta: tipoAlerta, total_faltas: totalFaltas,
+      });
+      _notificarAlertaInasistencia(alumnoId, instId, tipoAlerta, totalFaltas).catch(() => {});
+    } else {
+      // Actualizar si cambió el tipo o el total
+      const cambios = {};
+      if (existente.tipo_alerta !== tipoAlerta) cambios.tipo_alerta = tipoAlerta;
+      if (existente.total_faltas !== totalFaltas) cambios.total_faltas = totalFaltas;
+      if (Object.keys(cambios).length > 0) {
+        await sb.from('alertas_asistencia').update(cambios).eq('id', existente.id);
       }
     }
   }
