@@ -1239,9 +1239,11 @@ async function verAlumnoAsist(alumnoId) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
+  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
   const [alumnoRes, asistRes, alertasRes] = await Promise.all([
     sb.from('alumnos').select('*, cursos(nombre,division,nivel)').eq('id', alumnoId).single(),
-    sb.from('asistencia').select('*').eq('alumno_id', alumnoId).is('hora_clase', null).order('fecha', {ascending:true}),
+    sb.from('asistencia').select('*').eq('alumno_id', alumnoId).is('hora_clase', null)
+      .gte('fecha', anioInicio).order('fecha', {ascending:true}),
     sb.from('alertas_asistencia').select('*').eq('alumno_id', alumnoId).order('created_at', {ascending:false}),
   ]);
 
@@ -1386,13 +1388,17 @@ function _renderGrillaAlumnoHTML(asists, config, desde, hasta) {
 async function verificarAlertas(alumnoIds, instId, nivel) {
   const config = CONFIG_ASIST[nivel];
   if (!config) return;
+  // Solo contar registros del ciclo lectivo vigente para no acumular
+  // inasistencias de años anteriores.
+  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
 
   for (const alumnoId of alumnoIds) {
     // Solo contar registros diarios (hora_clase IS NULL).
     // Los registros por hora/materia son del docente de secundario y no
     // computan para regularidad.
     const { data: registros } = await sb.from('asistencia')
-      .select('estado,fecha').eq('alumno_id', alumnoId).is('hora_clase', null);
+      .select('estado,fecha').eq('alumno_id', alumnoId).is('hora_clase', null)
+      .gte('fecha', anioInicio);
 
     // Deduplicar por fecha antes de sumar (defensivo contra duplicados históricos)
     const porFecha = new Map();
