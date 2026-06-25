@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <!-- Fondo azul app Familias -->
-  <rect width="512" height="512" fill="#1A6C9E"/>
+  <rect width="512" height="512" rx="108" fill="#1A6C9E"/>
   <!-- Letra K — barra vertical -->
   <rect x="112" y="124" width="72" height="264" fill="#FFFFFF"/>
   <!-- Brazo superior -->
