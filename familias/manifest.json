@@ -1,0 +1,19 @@
+{
+  "name": "Kairu Familias",
+  "short_name": "Familias",
+  "description": "Portal de familias — Kairu",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1A6C9E",
+  "theme_color": "#1A6C9E",
+  "icons": [
+    {
+      "src": "icons/kairu-familias-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

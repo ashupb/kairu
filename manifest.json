@@ -1,0 +1,19 @@
+{
+  "name": "Kairu",
+  "short_name": "Kairu",
+  "description": "Plataforma de gestión escolar institucional",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1B2B22",
+  "theme_color": "#1B2B22",
+  "icons": [
+    {
+      "src": "icons/kairu-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

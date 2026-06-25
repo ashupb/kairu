@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Fondo azul app Familias -->
+  <rect width="512" height="512" fill="#1A6C9E"/>
+  <!-- Letra K — barra vertical -->
+  <rect x="112" y="124" width="72" height="264" fill="#FFFFFF"/>
+  <!-- Brazo superior -->
+  <polygon points="184,256 184,124 352,124 262,256" fill="#FFFFFF"/>
+  <!-- Brazo inferior -->
+  <polygon points="184,256 184,388 352,388 262,256" fill="#FFFFFF"/>
+  <!-- Acento celeste (diferencia del isotipo para Familias) -->
+  <rect x="352" y="352" width="48" height="48" rx="6" fill="#93D2F0"/>
+</svg>

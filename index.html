@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kairú</title>
 <link rel="stylesheet" href="css/app.css">
+<!-- PWA -->
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icons/kairu-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/kairu-icon.svg">
+<meta name="theme-color" content="#1B2B22">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kairu">
 </head>
 <body>
 
@@ -248,6 +257,14 @@
         <span id="theme-icon">🌙</span>
         <span class="dt-label" id="dark-label">Modo oscuro</span>
       </button>
+      <button class="btn-salir" id="btn-instalar-pwa" onclick="instalarPWA()" hidden>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span class="sal-label">Instalar app</span>
+      </button>
       <button class="btn-salir" onclick="cerrarSesion()">
         <span>⏻</span>
         <span class="sal-label">Cerrar sesión</span>
@@ -331,5 +348,40 @@
     <div class="bottom-nav-items" id="bottom-nav-items"></div>
   </nav>
 
+<script>
+  // PWA — instalación
+  let _pwaPrompt = null;
+  const _yaInstalada = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
+
+  if (!_yaInstalada) {
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      _pwaPrompt = e;
+      document.getElementById('btn-instalar-pwa').removeAttribute('hidden');
+    });
+    // iOS no dispara beforeinstallprompt — mostrar el botón siempre si no está instalada
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      document.getElementById('btn-instalar-pwa').removeAttribute('hidden');
+    }
+  }
+
+  window.addEventListener('appinstalled', () => {
+    document.getElementById('btn-instalar-pwa').setAttribute('hidden', '');
+    _pwaPrompt = null;
+  });
+
+  function instalarPWA() {
+    if (_pwaPrompt) {
+      _pwaPrompt.prompt();
+      _pwaPrompt.userChoice.then(() => { _pwaPrompt = null; });
+    } else if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      alert('Para instalar en iPhone/iPad:\n\n1. Tocá el botón Compartir (⬆) en Safari\n2. Elegí "Agregar a pantalla de inicio"');
+    }
+  }
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js');
+  }
+</script>
 </body>
 </html>
