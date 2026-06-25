@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -97,49 +98,119 @@
 
   <!-- ── LOGIN (overlay fijo, cubre todo) ─────────────────────────── -->
   <div class="page active" id="page-login">
-    <div class="login-card">
-      <div class="login-logo">
-        <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
-          <circle cx="24" cy="24" r="22" stroke="#229957" stroke-width="2.5"/>
-          <rect x="13" y="13" width="6" height="22" fill="#1B2B22"/>
-          <polygon points="19,24 19,13 33,13 25.5,24" fill="#1B2B22"/>
-          <polygon points="19,24 19,35 33,35 25.5,24" fill="#1B2B22"/>
-          <rect x="33" y="32" width="4" height="4" fill="#229957"/>
-        </svg>
-        <div>
-          <div class="login-logo-name">Kairú</div>
-          <div class="login-logo-sub">PORTAL DE FAMILIAS</div>
-        </div>
-      </div>
-      <div id="login-error" class="login-error"></div>
-      <form id="login-form" onsubmit="handleLoginSubmit(event)">
-        <div class="form-group">
-          <label class="form-label" for="login-email">EMAIL</label>
-          <input type="email" id="login-email" class="form-input"
-                 placeholder="tu@email.com" required autocomplete="email">
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="login-password">CONTRASEÑA</label>
-          <div class="form-input-wrap">
-            <input type="password" id="login-password" class="form-input"
-                   placeholder="••••••••" required autocomplete="current-password">
-            <button type="button" class="btn-pass-toggle" onclick="togglePassFamilias()"
-                    aria-label="Mostrar contraseña">
-              <svg id="fam-ojo-cerrado" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
-                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
-                <line x1="1" y1="1" x2="23" y2="23"/>
-              </svg>
-              <svg id="fam-ojo-abierto" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                <circle cx="12" cy="12" r="3"/>
-              </svg>
-            </button>
+
+    <!-- Columna izquierda -->
+    <div class="fl-left">
+      <div class="fl-left-inner">
+
+        <div class="fl-brand">
+          <svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+            <circle cx="24" cy="24" r="22" stroke="#229957" stroke-width="2.5"/>
+            <rect x="13" y="13" width="6" height="22" fill="#fff"/>
+            <polygon points="19,24 19,13 33,13 25.5,24" fill="#fff"/>
+            <polygon points="19,24 19,35 33,35 25.5,24" fill="#fff"/>
+            <rect x="33" y="32" width="4" height="4" fill="#229957"/>
+          </svg>
+          <div class="fl-brand-text">
+            <span class="fl-wordmark">KAIRU</span>
+            <span class="fl-wordmark-sub">FAMILIAS</span>
           </div>
         </div>
-        <button type="submit" class="btn-primary btn-full" id="login-btn">Ingresar</button>
-      </form>
+
+        <div class="fl-badge">PORTAL FAMILIAR</div>
+
+        <h1 class="fl-headline">
+          La escuela<br>
+          <span class="fl-headline-accent">habla con vos.</span>
+        </h1>
+
+        <p class="fl-subheadline">Información académica e institucional, directa y confiable.</p>
+
+        <div class="fl-pills">
+
+          <div class="fl-pill">
+            <div class="fl-pill-icon"><i class="ti ti-clock"></i></div>
+            <div>
+              <div class="fl-pill-title">ASISTENCIA EN TIEMPO REAL</div>
+              <div class="fl-pill-sub">Porcentaje, ausencias y tardanzas actualizadas al instante</div>
+            </div>
+          </div>
+
+          <div class="fl-pill">
+            <div class="fl-pill-icon"><i class="ti ti-school"></i></div>
+            <div>
+              <div class="fl-pill-title">SEGUIMIENTO ACADÉMICO</div>
+              <div class="fl-pill-sub">Las calificaciones del docente, visibles para vos sin pasos adicionales</div>
+            </div>
+          </div>
+
+          <div class="fl-pill">
+            <div class="fl-pill-icon"><i class="ti ti-speakerphone"></i></div>
+            <div>
+              <div class="fl-pill-title">COMUNICADOS INSTITUCIONALES</div>
+              <div class="fl-pill-sub">Recibí y confirmá comunicados directo desde la institución</div>
+            </div>
+          </div>
+
+          <div class="fl-pill">
+            <div class="fl-pill-icon"><i class="ti ti-calendar-event"></i></div>
+            <div>
+              <div class="fl-pill-title">NOVEDADES Y AGENDA</div>
+              <div class="fl-pill-sub">Actos, reuniones y actividades con fecha, hora y lugar</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
+
+    <!-- Columna derecha — formulario -->
+    <div class="fl-right">
+      <div class="fl-form-wrap">
+
+        <div class="fl-form-title">Accedé al portal de tu familia</div>
+        <div class="fl-form-sub">Ingresá con tus credenciales.</div>
+
+        <div id="login-error" class="login-error"></div>
+
+        <form id="login-form" onsubmit="handleLoginSubmit(event)">
+          <div class="form-group">
+            <label class="form-label" for="login-email">CORREO INSTITUCIONAL</label>
+            <div class="fl-input-wrap">
+              <span class="fl-input-icon"><i class="ti ti-user"></i></span>
+              <input type="email" id="login-email" class="form-input fl-input"
+                     placeholder="tu.usuario" required autocomplete="email">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="login-password">CONTRASEÑA</label>
+            <div class="fl-input-wrap">
+              <span class="fl-input-icon"><i class="ti ti-lock"></i></span>
+              <input type="password" id="login-password" class="form-input fl-input"
+                     placeholder="••••••••" required autocomplete="current-password">
+              <button type="button" class="btn-pass-toggle" onclick="togglePassFamilias()"
+                      aria-label="Mostrar contraseña">
+                <svg id="fam-ojo-cerrado" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                  <line x1="1" y1="1" x2="23" y2="23"/>
+                </svg>
+                <svg id="fam-ojo-abierto" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="fl-forgot">
+            <a href="#" onclick="return false">¿Olvidaste tu contraseña?</a>
+          </div>
+          <button type="submit" class="btn-primary btn-full fl-btn" id="login-btn">INGRESAR →</button>
+        </form>
+
+      </div>
+    </div>
+
   </div>
 
   <!-- ── CONTENT WRAPPER ───────────────────────────────────────────── -->
