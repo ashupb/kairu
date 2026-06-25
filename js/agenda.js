@@ -1066,9 +1066,14 @@ async function guardarEvento(eventoId) {
     || false;
 
   const nivelChks = [...document.querySelectorAll('.ev-nivel-chk:checked')].map(c => c.value);
-  let nivelVal    = nivelChks.length
-    ? (nivelChks.includes('todos') ? 'todos' : nivelChks.join(','))
-    : (document.getElementById('ev-nivel')?.value || 'todos');
+  let nivelVal;
+  if (!nivelChks.length) {
+    nivelVal = document.getElementById('ev-nivel')?.value || 'todos';
+  } else if (nivelChks.includes('todos') || ['inicial','primario','secundario'].every(n => nivelChks.includes(n))) {
+    nivelVal = 'todos';
+  } else {
+    nivelVal = nivelChks.filter(n => n !== 'todos').join(',');
+  }
 
   // Para cita individual: obtener nivel del curso seleccionado
   let alumnoId        = null;
