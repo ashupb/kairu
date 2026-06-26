@@ -1977,7 +1977,7 @@ async function verNotasPrimariaGrado(cursoId, nivel, nombreCurso, editable = tru
       ${editable ? `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
         <button class="btn-p" id="btn-guardar-prim" onclick="guardarNotasPrimariaGrado()">💾 Guardar promedios</button>
-        <button class="btn-s" onclick="abrirCargaMasivaMateria('${cursoId}','${PERIODO_SEL}')">📝 Cargar por materia</button>
+        ${PERIODO_SEL ? `<button class="btn-s" onclick="abrirCargaMasivaMateria('${cursoId}','${PERIODO_SEL}')">📝 Cargar por materia</button>` : ''}
         <span style="font-size:10px;color:var(--txt3)">Los cambios no guardados se perderán</span>
       </div>` : `
       <div style="background:var(--azul-l);border-left:4px solid var(--azul);border-radius:var(--rad);
@@ -2498,6 +2498,7 @@ async function guardarPanelInstancias(alumnoId, materiaId, cursoId, periodoId) {
 // ─── CARGA MASIVA POR MATERIA (PRIMARIA/INICIAL) ──────
 
 async function abrirCargaMasivaMateria(cursoId, periodoId) {
+  if (!periodoId) { alert('No hay un período seleccionado para este nivel.'); return; }
   const materias   = window._pGmaterias || [];
   const alumnos    = window._pGalumnos  || [];
   const usaConc    = window._pGusaConc;
