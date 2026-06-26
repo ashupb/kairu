@@ -2262,6 +2262,11 @@ async function _guardarConfigAsistencia(nivel, existingId) {
   if (nivel === 'inicial') {
     datos.escala      = null;
     datos.nota_minima = null;
+    // Persistir las dimensiones que se muestran actualmente (defaults o personalizadas)
+    const lista   = document.getElementById('lista-dims-inicial');
+    const dimEls  = lista ? lista.querySelectorAll('div > div:first-child') : [];
+    const dimsDOM = Array.from(dimEls).map(el => el.textContent.trim()).filter(Boolean);
+    datos.dimensiones_informe = dimsDOM.length ? dimsDOM : _DIMS_INICIAL_DEFAULT;
   } else if (nivel === 'primario') {
     datos.escala_ciclo1     = 'conceptual';
     datos.aprobacion_ciclo1 = document.getElementById('cfg-aprobacion-ciclo1')?.value || 'B';
