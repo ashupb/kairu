@@ -226,10 +226,17 @@ async function rNotas() {
   showLoading('notas');
   const instId = USUARIO_ACTUAL.institucion_id;
   const rol    = USUARIO_ACTUAL.rol;
+  const inst   = INSTITUCION_ACTUAL;
 
-  // Nivel inicial: módulo completamente diferente
+  // Usuario de nivel inicial puro (docente/directivo con nivel='inicial' o inst exclusivamente inicial)
   if (typeof esNivelInicial === 'function' && esNivelInicial()) {
     await rNotasInicial();
+    return;
+  }
+
+  // Director general en institución que incluye nivel inicial → tabs de nivel
+  if (rol === 'director_general' && inst?.nivel_inicial) {
+    await _rNotasConTabs(instId);
     return;
   }
 
@@ -249,6 +256,50 @@ async function rNotas() {
   inyectarEstilosNotas();
 }
 
+async function _rNotasConTabs(instId) {
+  const inst   = INSTITUCION_ACTUAL;
+  const pg     = document.getElementById('page-notas');
+  const niveles = ['inicial','primario','secundario'].filter(n => inst?.['nivel_' + n]);
+  const tab    = window._notasNivelTab && niveles.includes(window._notasNivelTab)
+    ? window._notasNivelTab : niveles[0];
+  window._notasNivelTab = tab;
+
+  const labelTab = { inicial: 'Áreas de desarrollo', primario: 'Calificaciones', secundario: 'Calificaciones' };
+  const colores  = { inicial: 'var(--accent)', primario: '#1a5276', secundario: '#6c3483' };
+
+  pg.innerHTML = `
+    <div class="pg-t">${labelTab[tab] || 'Calificaciones'}</div>
+    <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+      ${niveles.map(n => {
+        const labels = { inicial:'Inicial', primario:'Primario', secundario:'Secundario' };
+        return `<button onclick="window._notasNivelTab='${n}';rNotas()"
+          style="padding:6px 16px;border-radius:20px;border:2px solid ${tab===n?colores[n]:'var(--brd)'};
+            background:${tab===n?colores[n]:'transparent'};color:${tab===n?'#fff':'var(--txt2)'};
+            font-size:12px;font-weight:600;cursor:pointer;transition:.15s">
+          ${labels[n]}
+        </button>`;
+      }).join('')}
+    </div>
+    <div id="notas-tab-body"></div>
+  `;
+
+  if (tab === 'inicial') {
+    await rNotasInicial();
+  } else {
+    const [tiposRes, periodosRes, cfgNotasRes] = await Promise.all([
+      sb.from('tipos_instancia_evaluativa').select('*').eq('institucion_id', instId).eq('activo', true).order('nombre'),
+      sb.from('periodos_evaluativos').select('*').eq('institucion_id', instId).eq('anio', 2026).order('nivel').order('numero'),
+      sb.from('config_asistencia').select('*').eq('institucion_id', instId),
+    ]);
+    TIPOS_EVAL   = tiposRes.data  || [];
+    PERIODOS     = periodosRes.data || [];
+    CONFIG_NOTAS = {};
+    (cfgNotasRes.data || []).forEach(c => CONFIG_NOTAS[c.nivel] = c);
+    await rNotasDirectivo(tab);
+    inyectarEstilosNotas();
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 // NIVEL INICIAL — ÁREAS DE DESARROLLO
 // ═══════════════════════════════════════════════════════
@@ -256,7 +307,11 @@ async function rNotas() {
 let _iniCache = {}; // { cursoId_semestre: { alumnos, observaciones } }
 
 async function rNotasInicial() {
-  const pg     = document.getElementById('page-notas');
+  // Si estamos en contexto de tabs (director_general multinivel), renderizar en el sub-contenedor
+  const tabBody = document.getElementById('notas-tab-body');
+  const pg      = tabBody || document.getElementById('page-notas');
+  const enTabs  = !!tabBody;
+
   const instId = USUARIO_ACTUAL.institucion_id;
   const rol    = USUARIO_ACTUAL.rol;
   const miId   = USUARIO_ACTUAL.id;
@@ -278,7 +333,7 @@ async function rNotasInicial() {
       .eq('anio_lectivo', anio);
     const ids = (asigs || []).map(a => a.curso_id);
     if (!ids.length) {
-      pg.innerHTML = `<div class="pg-t">Áreas de desarrollo</div><div class="empty-state">No tenés salas asignadas para este año.</div>`;
+      pg.innerHTML = `${enTabs?'':' <div class="pg-t">Áreas de desarrollo</div>'}<div class="empty-state">No tenés salas asignadas para este año.</div>`;
       return;
     }
     cursosQuery = cursosQuery.in('id', ids);
@@ -287,7 +342,7 @@ async function rNotasInicial() {
   const { data: cursos } = await cursosQuery;
 
   if (!cursos?.length) {
-    pg.innerHTML = `<div class="pg-t">Áreas de desarrollo</div><div class="empty-state">No hay salas de nivel inicial registradas.</div>`;
+    pg.innerHTML = `${enTabs?'':'<div class="pg-t">Áreas de desarrollo</div>'}<div class="empty-state">No hay salas de nivel inicial registradas.</div>`;
     return;
   }
 
@@ -296,7 +351,7 @@ async function rNotasInicial() {
     .select('dimensiones_informe')
     .eq('institucion_id', instId)
     .eq('nivel', 'inicial')
-    .single();
+    .maybeSingle();
   const dimensiones = cfgArr?.dimensiones_informe || [];
 
   // Estado inicial del selector
@@ -308,8 +363,7 @@ async function rNotasInicial() {
   const salaActual = cursos.find(c => c.id === salaId) || cursos[0];
 
   pg.innerHTML = `
-    <div class="pg-t">Áreas de desarrollo</div>
-
+    ${enTabs ? '' : '<div class="pg-t">Áreas de desarrollo</div>'}
     <div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px;padding:14px 16px">
       <div style="flex:1;min-width:140px">
         <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;margin-bottom:4px">Sala</div>
@@ -1527,11 +1581,13 @@ async function guardarConfigCalif(cursoId, materiaId) {
 // ═══════════════════════════════════════════════════════
 // DIRECTIVO / PRECEPTOR — SOLO LECTURA
 // ═══════════════════════════════════════════════════════
-async function rNotasDirectivo() {
-  const c      = document.getElementById('page-notas');
+async function rNotasDirectivo(nivelForzado) {
+  // Si viene desde tabs de nivel (director_general multinivel), renderizar en el sub-contenedor
+  const tabBody = document.getElementById('notas-tab-body');
+  const c      = tabBody || document.getElementById('page-notas');
   const instId = USUARIO_ACTUAL.institucion_id;
   const rol    = USUARIO_ACTUAL.rol;
-  const nivel  = USUARIO_ACTUAL.nivel;
+  const nivel  = nivelForzado || USUARIO_ACTUAL.nivel;
 
   const { data: cursos } = await sb.from('cursos')
     .select('*').eq('institucion_id', instId).order('nivel').order('nombre');
@@ -1543,7 +1599,7 @@ async function rNotasDirectivo() {
   const colores = { inicial:'#1a7a4a', primario:'#1a5276', secundario:'#6c3483' };
 
   c.innerHTML = `
-    <div class="pg-t">Calificaciones</div>
+    ${tabBody ? '' : '<div class="pg-t">Calificaciones</div>'}
     <div class="pg-s">${rol === 'preceptor' ? 'Preceptoría' : 'Vista institucional'} · Solo lectura</div>
     <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:9px 13px;
       background:var(--surf1);border-radius:8px;font-size:10px;color:var(--txt2);margin-bottom:14px;border:1px solid var(--brd)">

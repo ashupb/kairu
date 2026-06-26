@@ -11,8 +11,10 @@ async function rInformes() {
   const pg     = document.getElementById('page-informes');
   if (!pg) return;
 
-  // Redirigir si no es nivel inicial
-  if (typeof esNivelInicial !== 'function' || !esNivelInicial()) {
+  // Redirigir si la institución no tiene nivel inicial
+  const tieneInicial = (typeof esNivelInicial === 'function' && esNivelInicial())
+    || INSTITUCION_ACTUAL?.nivel_inicial;
+  if (!tieneInicial) {
     pg.innerHTML = `<div class="pg-t">Informes</div><div class="empty-state">Este módulo es exclusivo de nivel inicial.</div>`;
     return;
   }

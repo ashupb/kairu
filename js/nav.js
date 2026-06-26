@@ -106,7 +106,7 @@ function renderNav() {
   let items = (NAV_CONFIG[rol] || NAV_CONFIG.docente).slice();
 
   if (inicial) {
-    // Reemplazar label de 'notas' e insertar 'informes' después
+    // Usuario de nivel inicial puro: renombrar notas, agregar informes, quitar intensif
     const itemsAdaptados = [];
     for (const item of items) {
       if (item.id === 'notas') {
@@ -116,6 +116,16 @@ function renderNav() {
         // Intensificación no aplica a nivel inicial — se omite
       } else {
         itemsAdaptados.push(item);
+      }
+    }
+    items = itemsAdaptados;
+  } else if (USUARIO_ACTUAL?.rol === 'director_general' && INSTITUCION_ACTUAL?.nivel_inicial) {
+    // Director general en institución multinivel con inicial: agregar Informes después de notas
+    const itemsAdaptados = [];
+    for (const item of items) {
+      itemsAdaptados.push(item);
+      if (item.id === 'notas') {
+        itemsAdaptados.push({ id: 'informes', icon: '◻', label: 'Informes' });
       }
     }
     items = itemsAdaptados;
