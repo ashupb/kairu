@@ -973,15 +973,14 @@ async function rDashDocente() {
     ${renderPendientesRespuesta(pendientes)}
 
     <div class="dash-cols">
-      <div class="dash-col-l">
-        <div class="sec-lb">Mis cursos</div>
-        ${cursosHTML}
-      </div>
+      <div class="dash-col-l" id="tareas-col"></div>
       <div class="dash-col-r">
         ${renderAgendaSemana(eventosSem, sem, null)}
       </div>
     </div>
 
+    <div class="sec-lb" style="margin-top:14px">Mis cursos</div>
+    ${cursosHTML}
     ${actividadesHTML}`;
 
   inyectarEstilosDash();
@@ -1144,19 +1143,19 @@ async function rDashPreceptor() {
     ${listasHTML}
 
     <div class="dash-cols">
-      <div class="dash-col-l">
-        <div class="sec-lb">Estado del nivel</div>
-        ${renderNivelPanel(nivel, probs)}
-        ${alertasHTML}
-        <div class="acc" style="margin-top:10px">
-          <button class="btn-p" onclick="goPage('asist')">📋 Tomar lista</button>
-          <button class="btn-s" onclick="goPage('leg')">▤ Resumen</button>
-          <button class="btn-s" onclick="goPage('prob')">△ Reportar</button>
-        </div>
-      </div>
+      <div class="dash-col-l" id="tareas-col"></div>
       <div class="dash-col-r">
         ${renderAgendaSemana(eventosSem, sem, nivel)}
       </div>
+    </div>
+
+    <div class="sec-lb" style="margin-top:14px">Estado del nivel</div>
+    ${renderNivelPanel(nivel, probs)}
+    ${alertasHTML}
+    <div class="acc" style="margin-top:10px">
+      <button class="btn-p" onclick="goPage('asist')">📋 Tomar lista</button>
+      <button class="btn-s" onclick="goPage('leg')">▤ Resumen</button>
+      <button class="btn-s" onclick="goPage('prob')">△ Reportar</button>
     </div>
 
     ${renderPendientesRespuesta(pendResp)}
