@@ -278,6 +278,24 @@ function showError(pageId, msg) {
   const pg = document.getElementById('page-' + pageId);
   if (pg) pg.innerHTML = `<div class="empty-state">⚠️<br>${msg}</div>`;
 }
+function mostrarToast(msg, tipo) {
+  const t = document.createElement('div');
+  const ok = tipo === 'ok' || tipo === 'success';
+  Object.assign(t.style, {
+    position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%) translateY(20px)',
+    background: ok ? 'var(--verde,#27ae60)' : 'var(--rojo,#e74c3c)',
+    color:'#fff', padding:'10px 20px', borderRadius:'8px', fontSize:'13px', fontWeight:'600',
+    boxShadow:'0 4px 16px rgba(0,0,0,.18)', zIndex:'9999', opacity:'0',
+    transition:'opacity .2s, transform .2s', whiteSpace:'nowrap', maxWidth:'90vw',
+  });
+  t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => { t.style.opacity = '1'; t.style.transform = 'translateX(-50%) translateY(0)'; });
+  setTimeout(() => {
+    t.style.opacity = '0'; t.style.transform = 'translateX(-50%) translateY(10px)';
+    setTimeout(() => t.remove(), 250);
+  }, 2800);
+}
 
 // ── ARRANQUE AL CARGAR LA PÁGINA ─────────────────────
 window.addEventListener('load', () => {
