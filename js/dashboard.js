@@ -290,6 +290,7 @@ async function rDash() {
   else if (rol === 'docente')           await rDashDocente();
   else if (rol === 'preceptor')         await rDashPreceptor();
   else                                  await rDashDirector();
+  _renderTareasDash().catch(() => {});
 }
 
 // ─── DIRECTOR GENERAL ─────────────────────────────────

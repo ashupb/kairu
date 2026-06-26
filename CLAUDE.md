@@ -74,6 +74,7 @@ No hay comandos de build, lint ni tests. Para desarrollar:
 | `agenda` | `rAgenda()` | agenda.js |
 | `eoe` | `rEOE()` | modulos.js |
 | `admin` | `rAdmin()` (o `rAdmin` de ui.js) | configuracion.js |
+| `tareas` | `rTareas()` | tareas.js — página completa de tareas personales (todos los roles) |
 
 ### Estado global (main.js)
 - `USUARIO_ACTUAL` — perfil completo del usuario logueado (incluye `id`, `rol`, `institucion_id`, `nivel`, `nombre_completo`)
@@ -128,6 +129,7 @@ El rol `eoe` tiene acceso multi-nivel (igual que `director_general`) en asistenc
 | `tipos_justificacion` | Tipos de justificación de ausencia |
 | `tipos_instancia_evaluativa` | Tipos de instancia evaluativa configurables por institución (`nombre`, `activo`, `es_recuperatorio`, `orden`). Gestionados desde configuracion.js. **Nota**: `instancias_evaluativas.tipo_id` apunta a esta tabla (FK corregida en v20). La tabla legacy `tipos_evaluacion` queda en desuso. |
 | `instancias_evaluativas` | Instancias evaluativas de un curso × materia × período. FK `tipo_id` → `tipos_instancia_evaluativa`. Tiene columna denormalizada `es_recuperatorio`. |
+| `tareas_usuario` | Tareas personales por usuario. RLS: `usuario_id = auth.uid()`. Campos: `texto`, `fecha_vencimiento DATE`, `estado` ('pendiente'/'completada'), `observacion`, `contexto_tipo` ('alumno'/'problematica'/'general'), `contexto_id UUID`, `contexto_label`. SQL: `migrations/tareas_usuario.sql`. Gestionadas desde `js/tareas.js`. |
 
 ### config_asistencia — columnas relevantes
 

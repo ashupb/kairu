@@ -20,6 +20,7 @@ const PAGE_LABELS = {
   agenda:    'Agenda institucional',
   avisos:    'Comunicados a familias',
   informes:  'Informes',
+  tareas:    'Mis tareas',
 };
 
 // ── ARRANQUE ─────────────────────────────────────────
@@ -84,6 +85,7 @@ async function goPage(id) {
     agenda:    rAgenda,
     avisos:    rAvisos,
     informes:  rInformes,
+    tareas:    rTareas,
   };
   if (renderers[id]) await renderers[id]();
 

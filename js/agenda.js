@@ -210,9 +210,11 @@ async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaT
         <button class="btn-s" style="font-size:11px;padding:6px 10px" onclick="irHoy()">Hoy</button>
         <button class="semana-nav-btn" onclick="cambiarSemana(1)" title="Semana siguiente">▶</button>
         ${puedeCrear ? `<button class="btn-p" style="font-size:11px" onclick="abrirFormEvento()">+ Nuevo</button>` : ''}
+        <button class="btn-s" style="font-size:11px" onclick="_mostrarFormTareaAgenda()">+ Tarea</button>
       </div>
     </div>
     ${filtroTabsHTML}
+    <div id="tarea-agenda-form" style="display:none"></div>
     <div class="dia-tabs">${tabsDiaHTML}</div>
     <div id="form-evento"></div>
     <div id="detalle-evento"></div>
@@ -265,9 +267,11 @@ async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaTogg
         <button class="btn-s" style="font-size:11px;padding:6px 10px" onclick="irHoy()">Hoy</button>
         <button class="semana-nav-btn" onclick="cambiarMes(1)" title="Mes siguiente">▶</button>
         ${puedeCrear ? `<button class="btn-p" style="font-size:11px" onclick="abrirFormEvento()">+ Nuevo</button>` : ''}
+        <button class="btn-s" style="font-size:11px" onclick="_mostrarFormTareaAgenda()">+ Tarea</button>
       </div>
     </div>
     ${filtroTabsHTML}
+    <div id="tarea-agenda-form" style="display:none"></div>
     <div id="form-evento"></div>
     <div id="detalle-evento"></div>
     <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">

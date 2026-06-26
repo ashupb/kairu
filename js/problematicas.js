@@ -385,6 +385,11 @@ async function cargarDetProb(probId) {
         </div>`).join('')
     : '<div style="font-size:11px;color:var(--txt2);padding:4px 0">Sin intervenciones aún.</div>';
 
+  window._probLabelsForTareas = window._probLabelsForTareas || {};
+  const _nomAl = prob?.alumno ? `${prob.alumno.apellido || ''}, ${prob.alumno.nombre || ''}` : null;
+  const _curAl = prob?.alumno?.curso ? `${prob.alumno.curso.nombre || ''} ${prob.alumno.curso.division || ''}`.trim() : '';
+  window._probLabelsForTareas[probId] = _nomAl ? `${_nomAl}${_curAl ? ' · ' + _curAl : ''}` : (prob?.descripcion?.slice(0,40) || 'Situación');
+
   det.innerHTML = `
     <div style="padding:12px 14px">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;padding:8px 10px;background:var(--surf2);border-radius:var(--rad)">
@@ -457,7 +462,9 @@ async function cargarDetProb(probId) {
         ${perm.cerrar && !cerrada ? `<button class="btn-d" style="font-size:11px" onclick="mostrarFormCierre('${probId}')">Cerrar caso</button>` : ''}
         ${perm.reabrir && cerrada ? `<button class="btn-s" style="font-size:11px" onclick="reabrirProb('${probId}')">Reabrir caso</button>` : ''}
         ${perm.derivarEOE && !cerrada ? `<button class="btn-s" style="font-size:11px;color:var(--azul);border-color:var(--azul)" onclick="derivarAEOE('${probId}')">Derivar a EOE</button>` : ''}
+        <button class="btn-s" style="font-size:11px" onclick="_crearTareaDesdeProb('${probId}')">📋 Tarea</button>
       </div>
+      <div id="tarea-prob-form-${probId}" style="margin-top:6px"></div>
       <div id="cierre-form-${probId}"></div>
       <div id="deriv-eoe-form-${probId}"></div>
     </div>`;
