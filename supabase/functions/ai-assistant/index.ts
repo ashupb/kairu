@@ -85,6 +85,41 @@ Generá un análisis breve (máximo 3 oraciones) que describa la situación y su
 Tono directo y profesional.`;
 }
 
+function construirPromptBorradorDimension(p: any): string {
+  const obsBase = p.observaciones_previas
+    ? `\nNotas del docente como punto de partida: "${p.observaciones_previas}"`
+    : '';
+  return `Sos un asistente pedagógico para docentes de nivel inicial argentino.
+Redactá una observación narrativa breve (3-5 oraciones) para la dimensión indicada, en tono profesional, positivo y constructivo. Usá lenguaje apropiado para un informe de jardín de infantes. No uses calificaciones numéricas ni comparaciones con otros niños. Basate en los datos provistos.
+
+Alumno/a: ${p.alumno_nombre}
+Sala: ${p.sala}
+Semestre: ${p.semestre}° semestre, ${p.anio_lectivo}
+Dimensión: ${p.dimension}
+Asistencia: ${p.asistencia_resumen || 'Sin datos de asistencia'}${obsBase}
+
+Redactá solo la observación, sin encabezado ni firma. Empezá directamente con el texto.`;
+}
+
+function construirPromptInformeNarrativo(p: any): string {
+  const dims = Object.entries(p.observaciones_por_dimension || {})
+    .map(([dim, obs]) => `${dim}:\n${obs}`)
+    .join('\n\n');
+
+  return `Sos un asistente pedagógico para docentes de nivel inicial argentino.
+A partir de las observaciones por dimensión provistas, redactá un informe narrativo integrador de 2-3 párrafos, cohesivo y fluido, que sintetice el desarrollo del niño/niña durante el semestre. Tono profesional, positivo y constructivo. Lenguaje apropiado para familias argentinas. No repitas mecánicamente cada dimensión — integrá la información de forma natural.
+
+Alumno/a: ${p.alumno_nombre}
+Sala: ${p.sala}
+Semestre: ${p.semestre}° semestre, ${p.anio_lectivo}
+Asistencia: ${p.asistencia_resumen || 'Sin datos de asistencia'}
+
+OBSERVACIONES POR DIMENSIÓN:
+${dims || 'Sin observaciones registradas.'}
+
+Redactá el informe directamente, sin encabezado ni firma.`;
+}
+
 function construirPromptAnalisis(p: any): string {
   return `Sos un asistente de gestión institucional escolar argentina.
 Generá un análisis ejecutivo del estado institucional del mes para el equipo directivo.
@@ -141,7 +176,7 @@ serve(async (req) => {
       });
     }
 
-    // Verificar rol — solo directivos pueden usar IA
+    // Verificar rol
     const perfilRes = await fetch(
       `${SUPABASE_URL}/rest/v1/usuarios?id=eq.${userData.id}&select=rol,institucion_id`,
       { headers: { "Authorization": `Bearer ${jwt}`, "apikey": SERVICE_KEY } }
@@ -149,7 +184,7 @@ serve(async (req) => {
     const perfilArr = await perfilRes.json();
     const perfil = Array.isArray(perfilArr) ? perfilArr[0] : null;
 
-    if (!perfil || !["director_general", "directivo_nivel"].includes(perfil.rol)) {
+    if (!perfil) {
       return new Response(JSON.stringify({ error: "No autorizado" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -157,6 +192,30 @@ serve(async (req) => {
     }
 
     const { action, payload } = await req.json();
+
+    // Acciones exclusivas de directivos
+    const accionesDirectivo = ["sintesis_legajo", "observacion_pedagogica", "alerta_contexto", "analisis_institucional"];
+    // Acciones disponibles también para docentes (nivel inicial)
+    const accionesDocente   = ["borrador_observacion_dimension", "informe_narrativo_inicial"];
+
+    const esDirectivo = ["director_general", "directivo_nivel"].includes(perfil.rol);
+    const esDocente   = perfil.rol === "docente";
+
+    if (accionesDirectivo.includes(action) && !esDirectivo) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (accionesDocente.includes(action) && !esDirectivo && !esDocente) {
+      return new Response(JSON.stringify({ error: "No autorizado" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!accionesDirectivo.includes(action) && !accionesDocente.includes(action)) {
+      throw new Error("Acción no reconocida");
+    }
 
     let prompt = "";
     if (action === "sintesis_legajo") {
@@ -167,8 +226,10 @@ serve(async (req) => {
       prompt = construirPromptAlerta(payload);
     } else if (action === "analisis_institucional") {
       prompt = construirPromptAnalisis(payload);
-    } else {
-      throw new Error("Acción no reconocida");
+    } else if (action === "borrador_observacion_dimension") {
+      prompt = construirPromptBorradorDimension(payload);
+    } else if (action === "informe_narrativo_inicial") {
+      prompt = construirPromptInformeNarrativo(payload);
     }
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {

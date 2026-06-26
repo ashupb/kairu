@@ -85,10 +85,42 @@ const NAV_CONFIG = {
   ],
 };
 
+// Detecta si el usuario opera en el contexto de nivel inicial.
+// Usado para adaptar el nav y los módulos de calificaciones/informes.
+function esNivelInicial() {
+  const u = USUARIO_ACTUAL;
+  if (!u) return false;
+  if (u.nivel === 'inicial') return true;
+  // director_general en institución exclusivamente inicial
+  if (u.rol === 'director_general') {
+    const inst = INSTITUCION_ACTUAL;
+    if (inst?.nivel_inicial && !inst?.nivel_primario && !inst?.nivel_secundario) return true;
+  }
+  return false;
+}
+
 function renderNav() {
   const nav   = document.getElementById('sb-nav');
   const rol   = USUARIO_ACTUAL?.rol;
-  const items = NAV_CONFIG[rol] || NAV_CONFIG.docente;
+  const inicial = esNivelInicial();
+  let items = (NAV_CONFIG[rol] || NAV_CONFIG.docente).slice();
+
+  if (inicial) {
+    // Reemplazar label de 'notas' e insertar 'informes' después
+    const itemsAdaptados = [];
+    for (const item of items) {
+      if (item.id === 'notas') {
+        itemsAdaptados.push({ ...item, label: 'Áreas de desarrollo' });
+        itemsAdaptados.push({ id: 'informes', icon: '◻', label: 'Informes' });
+      } else if (item.id === 'intensif') {
+        // Intensificación no aplica a nivel inicial — se omite
+      } else {
+        itemsAdaptados.push(item);
+      }
+    }
+    items = itemsAdaptados;
+  }
+
   nav.innerHTML = '';
   items.forEach(item => {
     if (item.sec) {

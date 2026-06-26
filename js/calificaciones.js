@@ -227,6 +227,12 @@ async function rNotas() {
   const instId = USUARIO_ACTUAL.institucion_id;
   const rol    = USUARIO_ACTUAL.rol;
 
+  // Nivel inicial: módulo completamente diferente
+  if (typeof esNivelInicial === 'function' && esNivelInicial()) {
+    await rNotasInicial();
+    return;
+  }
+
   const [tiposRes, periodosRes, cfgNotasRes] = await Promise.all([
     sb.from('tipos_instancia_evaluativa').select('*').eq('institucion_id', instId).eq('activo', true).order('nombre'),
     sb.from('periodos_evaluativos').select('*').eq('institucion_id', instId).eq('anio', 2026).order('nivel').order('numero'),
@@ -241,6 +247,285 @@ async function rNotas() {
   else                   await rNotasDirectivo();
 
   inyectarEstilosNotas();
+}
+
+// ═══════════════════════════════════════════════════════
+// NIVEL INICIAL — ÁREAS DE DESARROLLO
+// ═══════════════════════════════════════════════════════
+
+let _iniCache = {}; // { cursoId_semestre: { alumnos, observaciones } }
+
+async function rNotasInicial() {
+  const pg     = document.getElementById('page-notas');
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const rol    = USUARIO_ACTUAL.rol;
+  const miId   = USUARIO_ACTUAL.id;
+  const anio   = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
+  const esDocente = rol === 'docente';
+
+  // Cargar salas disponibles
+  let cursosQuery = sb.from('cursos')
+    .select('id, nombre, division, nivel')
+    .eq('institucion_id', instId)
+    .eq('nivel', 'inicial')
+    .eq('activo', true)
+    .order('nombre');
+
+  if (esDocente) {
+    const { data: asigs } = await sb.from('asignaciones')
+      .select('curso_id')
+      .eq('docente_id', miId)
+      .eq('anio_lectivo', anio);
+    const ids = (asigs || []).map(a => a.curso_id);
+    if (!ids.length) {
+      pg.innerHTML = `<div class="pg-t">Áreas de desarrollo</div><div class="empty-state">No tenés salas asignadas para este año.</div>`;
+      return;
+    }
+    cursosQuery = cursosQuery.in('id', ids);
+  }
+
+  const { data: cursos } = await cursosQuery;
+
+  if (!cursos?.length) {
+    pg.innerHTML = `<div class="pg-t">Áreas de desarrollo</div><div class="empty-state">No hay salas de nivel inicial registradas.</div>`;
+    return;
+  }
+
+  // Cargar dimensiones de la config
+  const { data: cfgArr } = await sb.from('config_asistencia')
+    .select('dimensiones_informe')
+    .eq('institucion_id', instId)
+    .eq('nivel', 'inicial')
+    .single();
+  const dimensiones = cfgArr?.dimensiones_informe || [];
+
+  // Estado inicial del selector
+  const salaId   = window._iniSalaId  || cursos[0].id;
+  const semestre = window._iniSemestre || 1;
+  window._iniSalaId   = salaId;
+  window._iniSemestre = semestre;
+
+  const salaActual = cursos.find(c => c.id === salaId) || cursos[0];
+
+  pg.innerHTML = `
+    <div class="pg-t">Áreas de desarrollo</div>
+
+    <div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px;padding:14px 16px">
+      <div style="flex:1;min-width:140px">
+        <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;margin-bottom:4px">Sala</div>
+        <select id="ini-sala" class="inp" style="width:100%;margin:0"
+          onchange="window._iniSalaId=this.value;window._iniSemestre=document.getElementById('ini-sem').value*1;rNotasInicial()">
+          ${cursos.map(c => `<option value="${c.id}" ${c.id===salaId?'selected':''}>${c.nombre}${c.division?' '+c.division:''}</option>`).join('')}
+        </select>
+      </div>
+      <div style="min-width:140px">
+        <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;margin-bottom:4px">Semestre</div>
+        <select id="ini-sem" class="inp" style="width:100%;margin:0"
+          onchange="window._iniSemestre=this.value*1;window._iniSalaId=document.getElementById('ini-sala').value;rNotasInicial()">
+          <option value="1" ${semestre===1?'selected':''}>1° semestre</option>
+          <option value="2" ${semestre===2?'selected':''}>2° semestre</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="ini-lista"><div class="loading-state small"><div class="spinner"></div></div></div>
+  `;
+
+  await _renderListaInicial(salaId, semestre, anio, instId, dimensiones, esDocente);
+}
+
+async function _renderListaInicial(salaId, semestre, anio, instId, dimensiones, esDocente) {
+  const cont = document.getElementById('ini-lista');
+  if (!cont) return;
+
+  const { data: alumnos } = await sb.from('alumnos')
+    .select('id, nombre, apellido')
+    .eq('curso_id', salaId)
+    .eq('activo', true)
+    .order('apellido').order('nombre');
+
+  if (!alumnos?.length) {
+    cont.innerHTML = `<div class="empty-state">No hay alumnos registrados en esta sala.</div>`;
+    return;
+  }
+
+  const alumnoIds = alumnos.map(a => a.id);
+  const { data: obsData } = await sb.from('observaciones_iniciales')
+    .select('alumno_id, dimension, observacion, borrador_ia')
+    .eq('anio_lectivo', anio)
+    .eq('semestre', semestre)
+    .in('alumno_id', alumnoIds);
+
+  // Indexar por alumno_id → dimension
+  const obsIdx = {};
+  (obsData || []).forEach(o => {
+    if (!obsIdx[o.alumno_id]) obsIdx[o.alumno_id] = {};
+    obsIdx[o.alumno_id][o.dimension] = o;
+  });
+
+  const totalDims = dimensiones.length;
+
+  if (!totalDims) {
+    cont.innerHTML = `
+      <div class="card" style="padding:16px;color:var(--txt2);font-size:13px">
+        No hay dimensiones de desarrollo configuradas. Configuralas en
+        <strong>Configuración → Nivel inicial</strong>.
+      </div>`;
+    return;
+  }
+
+  cont.innerHTML = alumnos.map(al => {
+    const obsAl   = obsIdx[al.id] || {};
+    const cargadas = Object.keys(obsAl).filter(d => obsAl[d].observacion?.trim()).length;
+    const isOpen   = EX === `ini-${al.id}`;
+
+    return `
+      <div class="card" style="margin-bottom:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;cursor:pointer"
+             onclick="togEx('ini-${al.id}', () => _renderListaInicial('${salaId}',${semestre},${anio},'${instId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente}))">
+          <div>
+            <div style="font-size:13px;font-weight:600">${al.apellido}, ${al.nombre}</div>
+            <div style="font-size:11px;color:var(--txt2);margin-top:2px">${cargadas}/${totalDims} dimensiones con observación</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="width:60px;height:6px;background:var(--surf2);border-radius:3px;overflow:hidden">
+              <div style="width:${totalDims?Math.round(cargadas/totalDims*100):0}%;height:100%;background:var(--accent);border-radius:3px"></div>
+            </div>
+            <span style="font-size:18px;color:var(--txt3);transform:rotate(${isOpen?'90':'0'}deg);transition:.2s">›</span>
+          </div>
+        </div>
+        ${isOpen ? _renderDetalleAlumnoInicial(al, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente) : ''}
+      </div>`;
+  }).join('');
+}
+
+function _renderDetalleAlumnoInicial(al, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente) {
+  const puedeIA = ['director_general','directivo_nivel','docente'].includes(USUARIO_ACTUAL.rol);
+
+  const dimsHTML = dimensiones.map((dim, idx) => {
+    const obs       = obsAl[dim] || {};
+    const textoObs  = obs.observacion || '';
+    const borradorIA = obs.borrador_ia || '';
+    const dimId     = `dim-${al.id}-${idx}`;
+
+    return `
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt2);margin-bottom:6px">${dim}</div>
+        <textarea id="${dimId}" class="inp"
+          style="width:100%;min-height:80px;resize:vertical;font-size:13px;line-height:1.5;box-sizing:border-box"
+          placeholder="Observación narrativa para esta dimensión...">${_esc(textoObs)}</textarea>
+        ${puedeIA ? `
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
+          <button class="btn-sm" id="btn-ia-${dimId}"
+            onclick="_generarBorradorDimension('${al.id}','${_esc(al.nombre)} ${_esc(al.apellido)}','${_esc(dim)}','${dimId}','${salaId}',${semestre},${anio})">
+            ✨ Generar borrador con IA
+          </button>
+          ${borradorIA ? `
+          <button class="btn-sm" style="background:var(--surf2);color:var(--txt1)"
+            onclick="document.getElementById('${dimId}').value=${JSON.stringify(borradorIA)};document.getElementById('borr-${dimId}').style.display='none'">
+            Usar borrador
+          </button>` : ''}
+        </div>
+        ${borradorIA ? `
+        <div id="borr-${dimId}" class="card" style="margin-top:8px;padding:12px;background:var(--surf2);font-size:12px;color:var(--txt2);line-height:1.5;border-left:3px solid var(--accent)">
+          <div style="font-size:10px;font-weight:700;color:var(--accent);margin-bottom:4px">BORRADOR IA</div>
+          ${_esc(borradorIA)}
+        </div>` : ''}
+        ` : ''}
+      </div>`;
+  }).join('');
+
+  return `
+    <div style="padding:0 16px 16px">
+      <div style="height:1px;background:var(--brd);margin-bottom:16px"></div>
+      ${dimsHTML}
+      <button class="btn-primary" style="width:100%;margin-top:4px"
+        onclick="_guardarObservacionesInicial('${al.id}','${instId}',${semestre},${anio},'${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
+        Guardar observaciones
+      </button>
+    </div>`;
+}
+
+function _esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+async function _generarBorradorDimension(alumnoId, alumnoNombre, dimension, dimId, salaId, semestre, anio) {
+  const btn = document.getElementById(`btn-ia-${dimId}`);
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  const textoOriginal = btn.textContent;
+  btn.textContent = 'Generando...';
+
+  try {
+    const result = await llamarIA('borrador_observacion_dimension', {
+      alumno_nombre: alumnoNombre,
+      sala: document.getElementById('ini-sala')?.selectedOptions[0]?.text || '',
+      semestre,
+      anio_lectivo: anio,
+      dimension,
+      observaciones_previas: document.getElementById(dimId)?.value || '',
+    });
+
+    if (result) {
+      // Guardar borrador_ia en la BD
+      const instId = USUARIO_ACTUAL.institucion_id;
+      await sb.from('observaciones_iniciales').upsert({
+        alumno_id: alumnoId,
+        institucion_id: instId,
+        anio_lectivo: anio,
+        semestre,
+        dimension,
+        borrador_ia: result,
+        creado_por: USUARIO_ACTUAL.id,
+        actualizado_en: new Date().toISOString(),
+      }, { onConflict: 'alumno_id,anio_lectivo,semestre,dimension' });
+
+      // Re-render para mostrar el borrador
+      const iniSalaId = window._iniSalaId;
+      const iniSem    = window._iniSemestre;
+      const { data: cfgArr } = await sb.from('config_asistencia')
+        .select('dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').single();
+      const dims = cfgArr?.dimensiones_informe || [];
+      await _renderListaInicial(iniSalaId, iniSem, anio, instId, dims, USUARIO_ACTUAL.rol === 'docente');
+    }
+  } catch (e) {
+    mostrarToast('No se pudo generar el borrador. Intentá más tarde.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+  }
+}
+
+async function _guardarObservacionesInicial(alumnoId, instId, semestre, anio, salaId, dimensiones, esDocente) {
+  const rows = dimensiones.map((dim, idx) => {
+    const dimId  = `dim-${alumnoId}-${idx}`;
+    const texto  = document.getElementById(dimId)?.value?.trim() || null;
+    return {
+      alumno_id:      alumnoId,
+      institucion_id: instId,
+      anio_lectivo:   anio,
+      semestre,
+      dimension:      dim,
+      observacion:    texto,
+      creado_por:     USUARIO_ACTUAL.id,
+      actualizado_en: new Date().toISOString(),
+    };
+  });
+
+  const { error } = await sb.from('observaciones_iniciales')
+    .upsert(rows, { onConflict: 'alumno_id,anio_lectivo,semestre,dimension' });
+
+  if (error) {
+    mostrarToast('Error al guardar. Intentá de nuevo.', 'error');
+    return;
+  }
+
+  mostrarToast('Observaciones guardadas.', 'ok');
+  // Re-render para actualizar los indicadores de progreso
+  const { data: cfgArr } = await sb.from('config_asistencia')
+    .select('dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').single();
+  const dims = cfgArr?.dimensiones_informe || [];
+  await _renderListaInicial(salaId, semestre, anio, instId, dims, esDocente);
 }
 
 // ═══════════════════════════════════════════════════════

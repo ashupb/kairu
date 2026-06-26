@@ -18,8 +18,8 @@ const PAGE_LABELS = {
   eoe:       'Equipo de orientación',
   admin:     'Datos institucionales',
   agenda:    'Agenda institucional',
-  notas:     'Calificaciones',
   avisos:    'Comunicados a familias',
+  informes:  'Informes',
 };
 
 // ── ARRANQUE ─────────────────────────────────────────
@@ -65,6 +65,12 @@ async function goPage(id) {
 
   renderNav();
 
+  // Adaptar títulos para nivel inicial
+  if (typeof esNivelInicial === 'function' && esNivelInicial()) {
+    PAGE_LABELS.notas    = 'Áreas de desarrollo';
+    PAGE_LABELS.informes = 'Informes';
+  }
+
   const renderers = {
     dash:      rDash,
     prob:      rProb,
@@ -77,6 +83,7 @@ async function goPage(id) {
     admin:     rAdmin,
     agenda:    rAgenda,
     avisos:    rAvisos,
+    informes:  rInformes,
   };
   if (renderers[id]) await renderers[id]();
 

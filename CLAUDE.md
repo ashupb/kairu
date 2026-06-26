@@ -68,7 +68,8 @@ No hay comandos de build, lint ni tests. Para desarrollar:
 | `prob` | `rProb()` | problematicas.js |
 | `obj` | `rObj()` | modulos.js |
 | `asist` | `rAsist()` | asistencia.js |
-| `notas` | `rNotas()` | calificaciones.js — incluye sección Intensificación/Recursada y botones de cierre de cuatrimestre (solo directivos) |
+| `notas` | `rNotas()` | calificaciones.js — para nivel inicial deriva a `rNotasInicial()` (Áreas de desarrollo); para otros niveles: calificaciones numéricas/conceptuales |
+| `informes` | `rInformes()` | informes_inicial.js — solo nivel inicial; compila el informe narrativo semestral |
 | `leg` | `rLeg()` | legajos.js |
 | `agenda` | `rAgenda()` | agenda.js |
 | `eoe` | `rEOE()` | modulos.js |
@@ -110,6 +111,8 @@ El rol `eoe` tiene acceso multi-nivel (igual que `director_general`) en asistenc
 | `asistencia` | Registros diarios (`alumno_id`, `fecha`, `estado`, `hora_clase`, `periodo_intensif_id`, `materia_estado_id`) |
 | `periodos_intensificacion` | 4 períodos de intensificación por ciclo lectivo (`tipo`: inicio_c1/fin_c1/diciembre/febrero, `activo`) |
 | `materias_estado_alumno` | Estado de cada materia por alumno con trayectoria histórica (`ciclo_lectivo_origen`, `ciclo_lectivo_cursado`, `estado`, `nota_intensif_1`, `nota_intensif_2`) |
+| `observaciones_iniciales` | Observaciones narrativas por dimensión, alumno y semestre (nivel inicial). `UNIQUE(alumno_id, anio_lectivo, semestre, dimension)`. Campos: `observacion` (texto docente), `borrador_ia` (borrador generado por IA). SQL: `migrations/observaciones_iniciales.sql` |
+| `informes_iniciales` | Informe narrativo final por alumno y semestre (nivel inicial). `UNIQUE(alumno_id, anio_lectivo, semestre)`. Campo `estado`: `'borrador'` / `'finalizado'` / `'enviado'`. SQL: `migrations/observaciones_iniciales.sql` |
 | `alertas_academicas` | Alertas al cierre de cuatrimestre. **Cols nuevas** (v15): `tipo`, `materias_ids[]`, `ciclo_lectivo`, `cuatrimestre`, `leida`, `resuelta`. Cols viejas intactas. |
 | `cierres_periodo` | Registro del cierre de cuatrimestre/año por la institución |
 | `problematicas` | Situaciones problemáticas con soporte grupal (`modalidad`, `problematica_madre_id`) |
@@ -191,16 +194,20 @@ La función recibe `{ action, payload }` y devuelve `{ result }`.
 
 ### Acciones disponibles
 
-| Acción | Descripción |
-|--------|-------------|
-| `sintesis_legajo` | Resumen narrativo del alumno para equipo docente |
-| `observacion_pedagogica` | Redacción formal a partir de notas coloquiales del docente |
-| `alerta_contexto` | Análisis contextualizado de situación del alumno con sugerencia de acción |
-| `analisis_institucional` | Resumen ejecutivo mensual para directivos |
+| Acción | Descripción | Roles permitidos |
+|--------|-------------|-----------------|
+| `sintesis_legajo` | Resumen narrativo del alumno para equipo docente | director_general, directivo_nivel |
+| `observacion_pedagogica` | Redacción formal a partir de notas coloquiales del docente | director_general, directivo_nivel |
+| `alerta_contexto` | Análisis contextualizado de situación del alumno con sugerencia de acción | director_general, directivo_nivel |
+| `analisis_institucional` | Resumen ejecutivo mensual para directivos | director_general, directivo_nivel |
+| `borrador_observacion_dimension` | Borrador de observación para una dimensión de desarrollo (nivel inicial) | director_general, directivo_nivel, docente |
+| `informe_narrativo_inicial` | Informe narrativo integrador semestral (nivel inicial) | director_general, directivo_nivel, docente |
 
 ### Modelo de negocio — reglas críticas
 
 El costo de la API lo paga la dueña del sistema (por tokens). Cada institución tiene una cuota mensual incluida en su plan.
+
+**Detección de nivel inicial** (en nav.js, calificaciones.js, informes_inicial.js): usar `esNivelInicial()` definida en `nav.js`. Retorna `true` si `USUARIO_ACTUAL.nivel === 'inicial'` o si el usuario es `director_general` en una institución exclusivamente inicial (`nivel_inicial=true`, `nivel_primario=false`, `nivel_secundario=false`).
 
 **Reglas que no se deben romper:**
 - **Nunca** llamar `llamarIA()` en eventos automáticos, loops o carga de página
