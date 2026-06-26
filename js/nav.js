@@ -5,7 +5,7 @@
 const NAV_CONFIG = {
   director_general: [
     { sec: 'General' },
-    { id:'dash',    icon:'⌂',  label:'Inicio' },
+    { id:'dash',    icon:'⌂',  label:'Mi Día' },
     { id:'agenda',  icon:'▦',  label:'Agenda' },
     { id:'avisos',  icon:'📢', label:'Portal familiar' },
     { sec: 'Gestión institucional' },
@@ -22,7 +22,7 @@ const NAV_CONFIG = {
   ],
   directivo_nivel: [
     { sec: 'General' },
-    { id:'dash',    icon:'⌂',  label:'Inicio' },
+    { id:'dash',    icon:'⌂',  label:'Mi Día' },
     { id:'agenda',  icon:'▦',  label:'Agenda' },
     { id:'avisos',  icon:'📢', label:'Portal familiar' },
     { sec: 'Gestión' },
@@ -39,7 +39,7 @@ const NAV_CONFIG = {
   ],
   eoe: [
     { sec: 'General' },
-    { id:'dash',     icon:'⌂',  label:'Inicio' },
+    { id:'dash',     icon:'⌂',  label:'Mi Día' },
     { id:'asist',    icon:'✓',  label:'Asistencia' },
     { id:'notas',    icon:'≡',  label:'Calificaciones' },
     { id:'intensif', icon:'◈',  label:'Intensificación' },
@@ -51,7 +51,7 @@ const NAV_CONFIG = {
   ],
   docente: [
     { sec: 'General' },
-    { id:'dash',    icon:'⌂',  label:'Inicio' },
+    { id:'dash',    icon:'⌂',  label:'Mi Día' },
     { id:'agenda',  icon:'▦',  label:'Agenda' },
     { sec: 'Mis clases' },
     { id:'asist',    icon:'✓',  label:'Asistencia' },
@@ -63,7 +63,7 @@ const NAV_CONFIG = {
   ],
   preceptor: [
     { sec: 'General' },
-    { id:'dash',  icon:'⌂',   label:'Inicio' },
+    { id:'dash',  icon:'⌂',   label:'Mi Día' },
     { id:'agenda',icon:'▦',   label:'Agenda' },
     { id:'avisos',icon:'📢',  label:'Portal familiar' },
     { sec: 'Mis cursos' },
@@ -78,7 +78,7 @@ const NAV_CONFIG = {
   ],
   admin: [
     { sec: 'General' },
-    { id:'dash',    icon:'⌂',  label:'Inicio' },
+    { id:'dash',    icon:'⌂',  label:'Mi Día' },
     { id:'agenda',  icon:'▦',  label:'Agenda' },
     { sec: 'Sistema' },
     { id:'admin',   icon:'⊙',  label:'Configuración' },
