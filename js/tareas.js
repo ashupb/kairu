@@ -45,16 +45,20 @@ function _inyectarEstilosTareas() {
 // ── PANEL EN DASHBOARD ────────────────────────────────
 
 async function _renderTareasDash() {
-  const pg = document.getElementById('page-dash');
-  if (!pg) return;
   _inyectarEstilosTareas();
 
-  let cont = document.getElementById('tareas-dash');
+  // Directivo/Director tienen #tareas-col en el dash-col-l; otros roles usan contenedor flotante
+  let cont = document.getElementById('tareas-col');
   if (!cont) {
-    cont = document.createElement('div');
-    cont.id = 'tareas-dash';
-    cont.style.marginBottom = '14px';
-    pg.appendChild(cont);
+    const pg = document.getElementById('page-dash');
+    if (!pg) return;
+    cont = document.getElementById('tareas-dash');
+    if (!cont) {
+      cont = document.createElement('div');
+      cont.id = 'tareas-dash';
+      cont.style.marginBottom = '14px';
+      pg.appendChild(cont);
+    }
   }
 
   cont.innerHTML = '<div style="height:40px;display:flex;align-items:center;padding-left:4px"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div></div>';
@@ -127,16 +131,19 @@ function _renderTareaItem(t, hoy, grupo) {
 
   return `
     <div class="tarea-item" id="tarea-item-${t.id}" style="display:flex;flex-direction:column;border-bottom:1px solid var(--brd);border-left:3px solid ${borderColor}">
-      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px">
-        <button class="tarea-circle" onclick="_completarTarea('${t.id}')" title="Marcar como completada"></button>
+      <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 14px">
+        <span style="font-size:14px;flex-shrink:0;margin-top:1px;opacity:.45;line-height:1.4">📌</span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:500;line-height:1.4;color:var(--txt1)">${_escT(t.texto)}</div>
+          <div class="tarea-texto" style="font-size:12px;font-weight:500;line-height:1.4;color:var(--txt1)">${_escT(t.texto)}</div>
           ${t.contexto_label ? `<div style="font-size:10px;color:var(--txt2);margin-top:2px">📎 ${_escT(t.contexto_label)}</div>` : ''}
           ${fechaLabel ? `<div style="font-size:10px;color:${fechaColor};margin-top:2px;font-weight:${fechaWeight}">${fechaLabel}</div>` : ''}
         </div>
-        <button onclick="_toggleMenuTarea('${t.id}')"
-          style="background:none;border:none;cursor:pointer;padding:2px 5px;font-size:18px;color:var(--txt3);border-radius:4px;line-height:1;flex-shrink:0"
-          title="Opciones">⋯</button>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0;margin-top:1px">
+          <button class="tarea-circle" onclick="_completarTarea('${t.id}')" title="Marcar como completada"></button>
+          <button onclick="_toggleMenuTarea('${t.id}')"
+            style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:18px;color:var(--txt3);border-radius:4px;line-height:1"
+            title="Opciones">⋯</button>
+        </div>
       </div>
       <div id="tarea-menu-${t.id}" style="display:none;border-top:1px solid var(--brd);background:var(--surf2);padding:4px 0">
         <button class="tarea-menu-btn" onclick="_editarTarea('${t.id}')">Editar</button>
@@ -187,7 +194,7 @@ function _cerrarFormsInline(id) {
 
 function _editarTarea(id) {
   const item = document.getElementById(`tarea-item-${id}`);
-  const textoEl = item?.querySelector('div > div > div:first-child');
+  const textoEl = item?.querySelector('.tarea-texto');
   const textoActual = textoEl?.textContent?.trim() || '';
   _cerrarFormsInline(id);
   const cont = document.getElementById(`tarea-edit-form-${id}`);

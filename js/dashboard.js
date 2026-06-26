@@ -412,14 +412,7 @@ async function rDashDirector() {
     ${renderObjetivosStrip(objetivos)}
 
     <div class="dash-cols">
-      <div class="dash-col-l">
-        <div class="sec-lb">Situaciones problemáticas registradas</div>
-        ${nivelesPanel}
-        <div class="acc" style="margin-top:4px">
-          <button class="btn-s" style="font-size:11px" onclick="goPage('prob')">△ Problemáticas</button>
-          <button class="btn-s" style="font-size:11px" onclick="goPage('leg')">▤ Resumen estudiante</button>
-        </div>
-      </div>
+      <div class="dash-col-l" id="tareas-col"></div>
       <div class="dash-col-r">
         ${renderAgendaSemana(eventosSem, sem, null)}
       </div>
@@ -544,14 +537,7 @@ async function rDashDirectivo() {
     ${renderObjetivosStrip(objetivos)}
 
     <div class="dash-cols">
-      <div class="dash-col-l">
-        <div class="sec-lb">Estado del nivel</div>
-        ${renderNivelPanel(nivel, probs)}
-        <div class="acc" style="margin-top:4px">
-          <button class="btn-s" style="font-size:11px" onclick="goPage('prob')">△ Problemáticas</button>
-          <button class="btn-s" style="font-size:11px" onclick="goPage('leg')">▤ Resumen estudiante</button>
-        </div>
-      </div>
+      <div class="dash-col-l" id="tareas-col"></div>
       <div class="dash-col-r">
         ${renderAgendaSemana(eventosSem, sem, nivel)}
       </div>

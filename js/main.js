@@ -8,7 +8,7 @@ let SB_OPEN   = true;
 let EX        = null;
 
 const PAGE_LABELS = {
-  dash:      'Inicio',
+  dash:      '☀️ Mi Día',
   prob:      'Problemáticas',
   obj:       'Objetivos institucionales',
   asist:     'Asistencia',
