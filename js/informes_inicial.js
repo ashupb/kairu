@@ -19,6 +19,38 @@ async function rInformes() {
     return;
   }
 
+  // Inyectar estilos del botón IA (una sola vez)
+  if (!document.getElementById('ia-spark-styles')) {
+    const st = document.createElement('style');
+    st.id = 'ia-spark-styles';
+    st.textContent = `
+      .btn-ia-spark {
+        width:36px;height:36px;border-radius:50%;border:none;flex-shrink:0;
+        background:linear-gradient(135deg,#f59e0b,#fbbf24);
+        color:#fff;font-size:15px;cursor:pointer;
+        transition:transform .15s,opacity .15s;
+        animation:ia-spark-pulse 2.5s ease-in-out infinite;
+      }
+      .btn-ia-spark:hover:not(:disabled) { transform:scale(1.12); }
+      .btn-ia-spark:disabled {
+        animation:none;background:#ccc;cursor:not-allowed;opacity:.55;
+      }
+      .btn-ia-spark.loading {
+        animation:ia-spark-spin .8s linear infinite;
+        background:linear-gradient(135deg,#d97706,#fbbf24);
+      }
+      @keyframes ia-spark-pulse {
+        0%,100% { box-shadow:0 0 0 0 rgba(251,191,36,.6); }
+        50%      { box-shadow:0 0 12px 5px rgba(251,191,36,.2); }
+      }
+      @keyframes ia-spark-spin {
+        from { transform:rotate(0deg); }
+        to   { transform:rotate(360deg); }
+      }
+    `;
+    document.head.appendChild(st);
+  }
+
   showLoading('informes');
   const instId    = USUARIO_ACTUAL.institucion_id;
   const rol       = USUARIO_ACTUAL.rol;
@@ -202,17 +234,17 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
         style="width:100%;min-height:160px;resize:vertical;font-size:13px;line-height:1.6;box-sizing:border-box"
         placeholder="Redactá aquí el informe narrativo completo del alumno/a...">${_escInf(textoFinal)}</textarea>
 
-      ${puedeIA ? `
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <button class="btn-sm" id="btn-ia-inf-${al.id}"
+        ${puedeIA ? `
+        <button class="btn-ia-spark" id="btn-ia-inf-${al.id}"
           onclick="_generarInformeNarrativo('${al.id}','${_escInf(al.nombre)} ${_escInf(al.apellido)}','${salaId}',${semestre},${anio},'${instId}',${JSON.stringify(dimensiones).replace(/"/g,"'")})"
-          ${!tieneObs?'disabled title="Cargá al menos una observación antes de generar el informe"':''}>
-          ✨ Generar informe con IA
-        </button>
+          title="${tieneObs ? 'Generar informe narrativo con IA' : 'Cargá al menos una observación antes de generar el informe'}"
+          ${!tieneObs?'disabled':''}>✦</button>
+        ` : ''}
         ${borradorIA ? `
         <button class="btn-sm" style="background:var(--surf2);color:var(--txt1)"
           onclick="document.getElementById('inf-txt-${al.id}').value=${JSON.stringify(borradorIA)};document.getElementById('borr-inf-${al.id}').style.display='none'">
-          Usar borrador
+          Usar borrador IA
         </button>` : ''}
       </div>
 
@@ -221,22 +253,26 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
         <div style="font-size:10px;font-weight:700;color:var(--accent);margin-bottom:4px">BORRADOR IA</div>
         ${_escInf(borradorIA)}
       </div>` : ''}
-      ` : ''}
 
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
         <button class="btn-primary" style="flex:1"
           onclick="_guardarInforme('${al.id}','${instId}',${semestre},${anio},'${salaId}','${estado}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
           Guardar
         </button>
+        <button class="btn-sm" style="background:var(--surf2);color:var(--txt2)"
+          onclick="_descargarInforme('${al.id}','${_escInf(al.apellido)}, ${_escInf(al.nombre)}',${semestre},${anio})"
+          title="Descargar como PDF">
+          ↓ Descargar
+        </button>
         ${estado !== 'finalizado' && estado !== 'enviado' ? `
         <button class="btn-sm" style="background:var(--verde-l);color:var(--verde)"
           onclick="_cambiarEstadoInforme('${al.id}','${instId}',${semestre},${anio},'finalizado','${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
-          Marcar como finalizado
+          Finalizar
         </button>` : ''}
         ${estado === 'finalizado' ? `
         <button class="btn-sm" style="background:var(--accent);color:#fff"
           onclick="_cambiarEstadoInforme('${al.id}','${instId}',${semestre},${anio},'enviado','${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
-          Marcar como enviado a familia
+          Enviado a familia
         </button>` : ''}
       </div>
     </div>`;
@@ -250,8 +286,8 @@ async function _generarInformeNarrativo(alumnoId, alumnoNombre, salaId, semestre
   const btn = document.getElementById(`btn-ia-inf-${alumnoId}`);
   if (!btn || btn.disabled) return;
   btn.disabled = true;
-  const textoOriginal = btn.textContent;
-  btn.textContent = 'Generando...';
+  btn.classList.add('loading');
+  btn.textContent = '↻';
 
   try {
     // Obtener observaciones actuales
@@ -294,7 +330,7 @@ async function _generarInformeNarrativo(alumnoId, alumnoNombre, salaId, semestre
   } catch (e) {
     mostrarToast('No se pudo generar el informe. Intentá más tarde.', 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '✦'; }
   }
 }
 
@@ -321,6 +357,51 @@ async function _guardarInforme(alumnoId, instId, semestre, anio, salaId, estadoA
     .select('dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').single();
   const dims = cfgArr?.dimensiones_informe || [];
   await _renderListaInformes(salaId, semestre, anio, instId, dims, esDocente);
+}
+
+function _descargarInforme(alumnoId, alumnoNombre, semestre, anio) {
+  const texto = document.getElementById(`inf-txt-${alumnoId}`)?.value?.trim() || '';
+  if (!texto) { mostrarToast('Escribí el informe antes de descargar.', 'error'); return; }
+
+  const semLabel  = semestre === 1 ? '1° semestre' : '2° semestre';
+  const salaLabel = document.getElementById('inf-sala')?.selectedOptions[0]?.text || '';
+  const instNombre = INSTITUCION_ACTUAL?.nombre || '';
+  const textoHtml  = texto.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Informe — ${alumnoNombre}</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:Arial,sans-serif; margin:40px; color:#1a1a1a; line-height:1.7; font-size:14px; }
+  .header { border-bottom:2px solid #1a6b3c; padding-bottom:16px; margin-bottom:28px; }
+  .inst { font-size:11px; color:#555; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
+  h1 { font-size:20px; font-weight:700; margin-bottom:4px; }
+  .meta { font-size:12px; color:#666; }
+  .body { font-size:14px; line-height:1.8; white-space:pre-wrap; }
+  .footer { margin-top:48px; border-top:1px solid #ddd; padding-top:12px; font-size:10px; color:#aaa; }
+  @media print { body { margin:20mm 18mm; } }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="inst">${instNombre}</div>
+    <h1>Informe pedagógico</h1>
+    <div class="meta">${alumnoNombre} · ${salaLabel} · ${semLabel} ${anio}</div>
+  </div>
+  <div class="body">${textoHtml}</div>
+  <div class="footer">Emitido el ${new Date().toLocaleDateString('es-AR',{day:'2-digit',month:'long',year:'numeric'})}</div>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=820,height=680');
+  if (!win) { mostrarToast('Permitir ventanas emergentes para descargar.', 'error'); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
 }
 
 async function _cambiarEstadoInforme(alumnoId, instId, semestre, anio, nuevoEstado, salaId, dimensiones, esDocente) {

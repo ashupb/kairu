@@ -454,13 +454,10 @@ async function _renderListaInicial(salaId, semestre, anio, instId, dimensiones, 
 }
 
 function _renderDetalleAlumnoInicial(al, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente) {
-  const puedeIA = ['director_general','directivo_nivel','docente'].includes(USUARIO_ACTUAL.rol);
-
   const dimsHTML = dimensiones.map((dim, idx) => {
-    const obs       = obsAl[dim] || {};
-    const textoObs  = obs.observacion || '';
-    const borradorIA = obs.borrador_ia || '';
-    const dimId     = `dim-${al.id}-${idx}`;
+    const obs      = obsAl[dim] || {};
+    const textoObs = obs.observacion || '';
+    const dimId    = `dim-${al.id}-${idx}`;
 
     return `
       <div style="margin-bottom:20px">
@@ -468,24 +465,6 @@ function _renderDetalleAlumnoInicial(al, obsAl, dimensiones, salaId, semestre, a
         <textarea id="${dimId}" class="inp"
           style="width:100%;min-height:80px;resize:vertical;font-size:13px;line-height:1.5;box-sizing:border-box"
           placeholder="Observación narrativa para esta dimensión...">${_esc(textoObs)}</textarea>
-        ${puedeIA ? `
-        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap">
-          <button class="btn-sm" id="btn-ia-${dimId}"
-            onclick="_generarBorradorDimension('${al.id}','${_esc(al.nombre)} ${_esc(al.apellido)}','${_esc(dim)}','${dimId}','${salaId}',${semestre},${anio})">
-            ✨ Generar borrador con IA
-          </button>
-          ${borradorIA ? `
-          <button class="btn-sm" style="background:var(--surf2);color:var(--txt1)"
-            onclick="document.getElementById('${dimId}').value=${JSON.stringify(borradorIA)};document.getElementById('borr-${dimId}').style.display='none'">
-            Usar borrador
-          </button>` : ''}
-        </div>
-        ${borradorIA ? `
-        <div id="borr-${dimId}" class="card" style="margin-top:8px;padding:12px;background:var(--surf2);font-size:12px;color:var(--txt2);line-height:1.5;border-left:3px solid var(--accent)">
-          <div style="font-size:10px;font-weight:700;color:var(--accent);margin-bottom:4px">BORRADOR IA</div>
-          ${_esc(borradorIA)}
-        </div>` : ''}
-        ` : ''}
       </div>`;
   }).join('');
 
@@ -504,51 +483,6 @@ function _esc(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
-async function _generarBorradorDimension(alumnoId, alumnoNombre, dimension, dimId, salaId, semestre, anio) {
-  const btn = document.getElementById(`btn-ia-${dimId}`);
-  if (!btn || btn.disabled) return;
-  btn.disabled = true;
-  const textoOriginal = btn.textContent;
-  btn.textContent = 'Generando...';
-
-  try {
-    const result = await llamarIA('borrador_observacion_dimension', {
-      alumno_nombre: alumnoNombre,
-      sala: document.getElementById('ini-sala')?.selectedOptions[0]?.text || '',
-      semestre,
-      anio_lectivo: anio,
-      dimension,
-      observaciones_previas: document.getElementById(dimId)?.value || '',
-    });
-
-    if (result) {
-      // Guardar borrador_ia en la BD
-      const instId = USUARIO_ACTUAL.institucion_id;
-      await sb.from('observaciones_iniciales').upsert({
-        alumno_id: alumnoId,
-        institucion_id: instId,
-        anio_lectivo: anio,
-        semestre,
-        dimension,
-        borrador_ia: result,
-        creado_por: USUARIO_ACTUAL.id,
-        actualizado_en: new Date().toISOString(),
-      }, { onConflict: 'alumno_id,anio_lectivo,semestre,dimension' });
-
-      // Re-render para mostrar el borrador
-      const iniSalaId = window._iniSalaId;
-      const iniSem    = window._iniSemestre;
-      const { data: cfgArr } = await sb.from('config_asistencia')
-        .select('dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').single();
-      const dims = cfgArr?.dimensiones_informe || [];
-      await _renderListaInicial(iniSalaId, iniSem, anio, instId, dims, USUARIO_ACTUAL.rol === 'docente');
-    }
-  } catch (e) {
-    mostrarToast('No se pudo generar el borrador. Intentá más tarde.', 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = textoOriginal; }
-  }
-}
 
 async function _guardarObservacionesInicial(alumnoId, instId, semestre, anio, salaId, dimensiones, esDocente) {
   const rows = dimensiones.map((dim, idx) => {
