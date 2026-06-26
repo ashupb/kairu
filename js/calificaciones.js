@@ -2511,17 +2511,21 @@ async function abrirCargaMasivaMateria(cursoId, periodoId) {
       return `<input type="text" id="cm-nombre" placeholder="Ej: Evaluación escrita"
         style="width:100%;border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf)">`;
     }
-    return `<div class="panel-inst-nombre-wrap" style="display:flex;flex-direction:column;gap:4px">
-      <select id="cm-tipo" class="panel-inst-tipo" onchange="_onTipoChange(this)"
-        style="border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf);width:100%">
-        <option value="">— Tipo de instancia —</option>
-        ${tiposInst.map(t => `<option value="${_esc(t.nombre)}">${_esc(t.nombre)}</option>`).join('')}
-        <option value="__otro__">Otro...</option>
-      </select>
-      <input type="text" class="panel-inst-nombre-libre" placeholder="Escribí el nombre..."
-        style="display:none;border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf);width:100%">
-      <button type="button" class="panel-inst-nombre-back" onclick="_resetTipoOtro(this)"
-        style="display:none;font-size:10px;color:var(--txt2);background:none;border:none;cursor:pointer;padding:0;text-align:left">← Cambiar tipo</button>
+    return `<div style="display:flex;flex-direction:column;gap:6px">
+      <div class="panel-inst-nombre-wrap">
+        <select id="cm-tipo" class="panel-inst-tipo" onchange="_onTipoChange(this)"
+          style="border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf);width:100%">
+          <option value="">— Tipo de instancia —</option>
+          ${tiposInst.map(t => `<option value="${_esc(t.nombre)}">${_esc(t.nombre)}</option>`).join('')}
+          <option value="__otro__">Otro...</option>
+        </select>
+        <input type="text" class="panel-inst-nombre-libre" placeholder="Escribí el nombre..."
+          style="display:none;border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf);width:100%">
+        <button type="button" class="panel-inst-nombre-back" onclick="_resetTipoOtro(this)"
+          style="display:none;font-size:10px;color:var(--txt2);background:none;border:none;cursor:pointer;padding:0;text-align:left">← Cambiar tipo</button>
+      </div>
+      <input type="text" id="cm-desc" placeholder="Descripción o nombre específico (ej: N°1, Unidad 3...)"
+        style="border:1.5px solid var(--brd);border-radius:6px;padding:8px 10px;font-size:12px;background:var(--surf);width:100%;box-sizing:border-box">
     </div>`;
   };
 
@@ -2589,9 +2593,12 @@ async function guardarCargaMasivaMateria(cursoId, periodoId) {
   const tipoEl   = document.getElementById('cm-tipo');
   const libreEl  = document.querySelector('#modal-carga-masiva .panel-inst-nombre-libre');
   const nombreEl = document.getElementById('cm-nombre');
+  const descEl   = document.getElementById('cm-desc');
+  const desc     = descEl?.value?.trim() || '';
   let nombre;
   if (tipoEl) {
-    nombre = tipoEl.value === '__otro__' ? (libreEl?.value?.trim() || '') : tipoEl.value;
+    const base = tipoEl.value === '__otro__' ? (libreEl?.value?.trim() || '') : tipoEl.value;
+    nombre = base && desc ? `${base} — ${desc}` : (base || desc);
   } else {
     nombre = nombreEl?.value?.trim() || '';
   }
