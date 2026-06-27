@@ -450,11 +450,11 @@ async function _renderListaInicial(salaId, semestre, anio, instId, dimensiones, 
              onclick="togEx('ini-${al.id}', () => _renderListaInicial('${salaId}',${semestre},${anio},'${instId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente}))">
           <div>
             <div style="font-size:13px;font-weight:600">${al.apellido}, ${al.nombre}</div>
-            <div style="font-size:11px;color:var(--txt2);margin-top:2px">${cargadas}/${totalDims} dimensiones con observación</div>
+            <div id="ini-prog-${al.id}" style="font-size:11px;color:var(--txt2);margin-top:2px">${cargadas}/${totalDims} dimensiones con observación</div>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <div style="width:60px;height:6px;background:var(--surf2);border-radius:3px;overflow:hidden">
-              <div style="width:${totalDims?Math.round(cargadas/totalDims*100):0}%;height:100%;background:var(--accent);border-radius:3px"></div>
+              <div id="ini-bar-${al.id}" style="width:${totalDims?Math.round(cargadas/totalDims*100):0}%;height:100%;background:var(--verde);border-radius:3px;transition:width .3s"></div>
             </div>
             <span style="font-size:18px;color:var(--txt3);transform:rotate(${isOpen?'90':'0'}deg);transition:.2s">›</span>
           </div>
@@ -465,6 +465,10 @@ async function _renderListaInicial(salaId, semestre, anio, instId, dimensiones, 
 }
 
 function _renderDetalleAlumnoInicial(al, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente) {
+  const totalDims = dimensiones.length;
+  const tieneObs  = Object.values(obsAl).some(o => o.observacion?.trim());
+  const btnId     = `btn-save-ini-${al.id}`;
+
   const dimsHTML = dimensiones.map((dim, idx) => {
     const obs      = obsAl[dim] || {};
     const textoObs = obs.observacion || '';
@@ -475,17 +479,22 @@ function _renderDetalleAlumnoInicial(al, obsAl, dimensiones, salaId, semestre, a
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt2);margin-bottom:6px">${dim}</div>
         <textarea id="${dimId}" class="inp"
           style="width:100%;min-height:80px;resize:vertical;font-size:13px;line-height:1.5;box-sizing:border-box"
-          placeholder="Observación narrativa para esta dimensión...">${_esc(textoObs)}</textarea>
+          placeholder="Observación narrativa para esta dimensión..."
+          oninput="_iniMarkDirty('${al.id}',${totalDims})">${_esc(textoObs)}</textarea>
       </div>`;
   }).join('');
+
+  const btnClass = tieneObs ? 'btn-s' : 'btn-p';
+  const btnLabel = tieneObs ? 'Editar observaciones' : 'Guardar observaciones';
+  const btnMode  = tieneObs ? 'view' : 'edit';
 
   return `
     <div style="padding:0 16px 16px">
       <div style="height:1px;background:var(--brd);margin-bottom:16px"></div>
       ${dimsHTML}
-      <button class="btn-primary" style="width:100%;margin-top:4px"
-        onclick="_guardarObservacionesInicial('${al.id}','${instId}',${semestre},${anio},'${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
-        Guardar observaciones
+      <button id="${btnId}" class="${btnClass}" style="width:100%;margin-top:4px" data-mode="${btnMode}"
+        onclick="_iniHandleSave('${al.id}','${instId}',${semestre},${anio},'${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
+        ${btnLabel}
       </button>
     </div>`;
 }
@@ -494,6 +503,41 @@ function _esc(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+function _iniUpdateProgress(alumnoId, totalDims) {
+  let count = 0;
+  document.querySelectorAll(`textarea[id^="dim-${alumnoId}-"]`).forEach(ta => {
+    if (ta.value?.trim()) count++;
+  });
+  const progText = document.getElementById(`ini-prog-${alumnoId}`);
+  const progBar  = document.getElementById(`ini-bar-${alumnoId}`);
+  if (progText) progText.textContent = `${count}/${totalDims} dimensiones con observación`;
+  if (progBar)  progBar.style.width  = `${totalDims ? Math.round(count / totalDims * 100) : 0}%`;
+}
+
+function _iniMarkDirty(alumnoId, totalDims) {
+  _iniUpdateProgress(alumnoId, totalDims);
+  const btn = document.getElementById(`btn-save-ini-${alumnoId}`);
+  if (btn && btn.dataset.mode === 'view') {
+    btn.className    = 'btn-p';
+    btn.style.width  = '100%';
+    btn.textContent  = 'Guardar observaciones';
+    btn.dataset.mode = 'edit';
+  }
+}
+
+async function _iniHandleSave(alumnoId, instId, semestre, anio, salaId, dimensiones, esDocente) {
+  const btn = document.getElementById(`btn-save-ini-${alumnoId}`);
+  if (btn?.dataset.mode === 'view') {
+    btn.className    = 'btn-p';
+    btn.style.width  = '100%';
+    btn.textContent  = 'Guardar observaciones';
+    btn.dataset.mode = 'edit';
+    const firstTa = document.querySelector(`textarea[id^="dim-${alumnoId}-"]`);
+    if (firstTa) firstTa.focus();
+    return;
+  }
+  await _guardarObservacionesInicial(alumnoId, instId, semestre, anio, salaId, dimensiones, esDocente);
+}
 
 async function _guardarObservacionesInicial(alumnoId, instId, semestre, anio, salaId, dimensiones, esDocente) {
   const rows = dimensiones.map((dim, idx) => {
@@ -520,11 +564,14 @@ async function _guardarObservacionesInicial(alumnoId, instId, semestre, anio, sa
   }
 
   mostrarToast('Observaciones guardadas.', 'ok');
-  // Re-render para actualizar los indicadores de progreso
-  const { data: cfgArr } = await sb.from('config_asistencia')
-    .select('dimensiones_informe').eq('institucion_id', instId).eq('nivel', 'inicial').single();
-  const dims = cfgArr?.dimensiones_informe || [];
-  await _renderListaInicial(salaId, semestre, anio, instId, dims, esDocente);
+  const btn = document.getElementById(`btn-save-ini-${alumnoId}`);
+  if (btn) {
+    btn.className    = 'btn-s';
+    btn.style.width  = '100%';
+    btn.textContent  = 'Editar observaciones';
+    btn.dataset.mode = 'view';
+  }
+  _iniUpdateProgress(alumnoId, dimensiones.length);
 }
 
 // ═══════════════════════════════════════════════════════

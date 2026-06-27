@@ -212,35 +212,35 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
           ${!tieneObs?'disabled':''}><span class="ia-star">✦</span> Generar informe narrativo</button>
         ` : ''}
         ${borradorIA ? `
-        <button class="btn-sm" style="background:var(--surf2);color:var(--txt1)"
+        <button class="btn-s"
           onclick="document.getElementById('inf-txt-${al.id}').value=${JSON.stringify(borradorIA)};document.getElementById('borr-inf-${al.id}').style.display='none'">
           Usar borrador IA
         </button>` : ''}
       </div>
 
       ${borradorIA ? `
-      <div id="borr-inf-${al.id}" class="card" style="margin-top:8px;padding:12px;background:var(--surf2);font-size:12px;color:var(--txt2);line-height:1.5;border-left:3px solid var(--accent)">
-        <div style="font-size:10px;font-weight:700;color:var(--accent);margin-bottom:4px">BORRADOR IA</div>
+      <div id="borr-inf-${al.id}" class="card" style="margin-top:8px;padding:12px;background:var(--verde-l);font-size:12px;color:var(--txt2);line-height:1.5;border-left:3px solid var(--verde)">
+        <div style="font-size:10px;font-weight:700;color:var(--verde);margin-bottom:4px">BORRADOR IA</div>
         ${_escInf(borradorIA)}
       </div>` : ''}
 
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn-primary" style="flex:1"
+        <button class="btn-p" style="flex:1"
           onclick="_guardarInforme('${al.id}','${instId}',${semestre},${anio},'${salaId}','${estado}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
           Guardar
         </button>
-        <button class="btn-sm" style="background:var(--surf2);color:var(--txt2)"
+        <button class="btn-s"
           onclick="_descargarInforme('${al.id}','${_escInf(al.apellido)}, ${_escInf(al.nombre)}',${semestre},${anio})"
           title="Descargar como PDF">
           ↓ Descargar
         </button>
         ${estado !== 'finalizado' && estado !== 'enviado' ? `
-        <button class="btn-sm" style="background:var(--verde-l);color:var(--verde)"
+        <button class="btn-s" style="background:var(--verde-l);color:var(--verde);border-color:rgba(34,153,87,0.2)"
           onclick="_cambiarEstadoInforme('${al.id}','${instId}',${semestre},${anio},'finalizado','${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
           Finalizar
         </button>` : ''}
         ${estado === 'finalizado' ? `
-        <button class="btn-sm" style="background:var(--accent);color:#fff"
+        <button class="btn-p"
           onclick="_cambiarEstadoInforme('${al.id}','${instId}',${semestre},${anio},'enviado','${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
           Enviado a familia
         </button>` : ''}
