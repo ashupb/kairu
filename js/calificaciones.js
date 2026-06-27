@@ -1710,7 +1710,7 @@ async function _cargarSituacionDirectivoGlobal(cursos) {
     const min = CONFIG_NOTAS[cu?.nivel]?.nota_minima ?? 7;
     return keys.filter(k => {
       const ns = notasPorAlumnoMateria[k];
-      return (ns.reduce((a, b) => a + b, 0) / ns.length) < min;
+      return Math.round(ns.reduce((a, b) => a + b, 0) / ns.length) < min;
     }).length;
   };
 
@@ -1930,7 +1930,7 @@ async function verCalifCurso(cursoId, nivel) {
               const _nMin = CONFIG_NOTAS[nivel]?.nota_minima ?? 7;
               const desap = materias.filter(m => {
                 const p = promediosMap[al.id]?.[m.id];
-                return p !== null && p !== undefined && p < _nMin;
+                return p !== null && p !== undefined && Math.round(p) < _nMin;
               }).length;
               const filaClass = desap >= 3 ? 'fila-riesgo' : desap === 2 ? 'fila-obs' : '';
               return `
