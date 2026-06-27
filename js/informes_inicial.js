@@ -115,7 +115,7 @@ async function _renderListaInformes(salaId, semestre, anio, instId, dimensiones,
 
   const alumnoIds = alumnos.map(a => a.id);
 
-  const [obsRes, infRes] = await Promise.all([
+  const [obsRes, infRes, famRes] = await Promise.all([
     sb.from('observaciones_iniciales')
       .select('alumno_id, dimension, observacion')
       .eq('anio_lectivo', anio)
@@ -125,6 +125,9 @@ async function _renderListaInformes(salaId, semestre, anio, instId, dimensiones,
       .select('alumno_id, texto_final, borrador_ia, estado')
       .eq('anio_lectivo', anio)
       .eq('semestre', semestre)
+      .in('alumno_id', alumnoIds),
+    sb.from('familia_alumno')
+      .select('alumno_id')
       .in('alumno_id', alumnoIds),
   ]);
 
@@ -136,8 +139,9 @@ async function _renderListaInformes(salaId, semestre, anio, instId, dimensiones,
   });
   const infIdx = {};
   (infRes.data || []).forEach(i => { infIdx[i.alumno_id] = i; });
+  const familiasSet = new Set((famRes.data || []).map(f => f.alumno_id));
 
-  const estadoLabel = { borrador: 'Borrador', finalizado: 'Finalizado', enviado: 'Enviado a familia' };
+  const estadoLabel ={ borrador: 'Borrador', finalizado: 'Finalizado', enviado: 'Enviado a familia' };
   const estadoColor = { borrador: 'var(--ambar)', finalizado: 'var(--verde)', enviado: 'var(--accent)' };
 
   cont.innerHTML = alumnos.map(al => {
@@ -162,12 +166,12 @@ async function _renderListaInformes(salaId, semestre, anio, instId, dimensiones,
             <span style="font-size:18px;color:var(--txt3);transform:rotate(${isOpen?'90':'0'}deg);transition:.2s">›</span>
           </div>
         </div>
-        ${isOpen ? _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente) : ''}
+        ${isOpen ? _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente, familiasSet.has(al.id)) : ''}
       </div>`;
   }).join('');
 }
 
-function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente) {
+function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, anio, instId, esDocente, tieneFamilia) {
   const textoFinal  = inf?.texto_final  || '';
   const borradorIA  = inf?.borrador_ia  || '';
   const estado      = inf?.estado       || 'borrador';
@@ -184,7 +188,7 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
         ${dimensiones.map(d => `
           <div style="margin-bottom:10px">
             <div style="font-size:11px;font-weight:700;color:var(--txt2);margin-bottom:3px">${d}</div>
-            <div style="font-size:12px;color:${obsAl[d]?.trim()?'var(--txt1)':'var(--txt3)'};font-style:${obsAl[d]?.trim()?'normal':'italic'};line-height:1.5">
+            <div style="font-size:12px;color:${obsAl[d]?.trim()?'var(--txt)':'var(--txt3)'};font-style:${obsAl[d]?.trim()?'normal':'italic'};line-height:1.5">
               ${obsAl[d]?.trim() || 'Sin observación cargada'}
             </div>
           </div>`).join('')}
@@ -202,6 +206,7 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
       </div>
       <textarea id="inf-txt-${al.id}" class="inp"
         style="width:100%;min-height:160px;resize:vertical;font-size:13px;line-height:1.6;box-sizing:border-box"
+        oninput="_infMarkDirty('${al.id}')"
         placeholder="Redactá aquí el informe narrativo completo del alumno/a...">${_escInf(textoFinal)}</textarea>
 
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -225,9 +230,11 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
       </div>` : ''}
 
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn-p" style="flex:1"
-          onclick="_guardarInforme('${al.id}','${instId}',${semestre},${anio},'${salaId}','${estado}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
-          Guardar
+        <button id="btn-guardar-inf-${al.id}"
+          class="${textoFinal ? 'btn-s' : 'btn-p'}" style="flex:1"
+          data-mode="${textoFinal ? 'view' : 'edit'}"
+          onclick="_infHandleSave('${al.id}','${instId}',${semestre},${anio},'${salaId}','${estado}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
+          ${textoFinal ? 'Editar informe' : 'Guardar'}
         </button>
         <button class="btn-s"
           onclick="_descargarInforme('${al.id}','${_escInf(al.apellido)}, ${_escInf(al.nombre)}',${semestre},${anio})"
@@ -239,17 +246,37 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
           onclick="_cambiarEstadoInforme('${al.id}','${instId}',${semestre},${anio},'finalizado','${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
           Finalizar
         </button>` : ''}
-        ${estado === 'finalizado' ? `
-        <button class="btn-p"
-          onclick="_cambiarEstadoInforme('${al.id}','${instId}',${semestre},${anio},'enviado','${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">
-          Enviado a familia
-        </button>` : ''}
+        ${estado === 'finalizado' ? (tieneFamilia
+          ? `<button class="btn-p" onclick="_cambiarEstadoInforme('${al.id}','${instId}',${semestre},${anio},'enviado','${salaId}',${JSON.stringify(dimensiones).replace(/"/g,"'")},${esDocente})">Enviado a familia</button>`
+          : `<button class="btn-s" disabled style="opacity:.5;cursor:not-allowed" title="Sin familia enlazada en el sistema">Enviado a familia</button>`
+        ) : ''}
       </div>
     </div>`;
 }
 
 function _escInf(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function _infMarkDirty(alumnoId) {
+  const btn = document.getElementById(`btn-guardar-inf-${alumnoId}`);
+  if (btn && btn.dataset.mode === 'view') {
+    btn.className    = 'btn-p';
+    btn.textContent  = 'Guardar';
+    btn.dataset.mode = 'edit';
+  }
+}
+
+function _infHandleSave(alumnoId, instId, semestre, anio, salaId, estadoActual, dimensiones, esDocente) {
+  const btn = document.getElementById(`btn-guardar-inf-${alumnoId}`);
+  if (btn?.dataset.mode === 'view') {
+    btn.className    = 'btn-p';
+    btn.textContent  = 'Guardar';
+    btn.dataset.mode = 'edit';
+    document.getElementById(`inf-txt-${alumnoId}`)?.focus();
+    return;
+  }
+  _guardarInforme(alumnoId, instId, semestre, anio, salaId, estadoActual, dimensiones, esDocente);
 }
 
 async function _generarInformeNarrativo(alumnoId, alumnoNombre, salaId, semestre, anio, instId, dimensiones) {
