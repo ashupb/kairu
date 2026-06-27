@@ -6,6 +6,17 @@ let TIPOS_EVAL   = [];
 let PERIODOS     = [];
 let CONFIG_NOTAS = {}; // keyed por nivel, poblado en rNotas()
 
+// Genera siglas del tipo de instancia: "Evaluación escrita" → "EE", "Trabajo práctico" → "TP"
+function _abrevTipo(nombre) {
+  if (!nombre) return '—';
+  const SKIP = new Set(['de','del','la','el','los','las','en','a','con','por','para','y','o','un','una']);
+  const siglas = nombre.split(/\s+/)
+    .filter(w => !SKIP.has(w.toLowerCase()))
+    .map(w => w[0].toUpperCase())
+    .join('');
+  return siglas || nombre[0].toUpperCase();
+}
+
 // ─── HELPERS DE ESCALA POR NIVEL/CICLO ───────────────
 // Detecta primer ciclo primario (1°, 2°, 3°) a partir del nombre del curso
 function _esPrimerCiclo(nombreCurso) {
@@ -900,12 +911,8 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
                   <th class="${inst.tipos_instancia_evaluativa?.es_recuperatorio ? 'th-recup' : ''}"
                     title="${[inst.tipos_instancia_evaluativa?.nombre, inst.nombre].filter(Boolean).join(' · ')}"
                     style="width:68px;min-width:68px;max-width:68px">
-                    <div style="font-size:9px;width:60px;line-height:1.3;overflow:hidden;
-                      display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
-                      word-break:normal;overflow-wrap:normal;margin:0 auto">
-                      ${inst.tipos_instancia_evaluativa?.nombre || '—'}
-                    </div>
-                    ${inst.nombre ? `<div style="font-size:9px;font-weight:600;width:60px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin:0 auto">${inst.nombre}</div>` : ''}
+                    <div style="font-size:8px;font-weight:700;letter-spacing:.06em;color:var(--txt3);font-family:'DM Mono',monospace;text-transform:uppercase;margin:0 auto;width:60px">${_abrevTipo(inst.tipos_instancia_evaluativa?.nombre)}</div>
+                    <div style="font-size:9px;font-weight:600;width:60px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin:0 auto">${inst.nombre || inst.tipos_instancia_evaluativa?.nombre || '—'}</div>
                     <div style="font-size:9px;opacity:.6">${formatFechaCorta(inst.fecha)}</div>
                   </th>`).join('')}
                 <th>Prom.</th>
@@ -3282,8 +3289,8 @@ async function verGrillaMateriaPreceptor(cursoId, materiaId, nombreMateria, peri
                   <th class="${inst.tipos_instancia_evaluativa?.es_recuperatorio ? 'th-recup' : ''}"
                     title="${[inst.tipos_instancia_evaluativa?.nombre, inst.nombre].filter(Boolean).join(' · ')}"
                     style="width:68px;min-width:68px">
-                    <div style="font-size:9px;line-height:1.3">${inst.tipos_instancia_evaluativa?.nombre || '—'}</div>
-                    ${inst.nombre ? `<div style="font-size:9px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${inst.nombre}</div>` : ''}
+                    <div style="font-size:8px;font-weight:700;letter-spacing:.06em;color:var(--txt3);font-family:'DM Mono',monospace;text-transform:uppercase">${_abrevTipo(inst.tipos_instancia_evaluativa?.nombre)}</div>
+                    <div style="font-size:9px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${inst.nombre || inst.tipos_instancia_evaluativa?.nombre || '—'}</div>
                     <div style="font-size:9px;opacity:.6">${formatFechaCorta(inst.fecha)}</div>
                   </th>`).join('')}
                 <th style="font-size:9px">Prom.</th>
