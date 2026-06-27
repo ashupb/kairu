@@ -33,11 +33,21 @@ function renderAgendaSemana(eventosSem, sem, nivelFiltro) {
   const diasNombres = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   const miId = USUARIO_ACTUAL.id;
 
+  // Agrupar por fecha: eventos multi-día aparecen en cada día que abarcan
   const porFecha = {};
   eventosSem.forEach(e => {
-    const f = e.fecha_inicio;
-    if (!porFecha[f]) porFecha[f] = [];
-    porFecha[f].push(e);
+    let cur = e.fecha_inicio;
+    const end = e.fecha_fin || e.fecha_inicio;
+    while (cur <= sem.fin && cur <= end) {
+      if (cur >= sem.inicio) {
+        if (!porFecha[cur]) porFecha[cur] = [];
+        if (!porFecha[cur].some(x => x.id === e.id)) porFecha[cur].push(e);
+      }
+      if (cur >= end) break;
+      const dx = new Date(cur + 'T12:00:00');
+      dx.setDate(dx.getDate() + 1);
+      cur = dx.toISOString().slice(0, 10);
+    }
   });
 
   const base = new Date(sem.inicio + 'T12:00:00');
@@ -246,7 +256,8 @@ function renderPendientesRespuesta(pendientes) {
 
 // ── SHARED: Próximas actividades hoy ──────────────────
 function renderProximasActividades(eventosSem, hoy, nivelFiltro) {
-  let eventos = eventosSem.filter(e => e.fecha_inicio === hoy);
+  // Incluye eventos que empiezan hoy O que abarcan hoy (multi-día)
+  let eventos = eventosSem.filter(e => e.fecha_inicio <= hoy && (e.fecha_fin || e.fecha_inicio) >= hoy);
   if (nivelFiltro && nivelFiltro !== 'todos') {
     eventos = eventos.filter(e =>
       !e.nivel || e.nivel === 'todos' ||
@@ -312,10 +323,10 @@ async function rDashDirector() {
       .eq('institucion_id', instId)
       .not('estado', 'in', '("archivado","logrado")'),
     sb.from('eventos_institucionales')
-      .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
+      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,creado_por')
       .eq('institucion_id', instId)
-      .gte('fecha_inicio', sem.inicio)
       .lte('fecha_inicio', sem.fin)
+      .or(`fecha_fin.gte.${sem.inicio},fecha_inicio.gte.${sem.inicio}`)
       .order('fecha_inicio').order('hora', { nullsFirst: true }),
     sb.from('evento_respuestas')
       .select('id,eventos_institucionales(nombre,hora,lugar)')
@@ -445,10 +456,10 @@ async function rDashDirectivo() {
       .eq('institucion_id', instId)
       .not('estado', 'in', '("archivado","logrado")'),
     sb.from('eventos_institucionales')
-      .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
+      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,creado_por')
       .eq('institucion_id', instId)
-      .gte('fecha_inicio', sem.inicio)
       .lte('fecha_inicio', sem.fin)
+      .or(`fecha_fin.gte.${sem.inicio},fecha_inicio.gte.${sem.inicio}`)
       .order('fecha_inicio').order('hora', { nullsFirst: true }),
     sb.from('evento_respuestas')
       .select('id,eventos_institucionales(nombre,hora,lugar)')
@@ -829,10 +840,10 @@ async function rDashDocente() {
       .eq('docente_id', miId)
       .eq('anio_lectivo', INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()),
     sb.from('eventos_institucionales')
-      .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
+      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,creado_por')
       .eq('institucion_id', instId)
-      .gte('fecha_inicio', sem.inicio)
       .lte('fecha_inicio', sem.fin)
+      .or(`fecha_fin.gte.${sem.inicio},fecha_inicio.gte.${sem.inicio}`)
       .order('fecha_inicio').order('hora', { nullsFirst: true }),
     sb.from('evento_respuestas')
       .select('id,eventos_institucionales(nombre,hora,lugar)')
@@ -1007,10 +1018,10 @@ async function rDashPreceptor() {
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento']),
     sb.from('eventos_institucionales')
-      .select('id,nombre,hora,lugar,nivel,fecha_inicio,convocados_ids,creado_por')
+      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,creado_por')
       .eq('institucion_id', instId)
-      .gte('fecha_inicio', sem.inicio)
       .lte('fecha_inicio', sem.fin)
+      .or(`fecha_fin.gte.${sem.inicio},fecha_inicio.gte.${sem.inicio}`)
       .order('fecha_inicio').order('hora', { nullsFirst: true }),
     sb.from('evento_respuestas')
       .select('id,eventos_institucionales(nombre,hora,lugar)')
