@@ -64,17 +64,21 @@ async function _renderTareasDash() {
   cont.innerHTML = '<div style="height:40px;display:flex;align-items:center;padding-left:4px"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div></div>';
 
   const hoy = hoyISO();
-  const { data: tareas } = await sb
-    .from('tareas_usuario')
-    .select('*')
-    .eq('usuario_id', USUARIO_ACTUAL.id)
-    .eq('estado', 'pendiente')
-    .order('fecha_vencimiento', { ascending: true, nullsFirst: false });
+  const hoyD = new Date(hoy + 'T12:00:00');
+  const diffL = hoyD.getDay() === 0 ? 6 : hoyD.getDay() - 1;
+  const lunesD = new Date(hoyD);
+  lunesD.setDate(hoyD.getDate() - diffL);
+  const lunesISO = lunesD.toISOString().slice(0, 10);
 
-  cont.innerHTML = _renderTareasPanelHTML(tareas || [], hoy);
+  const [pendRes, compRes] = await Promise.all([
+    sb.from('tareas_usuario').select('*').eq('usuario_id', USUARIO_ACTUAL.id).eq('estado', 'pendiente').order('fecha_vencimiento', { ascending: true, nullsFirst: false }),
+    sb.from('tareas_usuario').select('*').eq('usuario_id', USUARIO_ACTUAL.id).eq('estado', 'completada').gte('actualizado_en', lunesISO + 'T00:00:00').order('actualizado_en', { ascending: false }),
+  ]);
+
+  cont.innerHTML = _renderTareasPanelHTML(pendRes.data || [], compRes.data || [], hoy);
 }
 
-function _renderTareasPanelHTML(tareas, hoy) {
+function _renderTareasPanelHTML(tareas, completadas, hoy) {
   const atrasadas = tareas.filter(t => t.fecha_vencimiento && t.fecha_vencimiento < hoy);
   const deHoy     = tareas.filter(t => t.fecha_vencimiento === hoy);
   const proximas  = tareas.filter(t => t.fecha_vencimiento && t.fecha_vencimiento > hoy);
@@ -101,6 +105,14 @@ function _renderTareasPanelHTML(tareas, hoy) {
     itemsHTML += sinFecha.map(t => _renderTareaItem(t, hoy, 'sin_fecha')).join('');
   }
 
+  if (completadas?.length) {
+    itemsHTML += `
+      <div style="padding:6px 14px 4px;border-top:2px solid var(--brd);background:var(--surf2)">
+        <span style="font-size:10px;font-weight:700;color:var(--verde);text-transform:uppercase;letter-spacing:.06em">✓ Completadas esta semana</span>
+      </div>
+      ${completadas.map(t => _renderTareaItemCompletada(t)).join('')}`;
+  }
+
   const badge = tareas.length
     ? `<span style="background:var(--rojo);color:#fff;border-radius:999px;font-size:9px;font-weight:700;padding:1px 7px;margin-left:6px;vertical-align:middle">${tareas.length}</span>`
     : '';
@@ -123,7 +135,7 @@ function _renderTareaItem(t, hoy, grupo) {
   const diasAtraso  = grupo === 'atrasada' && t.fecha_vencimiento
     ? Math.max(1, Math.floor((new Date(hoy + 'T12:00:00') - new Date(t.fecha_vencimiento + 'T12:00:00')) / 86400000)) : 0;
   const fechaLabel  = !t.fecha_vencimiento ? ''
-    : grupo === 'hoy' ? 'hoy'
+    : grupo === 'hoy' ? 'HOY'
     : grupo === 'atrasada' ? `hace ${diasAtraso} día${diasAtraso > 1 ? 's' : ''}`
     : formatFechaCorta(t.fecha_vencimiento);
   const fechaColor  = grupo === 'atrasada' ? 'var(--rojo)' : grupo === 'hoy' ? 'var(--verde)' : 'var(--txt3)';
@@ -157,6 +169,27 @@ function _renderTareaItem(t, hoy, grupo) {
     </div>`;
 }
 
+function _renderTareaItemCompletada(t) {
+  return `
+    <div class="tarea-item" id="tarea-item-${t.id}"
+      style="display:flex;align-items:flex-start;gap:8px;padding:10px 14px;border-bottom:1px solid var(--brd);border-left:3px solid var(--verde);opacity:.65">
+      <span style="color:var(--verde);font-size:15px;flex-shrink:0;margin-top:1px;font-weight:700;line-height:1.4">✓</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:500;line-height:1.4;color:var(--txt3);text-decoration:line-through">${_escT(t.texto)}</div>
+        ${t.contexto_label ? `<div style="font-size:10px;color:var(--txt3);margin-top:2px">📎 ${_escT(t.contexto_label)}</div>` : ''}
+      </div>
+      <button onclick="_descompletarTarea('${t.id}')"
+        style="font-size:10px;color:var(--txt3);background:none;border:1px solid var(--brd);border-radius:4px;padding:2px 7px;cursor:pointer;flex-shrink:0;font-family:inherit;line-height:1.6"
+        title="Marcar como pendiente">Deshacer</button>
+    </div>`;
+}
+
+async function _descompletarTarea(id) {
+  await sb.from('tareas_usuario').update({ estado: 'pendiente', actualizado_en: new Date().toISOString() }).eq('id', id);
+  mostrarToast('Tarea marcada como pendiente.', 'ok');
+  _renderTareasDash().catch(() => {});
+}
+
 function _toggleMenuTarea(id) {
   const menu = document.getElementById(`tarea-menu-${id}`);
   if (!menu) return;
@@ -166,11 +199,8 @@ function _toggleMenuTarea(id) {
 }
 
 async function _completarTarea(id) {
-  const item = document.getElementById(`tarea-item-${id}`);
-  if (item) {
-    item.classList.add('completando');
-    await new Promise(r => setTimeout(r, 260));
-  }
+  const btn = document.querySelector(`#tarea-item-${id} .tarea-circle`);
+  if (btn) { btn.style.background = 'var(--verde)'; btn.style.borderColor = 'var(--verde)'; btn.innerHTML = '<span style="color:#fff;font-size:10px;font-weight:700">✓</span>'; }
   await sb.from('tareas_usuario').update({ estado: 'completada', actualizado_en: new Date().toISOString() }).eq('id', id);
   mostrarToast('Tarea completada ✓', 'ok');
   _renderTareasDash().catch(() => {});
