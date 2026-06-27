@@ -19,37 +19,7 @@ async function rInformes() {
     return;
   }
 
-  // Inyectar estilos del botón IA (una sola vez)
-  if (!document.getElementById('ia-spark-styles')) {
-    const st = document.createElement('style');
-    st.id = 'ia-spark-styles';
-    st.textContent = `
-      .btn-ia-spark {
-        width:36px;height:36px;border-radius:50%;border:none;flex-shrink:0;
-        background:linear-gradient(135deg,#f59e0b,#fbbf24);
-        color:#fff;font-size:15px;cursor:pointer;
-        transition:transform .15s,opacity .15s;
-        animation:ia-spark-pulse 2.5s ease-in-out infinite;
-      }
-      .btn-ia-spark:hover:not(:disabled) { transform:scale(1.12); }
-      .btn-ia-spark:disabled {
-        animation:none;background:#ccc;cursor:not-allowed;opacity:.55;
-      }
-      .btn-ia-spark.loading {
-        animation:ia-spark-spin .8s linear infinite;
-        background:linear-gradient(135deg,#d97706,#fbbf24);
-      }
-      @keyframes ia-spark-pulse {
-        0%,100% { box-shadow:0 0 0 0 rgba(251,191,36,.6); }
-        50%      { box-shadow:0 0 12px 5px rgba(251,191,36,.2); }
-      }
-      @keyframes ia-spark-spin {
-        from { transform:rotate(0deg); }
-        to   { transform:rotate(360deg); }
-      }
-    `;
-    document.head.appendChild(st);
-  }
+
 
   showLoading('informes');
   const instId    = USUARIO_ACTUAL.institucion_id;
@@ -236,10 +206,10 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
 
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         ${puedeIA ? `
-        <button class="btn-ia-spark" id="btn-ia-inf-${al.id}"
+        <button class="btn-ia" id="btn-ia-inf-${al.id}"
           onclick="_generarInformeNarrativo('${al.id}','${_escInf(al.nombre)} ${_escInf(al.apellido)}','${salaId}',${semestre},${anio},'${instId}',${JSON.stringify(dimensiones).replace(/"/g,"'")})"
           title="${tieneObs ? 'Generar informe narrativo con IA' : 'Cargá al menos una observación antes de generar el informe'}"
-          ${!tieneObs?'disabled':''}>✦</button>
+          ${!tieneObs?'disabled':''}><span class="ia-star">✦</span> Generar informe narrativo</button>
         ` : ''}
         ${borradorIA ? `
         <button class="btn-sm" style="background:var(--surf2);color:var(--txt1)"
@@ -286,8 +256,8 @@ async function _generarInformeNarrativo(alumnoId, alumnoNombre, salaId, semestre
   const btn = document.getElementById(`btn-ia-inf-${alumnoId}`);
   if (!btn || btn.disabled) return;
   btn.disabled = true;
-  btn.classList.add('loading');
-  btn.textContent = '↻';
+  btn.classList.add('ia-loading');
+  btn.innerHTML = '<span class="ia-star">↻</span> Generando...';
 
   try {
     // Obtener observaciones actuales
@@ -330,7 +300,7 @@ async function _generarInformeNarrativo(alumnoId, alumnoNombre, salaId, semestre
   } catch (e) {
     mostrarToast('No se pudo generar el informe. Intentá más tarde.', 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '✦'; }
+    if (btn) { btn.disabled = false; btn.classList.remove('ia-loading'); btn.innerHTML = '<span class="ia-star">✦</span> Generar informe narrativo'; }
   }
 }
 

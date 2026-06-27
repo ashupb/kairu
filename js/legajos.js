@@ -325,7 +325,7 @@ async function abrirLegajoAlumno(alumnoId) {
 
     ${['director_general','directivo_nivel'].includes(USUARIO_ACTUAL?.rol) ? `
     <div style="margin-top:10px">
-      <button id="leg-ia-btn" class="btn-s" style="font-size:11px;display:flex;align-items:center;gap:5px" onclick="_generarResumenIA('${alumno.id}')">✨ Generar resumen IA</button>
+      <button id="leg-ia-btn" class="btn-ia" onclick="_generarResumenIA('${alumno.id}')"><span class="ia-star">✦</span> Generar síntesis del estudiante</button>
     </div>
     <div id="leg-ia-panel"></div>` : ''}
 
@@ -982,8 +982,9 @@ async function _generarResumenIA(alumnoId) {
   const panel = document.getElementById('leg-ia-panel');
   if (!btn || !panel) return;
 
-  btn.disabled    = true;
-  btn.textContent = 'Generando...';
+  btn.disabled = true;
+  btn.classList.add('ia-loading');
+  btn.innerHTML = '<span class="ia-star">↻</span> Generando síntesis...';
   panel.innerHTML = `
     <div class="loading-state small" style="margin-top:8px">
       <div class="spinner"></div>
@@ -1095,7 +1096,7 @@ async function _generarResumenIA(alumnoId) {
     panel.innerHTML = `
       <div class="card" style="margin-top:8px;background:var(--verde-l);border-color:var(--verde)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div style="font-size:11px;font-weight:600;color:var(--verde)">✨ Resumen generado por IA</div>
+          <div style="font-size:11px;font-weight:600;color:var(--verde);display:flex;align-items:center;gap:5px"><span style="font-size:13px">✦</span> Síntesis generada por IA</div>
           <button class="btn-ghost" style="font-size:10px" onclick="navigator.clipboard.writeText(document.getElementById('leg-ia-text').textContent)">Copiar</button>
         </div>
         <div id="leg-ia-text" style="font-size:11px;color:var(--txt);line-height:1.6;white-space:pre-wrap">${resultado}</div>
@@ -1108,9 +1109,9 @@ async function _generarResumenIA(alumnoId) {
       </div>`;
   } finally {
     if (btn) {
-      btn.disabled    = false;
-      btn.textContent = '✨ Generar resumen IA';
-      btn.style.display = 'flex';
+      btn.disabled = false;
+      btn.classList.remove('ia-loading');
+      btn.innerHTML = '<span class="ia-star">✦</span> Generar síntesis del estudiante';
     }
   }
 }
