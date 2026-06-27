@@ -898,13 +898,14 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
                 <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
                 ${instancias.map(inst => `
                   <th class="${inst.tipos_instancia_evaluativa?.es_recuperatorio ? 'th-recup' : ''}"
-                    title="${inst.tipos_instancia_evaluativa?.nombre || ''}"
+                    title="${[inst.tipos_instancia_evaluativa?.nombre, inst.nombre].filter(Boolean).join(' · ')}"
                     style="width:68px;min-width:68px;max-width:68px">
                     <div style="font-size:9px;width:60px;line-height:1.3;overflow:hidden;
                       display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
                       word-break:normal;overflow-wrap:normal;margin:0 auto">
                       ${inst.tipos_instancia_evaluativa?.nombre || '—'}
                     </div>
+                    ${inst.nombre ? `<div style="font-size:9px;font-weight:600;width:60px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;margin:0 auto">${inst.nombre}</div>` : ''}
                     <div style="font-size:9px;opacity:.6">${formatFechaCorta(inst.fecha)}</div>
                   </th>`).join('')}
                 <th>Prom.</th>
@@ -3279,8 +3280,10 @@ async function verGrillaMateriaPreceptor(cursoId, materiaId, nombreMateria, peri
                 <th style="text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:var(--surf2)">Alumno</th>
                 ${instancias.map(inst => `
                   <th class="${inst.tipos_instancia_evaluativa?.es_recuperatorio ? 'th-recup' : ''}"
+                    title="${[inst.tipos_instancia_evaluativa?.nombre, inst.nombre].filter(Boolean).join(' · ')}"
                     style="width:68px;min-width:68px">
                     <div style="font-size:9px;line-height:1.3">${inst.tipos_instancia_evaluativa?.nombre || '—'}</div>
+                    ${inst.nombre ? `<div style="font-size:9px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${inst.nombre}</div>` : ''}
                     <div style="font-size:9px;opacity:.6">${formatFechaCorta(inst.fecha)}</div>
                   </th>`).join('')}
                 <th style="font-size:9px">Prom.</th>
