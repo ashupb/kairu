@@ -109,9 +109,23 @@ async function rAgenda() {
   const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
   const hoy = hoyISO();
 
-  const filtroTabsHTML = (rol === 'director_general' || rol === 'directivo_nivel') ? `
+  // Para directivo_nivel, restringir tabs y AGENDA_NIVEL a los niveles que puede ver
+  const nivelesPermitidosDir = rol === 'directivo_nivel'
+    ? ['todos', USUARIO_ACTUAL.nivel].filter(Boolean)
+    : null;
+  if (nivelesPermitidosDir && !nivelesPermitidosDir.includes(AGENDA_NIVEL)) {
+    AGENDA_NIVEL = 'todos';
+  }
+
+  const tabEntries = rol === 'director_general'
+    ? Object.entries(NIVEL_CONFIG)
+    : rol === 'directivo_nivel'
+      ? Object.entries(NIVEL_CONFIG).filter(([k]) => nivelesPermitidosDir.includes(k))
+      : [];
+
+  const filtroTabsHTML = tabEntries.length ? `
     <div class="nivel-tabs-ag" style="margin-bottom:14px">
-      ${Object.entries(NIVEL_CONFIG).map(([k,v]) => `
+      ${tabEntries.map(([k,v]) => `
         <button class="nivel-tab-ag ${AGENDA_NIVEL===k?'on':''}"
           style="${AGENDA_NIVEL===k?`background:${v.color};color:#fff;border-color:${v.color}`:''}"
           onclick="setAgendaNivel('${k}')">${v.label}
@@ -156,7 +170,13 @@ async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaT
   const esDirector = rolActual === 'director_general' || rolActual === 'directivo_nivel';
 
   _agendaEventosSem = (eventos || []).filter(e => {
-    if (esDirector) {
+    if (rolActual === 'director_general') {
+      if (AGENDA_NIVEL === 'todos') return true;
+      if (!e.nivel || e.nivel === 'todos') return true;
+      return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
+    }
+    if (rolActual === 'directivo_nivel') {
+      if (!_eventoEsParaMi(e)) return false;  // solo eventos de su nivel o todos
       if (AGENDA_NIVEL === 'todos') return true;
       if (!e.nivel || e.nivel === 'todos') return true;
       return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
@@ -245,9 +265,14 @@ async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaTogg
 
   const { data: eventos } = await query;
 
-  const esDirectorMes = rol === 'director_general' || rol === 'directivo_nivel';
   const eventosFiltrados = (eventos || []).filter(e => {
-    if (esDirectorMes) {
+    if (rol === 'director_general') {
+      if (AGENDA_NIVEL === 'todos') return true;
+      if (!e.nivel || e.nivel === 'todos') return true;
+      return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
+    }
+    if (rol === 'directivo_nivel') {
+      if (!_eventoEsParaMi(e)) return false;
       if (AGENDA_NIVEL === 'todos') return true;
       if (!e.nivel || e.nivel === 'todos') return true;
       return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
