@@ -83,7 +83,18 @@ async function getProblematicasData() {
   else if (f.estado !== 'todas') q = q.eq('estado', f.estado);
 
   if (f.urgencia !== 'todas') q = q.eq('urgencia', f.urgencia);
-  if (migOk && f.nivel !== 'todos') q = q.eq('nivel', f.nivel);
+
+  // Nivel: directivo_nivel y preceptor siempre quedan restringidos a su nivel
+  const rolNivel = USUARIO_ACTUAL.rol;
+  if (migOk) {
+    if (rolNivel === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
+      q = q.eq('nivel', USUARIO_ACTUAL.nivel);
+    } else if (rolNivel === 'preceptor' && USUARIO_ACTUAL.nivel) {
+      q = q.eq('nivel', USUARIO_ACTUAL.nivel);
+    } else if (f.nivel !== 'todos') {
+      q = q.eq('nivel', f.nivel);
+    }
+  }
 
   if (perm.soloPropias) {
     q = q.eq('registrado_por', USUARIO_ACTUAL.id);
@@ -126,16 +137,19 @@ async function rProb() {
 
     let lista = data || [];
     if (USUARIO_ACTUAL.rol === 'preceptor') {
-      if (USUARIO_ACTUAL.nivel) {
-        lista = lista.filter(p => {
-          const mod = p.modalidad || 'individual';
-          if (mod === 'grupal' || mod === 'curso') return p.nivel === USUARIO_ACTUAL.nivel;
-          return p.alumno?.curso?.nivel === USUARIO_ACTUAL.nivel;
-        });
-      }
+      const misCursoIds = new Set(USUARIO_ACTUAL.cursos_ids || []);
+      lista = lista.filter(p => {
+        const mod = p.modalidad || 'individual';
+        if (mod === 'grupal' || mod === 'curso') {
+          return p.nivel === USUARIO_ACTUAL.nivel;
+        }
+        const cursoId = p.alumno?.curso?.id;
+        if (misCursoIds.size && cursoId) return misCursoIds.has(cursoId);
+        return p.alumno?.curso?.nivel === USUARIO_ACTUAL.nivel;
+      });
       lista = lista.filter(p => !p.confidencial || p.responsable_id === USUARIO_ACTUAL.id);
     }
-    if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel && _probFiltros.nivel === 'todos') {
+    if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
       lista = lista.filter(p => {
         const mod = p.modalidad || 'individual';
         if (mod === 'grupal' || mod === 'curso') return p.nivel === USUARIO_ACTUAL.nivel;
@@ -217,7 +231,7 @@ function renderFiltrosProb() {
         ${chip('urgencia','media','Media', 'color:var(--ambar);border-color:rgba(214,137,16,.3);background:var(--amb-l)')}
         ${chip('urgencia','baja','Baja',   'color:var(--verde);border-color:rgba(26,74,46,.3);background:var(--verde-l)')}
       </div>
-      ${(_probMigracionOk === true && USUARIO_ACTUAL.rol !== 'preceptor') ? `<div class="chip-row">
+      ${(_probMigracionOk === true && !['preceptor','directivo_nivel'].includes(USUARIO_ACTUAL.rol)) ? `<div class="chip-row">
         ${chip('nivel','todos','Todos los niveles')}
         ${chip('nivel','inicial','Inicial')}
         ${chip('nivel','primario','Primario')}

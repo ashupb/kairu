@@ -62,26 +62,49 @@ async function _fetchUserNames(ids) {
 async function rLeg() {
   showLoading('leg');
   inyectarEstilosLeg();
-  const soloNivel = USUARIO_ACTUAL.rol === 'directivo_nivel' ? USUARIO_ACTUAL.nivel : null;
+  const rol       = USUARIO_ACTUAL.rol;
+  const instId    = USUARIO_ACTUAL.institucion_id;
+  const anioLect  = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
+  const soloNivel = rol === 'directivo_nivel' ? USUARIO_ACTUAL.nivel : null;
+
   try {
-    let q = sb.from('cursos')
-      .select('id,nombre,division,nivel,anio,ciclo_lectivo,created_at')
-      .eq('institucion_id', USUARIO_ACTUAL.institucion_id);
-    if (soloNivel) q = q.eq('nivel', soloNivel);
-    const { data, error } = await q.order('nivel').order('nombre').order('division');
+    // Obtener IDs de cursos permitidos para docente y preceptor
+    let soloCursoIds = null;
+    if (rol === 'docente') {
+      const { data: asigs } = await sb.from('asignaciones')
+        .select('curso_id').eq('docente_id', USUARIO_ACTUAL.id).eq('anio_lectivo', anioLect);
+      soloCursoIds = [...new Set((asigs || []).map(a => a.curso_id))];
+    } else if (rol === 'preceptor') {
+      soloCursoIds = USUARIO_ACTUAL.cursos_ids || [];
+    }
+
+    const buildQuery = (campos) => {
+      let q = sb.from('cursos').select(campos).eq('institucion_id', instId);
+      if (soloNivel)                               q = q.eq('nivel', soloNivel);
+      if (soloCursoIds !== null && soloCursoIds.length) q = q.in('id', soloCursoIds);
+      return q;
+    };
+
+    const { data, error } = await buildQuery('id,nombre,division,nivel,anio,ciclo_lectivo,created_at')
+      .order('nivel').order('nombre').order('division');
 
     // Si ciclo_lectivo no existe aún (schema viejo), reintenta sin ese campo
     if (error && (error.code === 'PGRST200' || error.message?.includes('ciclo_lectivo'))) {
-      let q2 = sb.from('cursos')
-        .select('id,nombre,division,nivel,anio,created_at')
-        .eq('institucion_id', USUARIO_ACTUAL.institucion_id);
-      if (soloNivel) q2 = q2.eq('nivel', soloNivel);
-      const { data: d2, error: e2 } = await q2.order('nivel').order('nombre').order('division');
+      const { data: d2, error: e2 } = await buildQuery('id,nombre,division,nivel,anio,created_at')
+        .order('nivel').order('nombre').order('division');
       if (e2) throw e2;
       _legCursosAll = d2 || [];
     } else {
       if (error) throw error;
       _legCursosAll = data || [];
+    }
+
+    // Docente/preceptor sin cursos asignados → estado vacío claro
+    if (soloCursoIds !== null && !soloCursoIds.length) {
+      const pg = document.getElementById('page-leg');
+      pg.innerHTML = `<div class="pg-t">Resumen del estudiante</div>
+        <div class="empty-state">▤<br>No tenés cursos asignados para este año.</div>`;
+      return;
     }
 
     const anios = [...new Set(_legCursosAll.map(_cursoAnio))].sort((a, b) => b - a);
