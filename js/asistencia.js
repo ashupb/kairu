@@ -202,14 +202,16 @@ async function verCursoDirector(cursoId, nivel) {
   const config    = CONFIG_ASIST[nivel] || {};
   const alumnoIds = alumnos.map(a => a.id);
 
-  // Dos queries en paralelo: totales anuales por alumno_id (mismo criterio que la ficha)
-  // y stats de hoy por curso_id para las métricas del día.
-  // limit(10000) evita el corte de 1000 filas por defecto de Supabase.
-  const [asistYearRes, asistHoyRes] = await Promise.all([
+  // Query anual por alumno individual (idéntico a verAlumnoAsist para cada uno) + stats de hoy.
+  // Una query por alumno en Promise.all garantiza que no hay corte de filas por límite de Supabase,
+  // ni discrepancias por curso_id histórico distintos.
+  const [perStudentResults, asistHoyRes] = await Promise.all([
     alumnoIds.length
-      ? sb.from('asistencia').select('alumno_id,fecha,estado').in('alumno_id', alumnoIds)
-          .is('hora_clase', null).gte('fecha', anioInicio).limit(10000)
-      : Promise.resolve({ data: [] }),
+      ? Promise.all(alumnoIds.map(id =>
+          sb.from('asistencia').select('alumno_id,fecha,estado')
+            .eq('alumno_id', id).is('hora_clase', null).gte('fecha', anioInicio)
+        ))
+      : Promise.resolve([]),
     sb.from('asistencia').select('alumno_id,estado').eq('curso_id', cursoId)
       .eq('fecha', hoy).is('hora_clase', null),
   ]);
@@ -218,7 +220,9 @@ async function verCursoDirector(cursoId, nivel) {
   const totalPorAlumno = {};
   alumnos.forEach(al => totalPorAlumno[al.id] = 0);
   const asistDiarios = {};
-  (asistYearRes.data || []).forEach(a => { asistDiarios[`${a.alumno_id}_${a.fecha}`] = a; });
+  (perStudentResults || []).flatMap(r => r.data || []).forEach(a => {
+    asistDiarios[`${a.alumno_id}_${a.fecha}`] = a;
+  });
   Object.values(asistDiarios).forEach(a => {
     if (a.estado === 'justificado' && !config.justificadas_cuentan) return;
     const val = ESTADOS_ASIST[a.estado]?.valor || 0;
@@ -382,14 +386,16 @@ async function mostrarGrillaDirector(cursoId, nivel) {
   const curso     = cursoRes.data;
   const alumnoIds = alumnos.map(a => a.id);
 
-  // Fase 2: asistencia por alumno_id (capta registros de cualquier curso_id)
-  // limit(10000) evita el corte de 1000 filas por defecto de Supabase
-  const asistRes = alumnoIds.length
-    ? await sb.from('asistencia').select('*').in('alumno_id', alumnoIds)
-        .is('hora_clase', null).gte('fecha', anioInicio).order('fecha').limit(10000)
-    : { data: [] };
+  // Fase 2: asistencia individual por alumno (idéntico a verAlumnoAsist)
+  // Garantiza que se incluyen registros de cualquier curso_id histórico.
+  const perStudentRes = alumnoIds.length
+    ? await Promise.all(alumnoIds.map(id =>
+        sb.from('asistencia').select('alumno_id,fecha,estado,hora_clase,id')
+          .eq('alumno_id', id).is('hora_clase', null).gte('fecha', anioInicio).order('fecha')
+      ))
+    : [];
 
-  const asists = asistRes.data || [];
+  const asists = perStudentRes.flatMap(r => r.data || []);
 
   // Obtener fechas únicas de todos los registros del alumno
   const fechas = [...new Set(asists.map(a => a.fecha))].sort();
@@ -601,22 +607,38 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
   showLoading('asist');
 
   const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
-
-  // Fase 1: alumnos del curso
-  const alumnosRes = await sb.from('alumnos').select('*')
-    .eq('curso_id', cursoId).eq('activo', true).order('apellido');
-  const alumnos   = alumnosRes.data || [];
-  const alumnoIds = alumnos.map(a => a.id);
   const config    = CONFIG_ASIST[nivel] || {};
 
-  // Fase 2: asistencia por alumno_id (capta registros de cualquier curso_id)
-  // limit(10000) evita el corte de 1000 filas por defecto de Supabase
-  const asistRes = alumnoIds.length
-    ? await sb.from('asistencia').select('*').in('alumno_id', alumnoIds)
-        .is('hora_clase', null).gte('fecha', anioInicio).order('fecha').limit(10000)
-    : { data: [] };
+  // Fase 1: alumnos por curso_id actual
+  let alumnosRes = await sb.from('alumnos').select('*')
+    .eq('curso_id', cursoId).eq('activo', true).order('apellido');
+  let alumnos = alumnosRes.data || [];
 
-  const asists  = asistRes.data || [];
+  // Fallback: si el curso_id es obsoleto (fue recreado), buscar alumno_ids
+  // directamente en asistencia para ese curso_id y obtener sus datos.
+  if (!alumnos.length) {
+    const { data: asistCurso } = await sb.from('asistencia').select('alumno_id')
+      .eq('curso_id', cursoId).is('hora_clase', null).limit(500);
+    const idsEnAsist = [...new Set((asistCurso || []).map(a => a.alumno_id))];
+    if (idsEnAsist.length) {
+      const { data: altAlumnos } = await sb.from('alumnos').select('*')
+        .in('id', idsEnAsist).order('apellido');
+      alumnos = altAlumnos || [];
+    }
+  }
+
+  const alumnoIds = alumnos.map(a => a.id);
+
+  // Fase 2: asistencia individual por alumno (idéntico a verAlumnoAsist)
+  // Garantiza que se incluyen registros de cualquier curso_id histórico.
+  const perStudentRes = alumnoIds.length
+    ? await Promise.all(alumnoIds.map(id =>
+        sb.from('asistencia').select('alumno_id,fecha,estado,hora_clase,id')
+          .eq('alumno_id', id).is('hora_clase', null).gte('fecha', anioInicio).order('fecha')
+      ))
+    : [];
+
+  const asists  = perStudentRes.flatMap(r => r.data || []);
   const fechas  = [...new Set(asists.map(a => a.fecha))].sort();
   const asistIdx = {};
   asists.forEach(a => { asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado; });
