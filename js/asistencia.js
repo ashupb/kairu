@@ -203,11 +203,12 @@ async function verCursoDirector(cursoId, nivel) {
   const alumnoIds = alumnos.map(a => a.id);
 
   // Dos queries en paralelo: totales anuales por alumno_id (mismo criterio que la ficha)
-  // y stats de hoy por curso_id para las métricas del día
+  // y stats de hoy por curso_id para las métricas del día.
+  // limit(10000) evita el corte de 1000 filas por defecto de Supabase.
   const [asistYearRes, asistHoyRes] = await Promise.all([
     alumnoIds.length
       ? sb.from('asistencia').select('alumno_id,fecha,estado').in('alumno_id', alumnoIds)
-          .is('hora_clase', null).gte('fecha', anioInicio)
+          .is('hora_clase', null).gte('fecha', anioInicio).limit(10000)
       : Promise.resolve({ data: [] }),
     sb.from('asistencia').select('alumno_id,estado').eq('curso_id', cursoId)
       .eq('fecha', hoy).is('hora_clase', null),
@@ -359,11 +360,11 @@ function _htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config, totalesPorAlum
 function _filtrarGrillaFechas() {
   const desde = getFechaInput('grilla-desde');
   const hasta = getFechaInput('grilla-hasta');
-  const { alumnos, fechas: todas, asistIdx, config, totalesPorAlumno } = window._grillaData || {};
+  const { alumnos, fechas: todas, asistIdx, config } = window._grillaData || {};
   if (!alumnos) return;
   const filtradas = todas.filter(f => (!desde || f >= desde) && (!hasta || f <= hasta));
   const wrap = document.getElementById('grilla-tabla-wrap');
-  if (wrap) wrap.innerHTML = _htmlTablaGrillaAsist(alumnos, filtradas, asistIdx, config, totalesPorAlumno);
+  if (wrap) wrap.innerHTML = _htmlTablaGrillaAsist(alumnos, filtradas, asistIdx, config);
 }
 
 async function mostrarGrillaDirector(cursoId, nivel) {
@@ -371,34 +372,31 @@ async function mostrarGrillaDirector(cursoId, nivel) {
   showLoading('asist');
 
   const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
-  const [alumnosRes, asistRes, cursoRes] = await Promise.all([
+
+  // Fase 1: alumnos del curso + info del curso (en paralelo)
+  const [alumnosRes, cursoRes] = await Promise.all([
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
-    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null)
-      .gte('fecha', anioInicio).order('fecha'),
     sb.from('cursos').select('*').eq('id', cursoId).single(),
   ]);
+  const alumnos   = alumnosRes.data || [];
+  const curso     = cursoRes.data;
+  const alumnoIds = alumnos.map(a => a.id);
 
-  const alumnos = alumnosRes.data || [];
-  const asists  = asistRes.data   || [];
-  const curso   = cursoRes.data;
+  // Fase 2: asistencia por alumno_id (capta registros de cualquier curso_id)
+  // limit(10000) evita el corte de 1000 filas por defecto de Supabase
+  const asistRes = alumnoIds.length
+    ? await sb.from('asistencia').select('*').in('alumno_id', alumnoIds)
+        .is('hora_clase', null).gte('fecha', anioInicio).order('fecha').limit(10000)
+    : { data: [] };
 
-  // Obtener fechas únicas
-  const fechas = [...new Set(asists.filter(a => !a.hora_clase).map(a => a.fecha))].sort();
+  const asists = asistRes.data || [];
+
+  // Obtener fechas únicas de todos los registros del alumno
+  const fechas = [...new Set(asists.map(a => a.fecha))].sort();
 
   // Indexar asistencias
   const asistIdx = {};
-  asists.forEach(a => {
-    if (!a.hora_clase) asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado;
-  });
-
-  // Totales anuales pre-calculados por alumno (consistente con la ficha y el resumen)
-  const totalesPorAlumnoGrilla = {};
-  alumnos.forEach(al => totalesPorAlumnoGrilla[al.id] = 0);
-  const _ddx = {};
-  asists.forEach(a => { if (!a.hora_clase) _ddx[`${a.alumno_id}_${a.fecha}`] = a; });
-  Object.values(_ddx).forEach(a => {
-    totalesPorAlumnoGrilla[a.alumno_id] = (totalesPorAlumnoGrilla[a.alumno_id] || 0) + (ESTADOS_ASIST[a.estado]?.valor || 0);
-  });
+  asists.forEach(a => { asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado; });
 
   const hoy = hoyISO();
 
@@ -421,10 +419,10 @@ async function mostrarGrillaDirector(cursoId, nivel) {
       <button class="btn-s" style="font-size:11px" onclick="_filtrarGrillaFechas()">Filtrar</button>
     </div>
     <div id="grilla-tabla-wrap">
-      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, {}, totalesPorAlumnoGrilla)}
+      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, {})}
     </div>`}`;
 
-  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: `${curso?.nombre}${curso?.division||''}`, config:{}, totalesPorAlumno: totalesPorAlumnoGrilla };
+  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: `${curso?.nombre}${curso?.division||''}`, config:{} };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -603,27 +601,25 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
   showLoading('asist');
 
   const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
-  const [alumnosRes, asistRes] = await Promise.all([
-    sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
-    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null)
-      .gte('fecha', anioInicio).order('fecha'),
-  ]);
 
-  const alumnos = alumnosRes.data || [];
-  const asists  = asistRes.data   || [];
+  // Fase 1: alumnos del curso
+  const alumnosRes = await sb.from('alumnos').select('*')
+    .eq('curso_id', cursoId).eq('activo', true).order('apellido');
+  const alumnos   = alumnosRes.data || [];
+  const alumnoIds = alumnos.map(a => a.id);
+  const config    = CONFIG_ASIST[nivel] || {};
+
+  // Fase 2: asistencia por alumno_id (capta registros de cualquier curso_id)
+  // limit(10000) evita el corte de 1000 filas por defecto de Supabase
+  const asistRes = alumnoIds.length
+    ? await sb.from('asistencia').select('*').in('alumno_id', alumnoIds)
+        .is('hora_clase', null).gte('fecha', anioInicio).order('fecha').limit(10000)
+    : { data: [] };
+
+  const asists  = asistRes.data || [];
   const fechas  = [...new Set(asists.map(a => a.fecha))].sort();
   const asistIdx = {};
-  asists.forEach(a => asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado);
-  const config = CONFIG_ASIST[nivel] || {};
-
-  // Totales anuales pre-calculados por alumno (consistente con la ficha y el resumen)
-  const totalesPorAlumnoGrilla = {};
-  alumnos.forEach(al => totalesPorAlumnoGrilla[al.id] = 0);
-  const _ddxp = {};
-  asists.forEach(a => { _ddxp[`${a.alumno_id}_${a.fecha}`] = a; });
-  Object.values(_ddxp).forEach(a => {
-    totalesPorAlumnoGrilla[a.alumno_id] = (totalesPorAlumnoGrilla[a.alumno_id] || 0) + (ESTADOS_ASIST[a.estado]?.valor || 0);
-  });
+  asists.forEach(a => { asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado; });
 
   const hoy = hoyISO();
 
@@ -650,10 +646,10 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
       <button class="btn-s" style="font-size:11px" onclick="_filtrarGrillaFechas()">Filtrar</button>
     </div>
     <div id="grilla-tabla-wrap">
-      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config, totalesPorAlumnoGrilla)}
+      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config)}
     </div>`}`;
 
-  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso, config, totalesPorAlumno: totalesPorAlumnoGrilla };
+  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso, config };
 }
 
 // ═══════════════════════════════════════════════════════
