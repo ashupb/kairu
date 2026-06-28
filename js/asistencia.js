@@ -189,43 +189,44 @@ async function verCursoDirector(cursoId, nivel) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
-  const [cursoRes, alumnosRes, asistRes] = await Promise.all([
+  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
+  const hoy = hoyISO();
+
+  const [cursoRes, alumnosRes] = await Promise.all([
     sb.from('cursos').select('*').eq('id', cursoId).single(),
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
-    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null)
-      .gte('fecha', (() => { const d = new Date(); d.setMonth(d.getMonth()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; })())
-      .order('fecha'),
   ]);
 
-  const curso   = cursoRes.data;
-  const alumnos = alumnosRes.data || [];
-  const asists  = asistRes.data   || [];
-  const config  = CONFIG_ASIST[nivel] || {};
+  const curso     = cursoRes.data;
+  const alumnos   = alumnosRes.data || [];
+  const config    = CONFIG_ASIST[nivel] || {};
+  const alumnoIds = alumnos.map(a => a.id);
 
-  // Agrupar asistencias por fecha
-  const fechas = [...new Set(asists.map(a => a.fecha))].sort();
+  // Dos queries en paralelo: totales anuales por alumno_id (mismo criterio que la ficha)
+  // y stats de hoy por curso_id para las métricas del día
+  const [asistYearRes, asistHoyRes] = await Promise.all([
+    alumnoIds.length
+      ? sb.from('asistencia').select('alumno_id,fecha,estado').in('alumno_id', alumnoIds)
+          .is('hora_clase', null).gte('fecha', anioInicio)
+      : Promise.resolve({ data: [] }),
+    sb.from('asistencia').select('alumno_id,estado').eq('curso_id', cursoId)
+      .eq('fecha', hoy).is('hora_clase', null),
+  ]);
 
-  // Calcular totales por alumno — solo registros diarios (hora_clase null).
-  // Registros por hora/materia (secundario) no computan para regularidad.
+  // Calcular totales por alumno — deduplicar por fecha antes de sumar
   const totalPorAlumno = {};
   alumnos.forEach(al => totalPorAlumno[al.id] = 0);
-  // Deduplicar por alumno+fecha antes de sumar (defensivo contra duplicados históricos)
   const asistDiarios = {};
-  asists.filter(a => !a.hora_clase).forEach(a => {
-    asistDiarios[`${a.alumno_id}_${a.fecha}`] = a;
-  });
+  (asistYearRes.data || []).forEach(a => { asistDiarios[`${a.alumno_id}_${a.fecha}`] = a; });
   Object.values(asistDiarios).forEach(a => {
     if (a.estado === 'justificado' && !config.justificadas_cuentan) return;
     const val = ESTADOS_ASIST[a.estado]?.valor || 0;
     totalPorAlumno[a.alumno_id] = (totalPorAlumno[a.alumno_id] || 0) + val;
   });
 
-  // Stats generales de hoy — solo registros diarios
-  const hoy     = hoyISO();
-  const asistHoy = asists.filter(a => a.fecha === hoy && !a.hora_clase);
-  // Deduplicar por alumno (por si hay duplicados del mismo día)
+  // Stats de hoy
   const asistHoyMap = {};
-  asistHoy.forEach(a => { asistHoyMap[a.alumno_id] = a; });
+  (asistHoyRes.data || []).forEach(a => { asistHoyMap[a.alumno_id] = a; });
   const asistHoyUniq = Object.values(asistHoyMap);
   const presHoy = asistHoyUniq.filter(a => ['presente','tardanza','media_falta','retiro_anticipado'].includes(a.estado)).length;
   const ausHoy  = asistHoyUniq.filter(a => a.estado === 'ausente').length;
@@ -302,7 +303,7 @@ async function verCursoDirector(cursoId, nivel) {
 }
 
 // ─── GRILLA COMPARTIDA — HELPERS ──────────────────────
-function _htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config) {
+function _htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config, totalesPorAlumno = null) {
   if (!fechas.length) return '<div style="padding:16px;text-align:center;color:var(--txt3);font-size:12px">Sin registros en el rango seleccionado.</div>';
 
   const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
@@ -320,11 +321,12 @@ function _htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config) {
       total += st?.valor || 0;
       return `<td><span class="grilla-cell" style="background:${st?.bg||''};color:${st?.color||''}" title="${st?.label||est}">${st?.short||'?'}</span></td>`;
     }).join('');
-    const colorT = total >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : total >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
+    const totalMostrar = totalesPorAlumno ? (totalesPorAlumno[al.id] ?? total) : total;
+    const colorT = totalMostrar >= (config.umbral_alerta_2??20) ? 'var(--rojo)' : totalMostrar >= (config.umbral_alerta_1??10) ? 'var(--ambar)' : 'var(--verde)';
     return `<tr>
       <td style="font-size:11px;font-weight:500;white-space:nowrap;cursor:pointer;position:sticky;left:0;background:var(--bg);box-shadow:2px 0 3px rgba(0,0,0,.06)" onclick="verAlumnoAsist('${al.id}')">${al.apellido}, ${al.nombre}</td>
       ${celdas}
-      <td style="background:var(--rojo-l)"><span style="font-weight:700;color:${colorT}">${total}</span></td>
+      <td style="background:var(--rojo-l)"><span style="font-weight:700;color:${colorT}">${totalMostrar}</span></td>
     </tr>`;
   }).join('');
 
@@ -357,20 +359,22 @@ function _htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config) {
 function _filtrarGrillaFechas() {
   const desde = getFechaInput('grilla-desde');
   const hasta = getFechaInput('grilla-hasta');
-  const { alumnos, fechas: todas, asistIdx, config } = window._grillaData || {};
+  const { alumnos, fechas: todas, asistIdx, config, totalesPorAlumno } = window._grillaData || {};
   if (!alumnos) return;
   const filtradas = todas.filter(f => (!desde || f >= desde) && (!hasta || f <= hasta));
   const wrap = document.getElementById('grilla-tabla-wrap');
-  if (wrap) wrap.innerHTML = _htmlTablaGrillaAsist(alumnos, filtradas, asistIdx, config);
+  if (wrap) wrap.innerHTML = _htmlTablaGrillaAsist(alumnos, filtradas, asistIdx, config, totalesPorAlumno);
 }
 
 async function mostrarGrillaDirector(cursoId, nivel) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
+  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
   const [alumnosRes, asistRes, cursoRes] = await Promise.all([
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
-    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null).order('fecha'),
+    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null)
+      .gte('fecha', anioInicio).order('fecha'),
     sb.from('cursos').select('*').eq('id', cursoId).single(),
   ]);
 
@@ -385,6 +389,15 @@ async function mostrarGrillaDirector(cursoId, nivel) {
   const asistIdx = {};
   asists.forEach(a => {
     if (!a.hora_clase) asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado;
+  });
+
+  // Totales anuales pre-calculados por alumno (consistente con la ficha y el resumen)
+  const totalesPorAlumnoGrilla = {};
+  alumnos.forEach(al => totalesPorAlumnoGrilla[al.id] = 0);
+  const _ddx = {};
+  asists.forEach(a => { if (!a.hora_clase) _ddx[`${a.alumno_id}_${a.fecha}`] = a; });
+  Object.values(_ddx).forEach(a => {
+    totalesPorAlumnoGrilla[a.alumno_id] = (totalesPorAlumnoGrilla[a.alumno_id] || 0) + (ESTADOS_ASIST[a.estado]?.valor || 0);
   });
 
   const hoy = hoyISO();
@@ -408,10 +421,10 @@ async function mostrarGrillaDirector(cursoId, nivel) {
       <button class="btn-s" style="font-size:11px" onclick="_filtrarGrillaFechas()">Filtrar</button>
     </div>
     <div id="grilla-tabla-wrap">
-      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, {})}
+      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, {}, totalesPorAlumnoGrilla)}
     </div>`}`;
 
-  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: `${curso?.nombre}${curso?.division||''}`, config:{} };
+  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso: `${curso?.nombre}${curso?.division||''}`, config:{}, totalesPorAlumno: totalesPorAlumnoGrilla };
 }
 
 // ═══════════════════════════════════════════════════════
@@ -589,9 +602,11 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
+  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
   const [alumnosRes, asistRes] = await Promise.all([
     sb.from('alumnos').select('*').eq('curso_id', cursoId).eq('activo', true).order('apellido'),
-    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null).order('fecha'),
+    sb.from('asistencia').select('*').eq('curso_id', cursoId).is('hora_clase', null)
+      .gte('fecha', anioInicio).order('fecha'),
   ]);
 
   const alumnos = alumnosRes.data || [];
@@ -600,6 +615,15 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
   const asistIdx = {};
   asists.forEach(a => asistIdx[`${a.alumno_id}_${a.fecha}`] = a.estado);
   const config = CONFIG_ASIST[nivel] || {};
+
+  // Totales anuales pre-calculados por alumno (consistente con la ficha y el resumen)
+  const totalesPorAlumnoGrilla = {};
+  alumnos.forEach(al => totalesPorAlumnoGrilla[al.id] = 0);
+  const _ddxp = {};
+  asists.forEach(a => { _ddxp[`${a.alumno_id}_${a.fecha}`] = a; });
+  Object.values(_ddxp).forEach(a => {
+    totalesPorAlumnoGrilla[a.alumno_id] = (totalesPorAlumnoGrilla[a.alumno_id] || 0) + (ESTADOS_ASIST[a.estado]?.valor || 0);
+  });
 
   const hoy = hoyISO();
 
@@ -626,10 +650,10 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
       <button class="btn-s" style="font-size:11px" onclick="_filtrarGrillaFechas()">Filtrar</button>
     </div>
     <div id="grilla-tabla-wrap">
-      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config)}
+      ${_htmlTablaGrillaAsist(alumnos, fechas, asistIdx, config, totalesPorAlumnoGrilla)}
     </div>`}`;
 
-  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso, config };
+  window._grillaData = { alumnos, fechas, asistIdx, nombreCurso, config, totalesPorAlumno: totalesPorAlumnoGrilla };
 }
 
 // ═══════════════════════════════════════════════════════
