@@ -2,12 +2,16 @@
 // COMUNICADOS.JS — Comunicados por curso (familias)
 // =====================================================
 
-let _COM_DATA = [];
+let _COM_DATA   = [];
+let _COM_LEIDOS = new Set();
+let _COM_FILTRO = 'todos';
 
 async function rComunicados() {
   showLoading('comunicados');
-  const el = document.getElementById('page-comunicados');
-  const cursoId = ALUMNO_ACTUAL?.cursos?.id;
+  const el          = document.getElementById('page-comunicados');
+  const nivelAlumno = ALUMNO_ACTUAL?.cursos?.nivel;
+  const cursoId     = ALUMNO_ACTUAL?.cursos?.id;
+  _COM_FILTRO = 'todos';
 
   try {
     if (!cursoId) {
@@ -19,12 +23,16 @@ async function rComunicados() {
       return;
     }
 
+    const nivelFilter = nivelAlumno ? `nivel.is.null,nivel.eq.${nivelAlumno}` : 'nivel.is.null';
+    const cursoFilter = `curso_id.is.null,curso_id.eq.${cursoId}`;
+
     const { data, error } = await sb
       .from('comunicados')
-      .select('id, titulo, cuerpo, created_at, usuarios(nombre_completo), cursos(id, nombre, division, nivel)')
+      .select('id, titulo, cuerpo, created_at, nivel, curso_id, usuarios(nombre_completo), cursos(id, nombre, division, nivel)')
       .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
       .eq('tipo', 'comunicado')
-      .eq('curso_id', cursoId)
+      .or(nivelFilter)
+      .or(cursoFilter)
       .order('created_at', { ascending: false })
       .limit(30);
 
@@ -41,16 +49,28 @@ async function rComunicados() {
         .in('comunicado_id', _COM_DATA.map(c => c.id));
       leidosIds = new Set((lecturas || []).map(l => l.comunicado_id));
     }
+    _COM_LEIDOS = leidosIds;
+
+    const nivelStr = nivelLabel(nivelAlumno) || 'Nivel';
+    const cursoStr = nombreCurso(ALUMNO_ACTUAL?.cursos) || 'Curso';
 
     el.innerHTML = `
       <div class="page-body">
         <div class="page-header">
           <h1 class="page-title">Comunicados</h1>
         </div>
-        ${_COM_DATA.length === 0
-          ? `<div class="card"><p class="empty-msg">No hay comunicados del curso aún.</p></div>`
-          : _COM_DATA.map(c => _comCardText(c, leidosIds)).join('')
-        }
+        ${_COM_DATA.length > 0 ? `
+        <div class="tab-bar" id="com-filtros" style="margin-bottom:12px">
+          <button class="tab-btn active" onclick="_comFiltrar('todos')">Todos</button>
+          <button class="tab-btn" onclick="_comFiltrar('nivel')">Nivel · ${nivelStr}</button>
+          <button class="tab-btn" onclick="_comFiltrar('curso')">Curso · ${cursoStr}</button>
+        </div>` : ''}
+        <div id="com-cards">
+          ${_COM_DATA.length === 0
+            ? `<div class="card"><p class="empty-msg">No hay comunicados aún.</p></div>`
+            : _COM_DATA.map(c => _comCardText(c, leidosIds)).join('')
+          }
+        </div>
       </div>`;
 
     // Deep link: scrollear y resaltar el comunicado específico si viene de inicio
@@ -77,10 +97,31 @@ async function rComunicados() {
   }
 }
 
+function _comFiltrar(f) {
+  _COM_FILTRO = f;
+  const items = f === 'nivel'
+    ? _COM_DATA.filter(c => !c.curso_id)
+    : f === 'curso'
+    ? _COM_DATA.filter(c => !!c.curso_id)
+    : _COM_DATA;
+
+  document.querySelectorAll('#com-filtros .tab-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('onclick') === `_comFiltrar('${f}')`);
+  });
+
+  const cardsEl = document.getElementById('com-cards');
+  if (!cardsEl) return;
+  cardsEl.innerHTML = items.length
+    ? items.map(c => _comCardText(c, _COM_LEIDOS)).join('')
+    : `<div class="card"><p class="empty-msg">No hay comunicados para este filtro.</p></div>`;
+}
+
 function _comCardText(c, leidosIds) {
   const sinLeer  = !leidosIds.has(c.id);
   const cur      = c.cursos;
-  const cursoTxt = cur ? `${cur.nombre}${cur.division ? ' ' + cur.division : ''}` : 'Comunicado';
+  const cursoTxt = cur
+    ? `${cur.nombre}${cur.division ? ' ' + cur.division : ''}`
+    : c.nivel ? `Nivel ${nivelLabel(c.nivel)}` : 'General';
   const autor    = c.usuarios?.nombre_completo || '';
 
   return `

@@ -3,7 +3,9 @@
 // =====================================================
 
 const _NOV_NIVEL_LABEL = { inicial: 'Inicial', primario: 'Primario', secundario: 'Secundario' };
-let _NOV_DATA = [];
+let _NOV_DATA   = [];
+let _NOV_LEIDOS = new Set();
+let _NOV_FILTRO = 'todos';
 
 async function rNovedades() {
   showLoading('novedades');
@@ -18,7 +20,7 @@ async function rNovedades() {
     let data, error;
     ({ data, error } = await sb
       .from('comunicados')
-      .select('id, titulo, cuerpo, imagen_url, nivel, created_at, usuarios(nombre_completo), comunicado_imagenes(id, imagen_url, orden)')
+      .select('id, titulo, cuerpo, imagen_url, nivel, curso_id, created_at, usuarios(nombre_completo), comunicado_imagenes(id, imagen_url, orden)')
       .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
       .eq('tipo', 'novedad')
       .or(nivelFilter)
@@ -29,7 +31,7 @@ async function rNovedades() {
     if (error) {
       ({ data, error } = await sb
         .from('comunicados')
-        .select('id, titulo, cuerpo, imagen_url, nivel, created_at, usuarios(nombre_completo)')
+        .select('id, titulo, cuerpo, imagen_url, nivel, curso_id, created_at, usuarios(nombre_completo)')
         .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
         .eq('tipo', 'novedad')
         .or(nivelFilter)
@@ -44,7 +46,8 @@ async function rNovedades() {
       ...c,
       comunicado_imagenes: (c.comunicado_imagenes || []).sort((a, b) => a.orden - b.orden),
     }));
-    _NOV_DATA = novedades;
+    _NOV_DATA   = novedades;
+    _NOV_FILTRO = 'todos';
 
     // Lecturas previas (dot visual; novedades no afectan la campana)
     let leidosIds = new Set();
@@ -56,16 +59,28 @@ async function rNovedades() {
         .in('comunicado_id', novedades.map(c => c.id));
       leidosIds = new Set((lecturas || []).map(l => l.comunicado_id));
     }
+    _NOV_LEIDOS = leidosIds;
+
+    const nivelStr = nivelLabel(nivelAlumno) || 'Nivel';
+    const cursoStr = nombreCurso(ALUMNO_ACTUAL?.cursos) || 'Curso';
 
     el.innerHTML = `
       <div class="page-body" id="nov-lista">
         <div class="page-header">
           <h1 class="page-title">Novedades</h1>
         </div>
-        ${novedades.length === 0
-          ? `<div class="card"><p class="empty-msg">No hay novedades publicadas aún.</p></div>`
-          : novedades.map(c => _novCard(c, leidosIds)).join('')
-        }
+        ${novedades.length > 0 ? `
+        <div class="tab-bar" id="nov-filtros" style="margin-bottom:12px">
+          <button class="tab-btn active" onclick="_novFiltrar('todos')">Todos</button>
+          <button class="tab-btn" onclick="_novFiltrar('nivel')">Nivel · ${nivelStr}</button>
+          <button class="tab-btn" onclick="_novFiltrar('curso')">Curso · ${cursoStr}</button>
+        </div>` : ''}
+        <div id="nov-cards">
+          ${novedades.length === 0
+            ? `<div class="card"><p class="empty-msg">No hay novedades publicadas aún.</p></div>`
+            : novedades.map(c => _novCard(c, leidosIds)).join('')
+          }
+        </div>
       </div>
       <div id="nov-detalle" style="display:none"></div>`;
 
@@ -208,6 +223,27 @@ function _novInitThumbCarousels(novedades) {
       dots.forEach((d, i) => d.classList.toggle('active', i === idx));
     }, { passive: true });
   });
+}
+
+function _novFiltrar(f) {
+  _NOV_FILTRO = f;
+  const items = f === 'nivel'
+    ? _NOV_DATA.filter(c => !c.curso_id)
+    : f === 'curso'
+    ? _NOV_DATA.filter(c => !!c.curso_id)
+    : _NOV_DATA;
+
+  document.querySelectorAll('#nov-filtros .tab-btn').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('onclick') === `_novFiltrar('${f}')`);
+  });
+
+  const cardsEl = document.getElementById('nov-cards');
+  if (!cardsEl) return;
+  cardsEl.innerHTML = items.length
+    ? items.map(c => _novCard(c, _NOV_LEIDOS)).join('')
+    : `<div class="card"><p class="empty-msg">No hay novedades para este filtro.</p></div>`;
+
+  _novInitThumbCarousels(items);
 }
 
 function _novInitCarousel(id) {
