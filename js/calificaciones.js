@@ -144,6 +144,70 @@ function renderSituacionCard(alumnos, getPromedio, prefijo, titulo, notaMin = 7,
     </div>`;
 }
 
+// Variante para escala conceptual (MB/B/R/I) — primaria primer ciclo
+function renderSituacionCardConceptual(alumnos, getConcProm, prefijo, titulo) {
+  const satisf    = alumnos.filter(al => { const c = getConcProm(al); return c === 'MB' || c === 'B'; });
+  const enproceso = alumnos.filter(al => getConcProm(al) === 'R');
+  const dificulta = alumnos.filter(al => getConcProm(al) === 'I');
+  const sinNotas  = alumnos.filter(al => !getConcProm(al));
+
+  const listaHTML = (lista, color) => lista.map(al => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--brd)">
+      <div>
+        <div style="font-size:12px;font-weight:500">${al.apellido}, ${al.nombre}</div>
+        ${al.cursoNombre ? `<div style="font-size:10px;color:var(--txt2)">${al.cursoNombre}</div>` : ''}
+      </div>
+      <span style="font-size:13px;font-weight:700;color:${color}">${getConcProm(al) ?? '—'}</span>
+    </div>`).join('');
+
+  return `
+    <div style="margin-bottom:16px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--txt2);text-transform:uppercase;margin-bottom:10px">
+        ${titulo || 'Situación académica'}
+      </div>
+      <div class="metrics m3" style="margin-bottom:8px">
+        <div class="mc" style="background:var(--rojo-l);cursor:pointer;border:1.5px solid transparent"
+          onclick="toggleSit('${prefijo}dif')" title="Con dificultades">
+          <div class="mc-v" style="color:var(--rojo);font-size:20px">${dificulta.length}</div>
+          <div class="mc-l">Con dificultades (I)</div>
+        </div>
+        <div class="mc" style="background:var(--amb-l);cursor:pointer;border:1.5px solid transparent"
+          onclick="toggleSit('${prefijo}proc')" title="En proceso">
+          <div class="mc-v" style="color:var(--ambar);font-size:20px">${enproceso.length}</div>
+          <div class="mc-l">En proceso (R)</div>
+        </div>
+        <div class="mc" style="background:var(--verde-l);cursor:pointer;border:1.5px solid transparent"
+          onclick="toggleSit('${prefijo}sat')" title="Satisfactorio">
+          <div class="mc-v" style="color:var(--verde);font-size:20px">${satisf.length}</div>
+          <div class="mc-l">Satisfactorio (MB/B)</div>
+        </div>
+      </div>
+      ${dificulta.length ? `
+      <div id="${prefijo}dif" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--rojo);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          🔴 Con dificultades <span style="font-weight:400;color:var(--txt2)">(${dificulta.length})</span>
+        </div>
+        <div class="card" style="padding:8px 14px;border-left:3px solid var(--rojo)">${listaHTML(dificulta,'var(--rojo)')}</div>
+      </div>` : ''}
+      ${enproceso.length ? `
+      <div id="${prefijo}proc" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--ambar);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          🟡 En proceso <span style="font-weight:400;color:var(--txt2)">(${enproceso.length})</span>
+        </div>
+        <div class="card" style="padding:8px 14px;border-left:3px solid var(--ambar)">${listaHTML(enproceso,'var(--ambar)')}</div>
+      </div>` : ''}
+      ${satisf.length ? `
+      <div id="${prefijo}sat" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--verde);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+          🟢 Satisfactorio <span style="font-weight:400;color:var(--txt2)">(${satisf.length})</span>
+        </div>
+        <div class="card" style="padding:8px 14px;border-left:3px solid var(--verde)">${listaHTML(satisf,'var(--verde)')}</div>
+      </div>` : ''}
+      ${sinNotas.length ? `
+      <div style="font-size:10px;color:var(--txt3);margin-top:4px">${sinNotas.length} alumno(s) sin notas registradas</div>` : ''}
+    </div>`;
+}
+
 // Variante que clasifica por cantidad de materias desaprobadas (directivo/preceptor/EOE)
 function renderSituacionCardDesap(alumnos, getDesapCount, prefijo, titulo) {
   const riesgo  = alumnos.filter(al => { const n = getDesapCount(al); return n !== null && n >= 3; });
@@ -698,22 +762,18 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
   const cursoIds = Object.keys(cursoMap);
   if (!cursoIds.length) { contenedor.innerHTML = '<div class="empty-state">Sin cursos asignados.</div>'; return; }
 
-  // Período activo por nivel (el docente puede tener cursos en varios niveles)
   const periodosActivosPorNivel = {};
   PERIODOS.forEach(p => {
     if (new Date(p.fecha_inicio) <= hoy && hoy <= new Date(p.fecha_fin)) {
       periodosActivosPorNivel[p.nivel] = p.id;
     }
   });
-
-  // Si no hay períodos activos, usar los primeros de cada nivel
   if (!Object.keys(periodosActivosPorNivel).length) {
     PERIODOS.forEach(p => {
       if (!periodosActivosPorNivel[p.nivel]) periodosActivosPorNivel[p.nivel] = p.id;
     });
   }
 
-  // Agrupar cursoIds por nivel para hacer queries por período correcto
   const cursosPorNivel = {};
   cursoIds.forEach(id => {
     const cu = cursoMap[id];
@@ -722,28 +782,44 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
     cursosPorNivel[niv].push(id);
   });
 
-  // Fetch alumnos
   const { data: alumnos } = await sb.from('alumnos')
     .select('id,nombre,apellido,curso_id').in('curso_id', cursoIds).eq('activo', true);
   if (!alumnos?.length) { contenedor.innerHTML = '<div class="empty-state">Sin alumnos.</div>'; return; }
 
-  // Fetch calificaciones por nivel (con su período activo correspondiente)
-  const notasPorAlumnoMateria = {};
+  // Notas numéricas (secundario/ciclo 2) y conceptuales (primaria ciclo 1)
+  const notasPorAlumnoMateria = {}; // "alumnoId_materiaId" → [nota numérica]
+  const concPorAlumnoMateria  = {}; // "alumnoId_materiaId" → 'MB'/'B'/'R'/'I'
+
   for (const [nivel, ids] of Object.entries(cursosPorNivel)) {
     const pid = periodosActivosPorNivel[nivel];
     if (!pid || !ids.length) continue;
     const { data: califs } = await sb.from('calificaciones')
-      .select('alumno_id,nota,ausente,materia_id')
+      .select('alumno_id,nota,ausente,materia_id,promedio_concepto_manual,instancia_id')
       .in('curso_id', ids).eq('periodo_id', pid).limit(3000);
     (califs || []).forEach(c => {
-      if (c.ausente || c.nota === null) return;
+      if (c.ausente || c.materia_id === null) return;
       const k = `${c.alumno_id}_${c.materia_id}`;
-      if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
-      notasPorAlumnoMateria[k].push(c.nota);
+      if (c.nota !== null) {
+        if (!notasPorAlumnoMateria[k]) notasPorAlumnoMateria[k] = [];
+        notasPorAlumnoMateria[k].push(c.nota);
+      }
+      // promedio_concepto_manual: fila sin instancia = promedio del período por materia
+      if (c.promedio_concepto_manual && c.instancia_id === null) {
+        concPorAlumnoMateria[k] = c.promedio_concepto_manual;
+      }
     });
   }
 
+  const CONC_ORD = ['MB', 'B', 'R', 'I'];
+
+  const _cursoUsaConc = (cuId) => {
+    const cu = cursoMap[cuId];
+    if (!cu) return false;
+    return cu.nivel === 'inicial' || _esPrimerCiclo(cu.nombre) || CONFIG_NOTAS[cu.nivel]?.escala === 'conceptual';
+  };
+
   const getPromedio = (al) => {
+    if (_cursoUsaConc(al.curso_id)) return null;
     const keys = Object.keys(notasPorAlumnoMateria).filter(k => k.startsWith(al.id + '_'));
     if (!keys.length) return null;
     const proms = keys.map(k => {
@@ -753,30 +829,50 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
     return proms.reduce((a, b) => a + b, 0) / proms.length;
   };
 
-  // Métricas por curso para las cards
+  const getConcProm = (al) => {
+    if (!_cursoUsaConc(al.curso_id)) return null;
+    const keys = Object.keys(concPorAlumnoMateria).filter(k => k.startsWith(al.id + '_'));
+    const vals = keys.map(k => concPorAlumnoMateria[k]).filter(Boolean);
+    if (!vals.length) return null;
+    // Modal: valor más frecuente, priorizando el más alto en la escala
+    const cnt = {};
+    vals.forEach(v => cnt[v] = (cnt[v] || 0) + 1);
+    const maxCnt = Math.max(...Object.values(cnt));
+    return CONC_ORD.find(v => cnt[v] === maxCnt) || null;
+  };
+
+  // Mini-stats para las cards de curso
   const cursoStatsDo = {};
   alumnos.forEach(al => {
     if (!cursoStatsDo[al.curso_id]) cursoStatsDo[al.curso_id] = { apr: 0, obs: 0, crit: 0, sin: 0 };
-    const promR = _redondearProm(getPromedio(al));
-    const cu    = cursoMap[al.curso_id];
-    const min   = CONFIG_NOTAS[cu?.nivel]?.nota_minima ?? 7;
-    const rec   = CONFIG_NOTAS[cu?.nivel]?.nota_recuperacion ?? 4;
-    const st    = cursoStatsDo[al.curso_id];
-    if (promR === null) st.sin++;
-    else if (promR >= min) st.apr++;
-    else if (promR >= rec) st.obs++;
-    else st.crit++;
+    const st = cursoStatsDo[al.curso_id];
+    const cu = cursoMap[al.curso_id];
+    if (_cursoUsaConc(al.curso_id)) {
+      const c = getConcProm(al);
+      if (!c)              st.sin++;
+      else if (c === 'MB' || c === 'B') st.apr++;
+      else if (c === 'R') st.obs++;
+      else                st.crit++;
+    } else {
+      const promR = _redondearProm(getPromedio(al));
+      const min = CONFIG_NOTAS[cu?.nivel]?.nota_minima ?? 7;
+      const rec = CONFIG_NOTAS[cu?.nivel]?.nota_recuperacion ?? 4;
+      if (promR === null) st.sin++;
+      else if (promR >= min) st.apr++;
+      else if (promR >= rec) st.obs++;
+      else st.crit++;
+    }
   });
   Object.entries(cursoStatsDo).forEach(([cId, st]) => {
     const el = document.getElementById(`card-stat-${cId}`);
     if (el) el.innerHTML = _mkMiniStat(st.apr, st.obs, st.crit, st.sin);
   });
 
-  // Stats por materia para docentes de secundario (grado y especial)
+  // Stats por materia (solo cursos numéricos — secundario)
   const materiaStatsDo = {};
   alumnos.forEach(al => {
     const cu = cursoMap[al.curso_id];
-    if (!cu) return;
+    if (!cu || _cursoUsaConc(al.curso_id)) return;
     (cu.materias || []).forEach(m => {
       const combId = `${al.curso_id}_${m.id}`;
       if (!materiaStatsDo[combId]) materiaStatsDo[combId] = { apr: 0, obs: 0, crit: 0, sin: 0 };
@@ -808,7 +904,18 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
     ? (PERIODOS.find(p => p.id === periodosActivosPorNivel[nivelesConCursos[0]])?.nombre || 'Período activo')
     : (Object.keys(periodosActivosPorNivel).length ? 'Período activo' : 'Año en curso');
 
-  contenedor.innerHTML = renderSituacionCard(alumnosConCurso, getPromedio, 'docg-', periodoLabel);
+  const alumnosConc = alumnosConCurso.filter(al => _cursoUsaConc(al.curso_id));
+  const alumnosNum  = alumnosConCurso.filter(al => !_cursoUsaConc(al.curso_id));
+
+  if (alumnosConc.length && alumnosNum.length) {
+    contenedor.innerHTML =
+      renderSituacionCardConceptual(alumnosConc, getConcProm, 'docg-c-', periodoLabel + ' · Conceptual') +
+      renderSituacionCard(alumnosNum, getPromedio, 'docg-n-', periodoLabel + ' · Numérico');
+  } else if (alumnosConc.length) {
+    contenedor.innerHTML = renderSituacionCardConceptual(alumnosConc, getConcProm, 'docg-', periodoLabel);
+  } else {
+    contenedor.innerHTML = renderSituacionCard(alumnosNum, getPromedio, 'docg-', periodoLabel);
+  }
 }
 
 async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nombreMateria) {
