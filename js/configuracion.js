@@ -2267,7 +2267,7 @@ async function _guardarConfigAsistencia(nivel, existingId) {
     datos.nota_minima = null;
     // Persistir las dimensiones que se muestran actualmente (defaults o personalizadas)
     const lista   = document.getElementById('lista-dims-inicial');
-    const dimEls  = lista ? lista.querySelectorAll('div > div:first-child') : [];
+    const dimEls  = lista ? lista.querySelectorAll('.dim-label') : [];
     const dimsDOM = Array.from(dimEls).map(el => el.textContent.trim()).filter(Boolean);
     datos.dimensiones_informe = dimsDOM.length ? dimsDOM : _DIMS_INICIAL_DEFAULT;
   } else if (nivel === 'primario') {
@@ -2389,7 +2389,7 @@ function _renderListaDims(dims) {
   if (!dims || !dims.length) return '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin dimensiones definidas</div>';
   return dims.map((d, i) => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--brd)">
-      <div style="flex:1;font-size:12px">${_esc(d)}</div>
+      <div class="dim-label" style="flex:1;font-size:12px">${_esc(d)}</div>
       <button onclick="_quitarDim(${i})"
         style="background:none;border:none;cursor:pointer;font-size:15px;color:var(--txt3);padding:0 2px;line-height:1" title="Quitar">×</button>
     </div>`).join('');
