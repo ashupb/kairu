@@ -82,13 +82,21 @@ function _eventoEsParaMi(e) {
   const miNivel = USUARIO_ACTUAL.nivel;
   const miGrupo = _ROL_A_GRUPO[rol];
 
-  if (!e.nivel || e.nivel === 'todos') return true;
-  if (miNivel && e.nivel.split(',').map(n => n.trim()).includes(miNivel)) return true;
+  // El creador siempre ve su propio evento
+  if (e.creado_por === miId) return true;
+
+  // Verificar si el nivel del evento aplica a este usuario
+  const niveles = (e.nivel || 'todos').split(',').map(n => n.trim());
+  const esParaTodos = niveles.includes('todos');
+  if (miNivel && !esParaTodos && !niveles.includes(miNivel)) return false;
+
+  // Si hay convocatoria específica, el usuario debe estar incluido
+  const tieneConvGrupo = (e.convocatoria_grupos || []).length > 0;
+  const tieneConvInd   = (e.convocados_ids || []).length > 0;
+  if (!tieneConvGrupo && !tieneConvInd) return true; // sin convocatoria → todos del nivel
+
   if ((e.convocados_ids || []).includes(miId)) return true;
-  // Convocatoria por grupo: solo aplica si el evento es de mi nivel (ya manejado arriba)
-  // o si el usuario no tiene nivel asignado (EOE multi-nivel).
-  // Evita que usuarios de un nivel vean eventos de otro nivel por grupo.
-  if (miGrupo && (e.convocatoria_grupos || []).includes(miGrupo) && !miNivel) return true;
+  if (miGrupo && (e.convocatoria_grupos || []).includes(miGrupo)) return true;
   return false;
 }
 
