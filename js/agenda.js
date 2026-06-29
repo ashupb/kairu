@@ -85,7 +85,10 @@ function _eventoEsParaMi(e) {
   if (!e.nivel || e.nivel === 'todos') return true;
   if (miNivel && e.nivel.split(',').map(n => n.trim()).includes(miNivel)) return true;
   if ((e.convocados_ids || []).includes(miId)) return true;
-  if (miGrupo && (e.convocatoria_grupos || []).includes(miGrupo)) return true;
+  // Convocatoria por grupo: solo aplica si el evento es de mi nivel (ya manejado arriba)
+  // o si el usuario no tiene nivel asignado (EOE multi-nivel).
+  // Evita que usuarios de un nivel vean eventos de otro nivel por grupo.
+  if (miGrupo && (e.convocatoria_grupos || []).includes(miGrupo) && !miNivel) return true;
   return false;
 }
 
@@ -397,6 +400,7 @@ function _renderEventosDia(eventos) {
   c.innerHTML = feriadoBanner + eventos.map(e => {
     const nc   = NIVEL_CONFIG[e.nivel] || NIVEL_CONFIG.todos;
     const tipo = TIPOS_EVENTO.find(t => t.id === e.tipo_id);
+    const creador = e.usuarios?.nombre_completo || '';
     return `<div class="agenda-item" onclick="verEvento('${e.id}')">
       <div class="agenda-hora">${e.hora ? e.hora.slice(0,5) : '—'}</div>
       <div class="agenda-barra" style="background:${nc.color}"></div>
@@ -406,6 +410,7 @@ function _renderEventosDia(eventos) {
           ${tipo ? `<span>${tipo.nombre}</span>` : ''}
           ${e.lugar ? `<span>📍 ${e.lugar}</span>` : ''}
           <span style="color:${nc.color}">${nc.label}</span>
+          ${creador ? `<span style="color:var(--txt3)">Por ${creador}</span>` : ''}
         </div>
       </div>
     </div>`;
@@ -556,6 +561,11 @@ async function verEvento(id) {
           <div class="sec-lb" style="margin:0 0 2px">Lugar</div>
           <div style="font-size:12px">${e.lugar || '—'}</div>
         </div>
+        ${e.usuarios?.nombre_completo ? `
+        <div style="grid-column:1/-1">
+          <div class="sec-lb" style="margin:0 0 2px">Creado por</div>
+          <div style="font-size:12px">${e.usuarios.nombre_completo}</div>
+        </div>` : ''}
         ${e.es_cita_individual && e.alumnos ? `
         <div style="grid-column:1/-1">
           <div class="sec-lb" style="margin:0 0 2px">Familia convocada</div>
