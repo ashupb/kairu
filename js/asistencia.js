@@ -966,6 +966,9 @@ async function mostrarListaCurso(cursoId, nivel, fecha, editable, materiaId = nu
 
   const yaRegistrado = Object.keys(asistMap).length > 0;
 
+  // Guardar params para que guardarAsistencia pueda construir el botón "Editar"
+  window._asistListaParams = { cursoId, nivel, fecha, materiaId, horaClase, volverFn };
+
   // Estado local
   window._estadoAsist = {};
   window._justAsist   = {};
@@ -1156,12 +1159,28 @@ async function guardarAsistencia(cursoId, nivel, fecha, horaClase, materiaId) {
 
   await verificarAlertas(alumnos.map(a => a.id), instId, nivel);
 
-  if (btn) { btn.textContent = '✅ Lista guardada'; }
   mostrarResumenAsist(estados);
   if (horaClase) await _mostrarCruceAsistencia(estados);
-  setTimeout(() => {
-    if (btn) { btn.disabled = false; btn.textContent = '💾 Confirmar lista'; }
-  }, 2000);
+
+  // Reemplazar el botón "Confirmar" por estado guardado + botón Editar
+  if (btn) {
+    const p = window._asistListaParams || {};
+    const vFn = p.volverFn ? `'${p.volverFn}'` : 'null';
+    const mId = p.materiaId ? `'${p.materiaId}'` : 'null';
+    const hCl = p.horaClase != null ? p.horaClase : 'null';
+    const editCall = `mostrarListaCurso('${cursoId}','${nivel}','${fecha}',true,${mId},${hCl},${vFn})`;
+    btn.outerHTML = `
+      <div style="display:flex;gap:8px;margin-top:14px;align-items:stretch">
+        <div style="flex:1;background:var(--verde-l);border:1px solid var(--verde);border-radius:var(--rad);
+          padding:14px;font-size:13px;color:var(--verde);text-align:center;font-weight:600">
+          ✅ Lista confirmada
+        </div>
+        <button class="btn-s" style="font-size:13px;padding:14px 18px;white-space:nowrap"
+          onclick="${editCall}">
+          ✏️ Editar
+        </button>
+      </div>`;
+  }
 }
 
 async function _mostrarCruceAsistencia(estadosDocente) {
