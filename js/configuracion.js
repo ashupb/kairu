@@ -80,6 +80,7 @@ const CONFIG_TABS_TODOS = [
   { id: 'materias',     label: 'Materias' },
   { id: 'asignaciones', label: 'Asignaciones' },
   { id: 'parametros',   label: 'Parámetros' },
+  { id: 'familias',     label: 'Familias' },
 ];
 
 function _adminTabs() {
@@ -97,6 +98,7 @@ function _adminTabs() {
     { id: 'suplencias',    label: 'Suplencias',    roles: ['director_general', 'directivo_nivel'] },
     { id: 'ciclo_lectivo', label: 'Ciclo Lectivo', roles: ['director_general', 'directivo_nivel'] },
     { id: 'docentes',      label: 'Docentes',      roles: ['director_general', 'directivo_nivel'] },
+    { id: 'familias',      label: 'Familias',      roles: ['director_general', 'directivo_nivel', 'preceptor'] },
   ];
 
   const resultado = rolBase.filter(t => t.roles.includes(r));
@@ -173,6 +175,7 @@ async function _renderAdminSection(tabId) {
     suplencias:    _renderSuplencias,
     ciclo_lectivo: _renderCicloLectivo,
     docentes:      _renderDocentes,
+    familias:      _renderFamilias,
   };
   if (fns[tabId]) await fns[tabId]();
 }
@@ -3213,4 +3216,266 @@ function _toastOk(msg) {
     t.classList.remove('show');
     setTimeout(() => t.remove(), 300);
   }, 2500);
+}
+
+// ══════════════════════════════════════════════════════
+// SECCIÓN: FAMILIAS
+// ══════════════════════════════════════════════════════
+let _familiasData   = [];  // usuarios con rol=familia
+let _famAlumnos     = [];  // todos los alumnos de la institución
+let _famAlumnosSelIds = []; // IDs seleccionados en el modal
+
+async function _renderFamilias() {
+  const sec = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const nivel  = USUARIO_ACTUAL.nivel; // para preceptor: filtrar alumnos por nivel
+
+  const alumnosQuery = sb.from('alumnos')
+    .select('id,nombre,apellido,curso_id,cursos!inner(id,nombre,division,nivel)')
+    .eq('institucion_id', instId).eq('activo', true).order('apellido');
+
+  const [famRes, alumnosRes] = await Promise.all([
+    sb.from('usuarios').select('id,nombre_completo,email,activo')
+      .eq('institucion_id', instId).eq('rol', 'familia').order('nombre_completo'),
+    alumnosQuery,
+  ]);
+
+  _familiasData = famRes.data || [];
+  let alumnosTodos = alumnosRes.data || [];
+  if (nivel && USUARIO_ACTUAL.rol === 'preceptor') {
+    alumnosTodos = alumnosTodos.filter(a => a.cursos?.nivel === nivel);
+  }
+  _famAlumnos = alumnosTodos;
+
+  // Cargar vínculos filtrado por usuarios de esta institución
+  const famIds = _familiasData.map(u => u.id);
+  const vinculosRes = famIds.length
+    ? await sb.from('familia_alumno').select('usuario_id,alumno_id').in('usuario_id', famIds)
+    : { data: [] };
+
+  // Mapear vínculos: usuario_id → [alumno_id, ...]
+  const vinculoMap = {};
+  (vinculosRes.data || []).forEach(v => {
+    if (!vinculoMap[v.usuario_id]) vinculoMap[v.usuario_id] = [];
+    vinculoMap[v.usuario_id].push(v.alumno_id);
+  });
+
+  // Mapear alumnos por id para lookup rápido
+  const alumnoById = {};
+  _famAlumnos.forEach(a => { alumnoById[a.id] = a; });
+
+  sec.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div>
+        <div style="font-size:13px;font-weight:700">Usuarios Familias</div>
+        <div style="font-size:11px;color:var(--txt3)">Acceso al portal de familias</div>
+      </div>
+      <button class="btn-p" style="font-size:12px" onclick="_abrirModalFamilia(null)">+ Nuevo</button>
+    </div>
+    <div id="fam-lista">
+      ${_familiasData.length ? _familiasData.map(u => {
+        const alumnosVinc = (vinculoMap[u.id] || []).map(aid => alumnoById[aid]).filter(Boolean);
+        const alumnosLabel = alumnosVinc.length
+          ? alumnosVinc.map(a => `${a.apellido}, ${a.nombre} (${a.cursos.nombre}${a.cursos.division||''})`).join(' · ')
+          : '<span style="color:var(--txt3)">Sin alumnos vinculados</span>';
+        return `
+          <div class="adm-row" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--brd)">
+            <div class="avatar-circle" style="width:34px;height:34px;font-size:13px;flex-shrink:0">${(u.nombre_completo||'?').split(' ').map(w=>w[0]).slice(0,2).join('')}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600">${u.nombre_completo}</div>
+              <div style="font-size:11px;color:var(--txt2)">${u.email || ''}</div>
+              <div style="font-size:11px;margin-top:2px">${alumnosLabel}</div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="btn-s" style="font-size:11px"
+                onclick="_abrirModalFamilia('${u.id}')">Editar</button>
+            </div>
+          </div>`;
+      }).join('') : '<div class="empty-state" style="padding:24px 0">Sin usuarios familias registrados</div>'}
+    </div>
+    <div id="fam-modal-wrap"></div>`;
+}
+
+function _abrirModalFamilia(userId) {
+  const u = userId ? _familiasData.find(f => f.id === userId) : null;
+  _famAlumnosSelIds = [];
+
+  // Si es edición, pre-cargar vínculos existentes
+  if (u) {
+    // Traer vínculos del usuario y pre-seleccionar
+    sb.from('familia_alumno').select('alumno_id').eq('usuario_id', userId)
+      .then(({ data }) => {
+        _famAlumnosSelIds = (data || []).map(v => v.alumno_id);
+        _renderModalFamilia(u);
+      });
+  } else {
+    _renderModalFamilia(null);
+  }
+}
+
+function _renderModalFamilia(u) {
+  const wrap = document.getElementById('fam-modal-wrap');
+  if (!wrap) return;
+
+  const alumnosHtml = _famAlumnos.map(a => {
+    const sel = _famAlumnosSelIds.includes(a.id);
+    return `
+      <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;
+        ${sel ? 'background:var(--verde-l)' : ''}">
+        <input type="checkbox" value="${a.id}" ${sel ? 'checked' : ''}
+          onchange="_toggleFamAlumno(this.value, this.checked)"
+          style="accent-color:var(--verde);width:15px;height:15px">
+        <span style="font-size:12px">${a.apellido}, ${a.nombre}
+          <span style="color:var(--txt3)">— ${a.cursos.nombre}${a.cursos.division||''}</span>
+        </span>
+      </label>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="modal-overlay" onclick="_cerrarModalFamilia(event)" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px">
+      <div class="card" onclick="event.stopPropagation()" style="width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:14px;font-weight:700">${u ? 'Editar usuario familia' : 'Nuevo usuario familia'}</div>
+          <button onclick="_cerrarModalFamilia()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--txt2)">×</button>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <div class="sec-lb" style="margin:0 0 4px">Nombre completo</div>
+            <input id="fam-nombre" class="inp" placeholder="Ej: García, Ana" value="${u?.nombre_completo || ''}">
+          </div>
+          <div>
+            <div class="sec-lb" style="margin:0 0 4px">Email</div>
+            <input id="fam-email" class="inp" type="email" placeholder="email@ejemplo.com"
+              value="${u?.email || ''}" ${u ? 'readonly style="background:var(--surf2);color:var(--txt2)"' : ''}>
+            ${u ? '<div style="font-size:10px;color:var(--txt3);margin-top:2px">El email no se puede cambiar</div>' : ''}
+          </div>
+          <div>
+            <div class="sec-lb" style="margin:0 0 4px">${u ? 'Nueva contraseña (opcional)' : 'Contraseña'}</div>
+            <input id="fam-pass" class="inp" type="password" placeholder="${u ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'}">
+          </div>
+        </div>
+
+        <div style="margin-top:16px">
+          <div class="sec-lb" style="margin:0 0 6px">Alumnos vinculados</div>
+          <input id="fam-buscar-al" class="inp" placeholder="Buscar alumno..."
+            oninput="_filtrarAlumnosFam(this.value)" style="margin-bottom:8px;font-size:12px">
+          <div id="fam-al-lista" style="max-height:200px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad);padding:4px">
+            ${alumnosHtml || '<div style="padding:8px;font-size:12px;color:var(--txt3)">Sin alumnos disponibles</div>'}
+          </div>
+        </div>
+
+        <div id="fam-contactos-sugerencia" style="margin-top:10px"></div>
+
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button class="btn-p" style="flex:1" onclick="_guardarFamilia('${u?.id || ''}')">
+            ${u ? 'Guardar cambios' : 'Crear usuario'}
+          </button>
+          <button class="btn-s" onclick="_cerrarModalFamilia()">Cancelar</button>
+        </div>
+      </div>
+    </div>`;
+
+  _mostrarSugerenciasContacto();
+}
+
+function _toggleFamAlumno(alumnoId, checked) {
+  if (checked) {
+    if (!_famAlumnosSelIds.includes(alumnoId)) _famAlumnosSelIds.push(alumnoId);
+  } else {
+    _famAlumnosSelIds = _famAlumnosSelIds.filter(id => id !== alumnoId);
+  }
+  // Actualizar estilos
+  document.querySelectorAll('#fam-al-lista label').forEach(lbl => {
+    const cb = lbl.querySelector('input[type=checkbox]');
+    lbl.style.background = cb?.checked ? 'var(--verde-l)' : '';
+  });
+  _mostrarSugerenciasContacto();
+}
+
+function _filtrarAlumnosFam(q) {
+  const term = q.toLowerCase();
+  document.querySelectorAll('#fam-al-lista label').forEach(lbl => {
+    const txt = lbl.textContent.toLowerCase();
+    lbl.style.display = (!term || txt.includes(term)) ? '' : 'none';
+  });
+}
+
+async function _mostrarSugerenciasContacto() {
+  if (!_famAlumnosSelIds.length) {
+    const div = document.getElementById('fam-contactos-sugerencia');
+    if (div) div.innerHTML = '';
+    return;
+  }
+  const { data: contactos } = await sb.from('contactos_alumno')
+    .select('nombre,email,alumno_id')
+    .in('alumno_id', _famAlumnosSelIds)
+    .not('email', 'is', null);
+
+  const div = document.getElementById('fam-contactos-sugerencia');
+  if (!div) return;
+  if (!contactos?.length) { div.innerHTML = ''; return; }
+
+  const alumnoById = {};
+  _famAlumnos.forEach(a => { alumnoById[a.id] = a; });
+
+  div.innerHTML = `
+    <div style="background:var(--azul-l);border-radius:var(--rad);padding:10px 12px">
+      <div style="font-size:10px;font-weight:700;color:var(--txt2);margin-bottom:6px">EMAILS DE CONTACTOS REGISTRADOS</div>
+      ${contactos.map(ct => {
+        const al = alumnoById[ct.alumno_id];
+        return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span style="font-size:11px">
+            <span style="color:var(--txt3)">${ct.nombre || '—'} · ${al ? al.apellido+', '+al.nombre : ''}</span>
+            <strong style="margin-left:6px">${ct.email}</strong>
+          </span>
+          <button class="btn-ghost" style="font-size:10px;padding:2px 8px"
+            onclick="document.getElementById('fam-email').value='${ct.email}'">Usar</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function _cerrarModalFamilia(event) {
+  if (event && event.target !== event.currentTarget) return;
+  const wrap = document.getElementById('fam-modal-wrap');
+  if (wrap) wrap.innerHTML = '';
+}
+
+async function _guardarFamilia(userId) {
+  const nombre = document.getElementById('fam-nombre')?.value?.trim();
+  const email  = document.getElementById('fam-email')?.value?.trim();
+  const pass   = document.getElementById('fam-pass')?.value?.trim();
+  const esNuevo = !userId;
+
+  if (!nombre) { alert('El nombre es requerido.'); return; }
+  if (esNuevo && !email) { alert('El email es requerido.'); return; }
+  if (esNuevo && !pass)  { alert('La contraseña es requerida.'); return; }
+  if (esNuevo && pass.length < 6) { alert('La contraseña debe tener al menos 6 caracteres.'); return; }
+  if (!_famAlumnosSelIds.length)  { alert('Seleccioná al menos un alumno.'); return; }
+
+  try {
+    if (esNuevo) {
+      await _llamarAdminUsers('crear_usuario_familia', {
+        nombre_completo: nombre,
+        email,
+        password:    pass,
+        alumno_ids:  _famAlumnosSelIds,
+      });
+    } else {
+      await _llamarAdminUsers('actualizar_usuario_familia', {
+        usuario_id:      userId,
+        nombre_completo: nombre,
+        alumno_ids:      _famAlumnosSelIds,
+        password:        pass || null,
+      });
+    }
+    _cerrarModalFamilia();
+    await _renderFamilias();
+    _toastOk(esNuevo ? 'Usuario familia creado correctamente' : 'Usuario familia actualizado');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
 }

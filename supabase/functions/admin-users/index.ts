@@ -51,7 +51,12 @@ serve(async (req) => {
     const perfilArr = await perfilRes.json();
     const perfil = Array.isArray(perfilArr) ? perfilArr[0] : null;
 
-    if (!perfil || !["director_general", "directivo_nivel", "secretario", "vicedirector"].includes(perfil.rol)) {
+    const ADMIN_ROLES   = ["director_general", "directivo_nivel", "secretario", "vicedirector"];
+    const FAMILIA_ROLES = [...ADMIN_ROLES, "preceptor"];
+    const FAMILIA_ACTIONS = ["crear_usuario_familia", "actualizar_usuario_familia"];
+
+    const rolesPermitidos = FAMILIA_ACTIONS.includes(action) ? FAMILIA_ROLES : ADMIN_ROLES;
+    if (!perfil || !rolesPermitidos.includes(perfil.rol)) {
       return new Response(JSON.stringify({ error: "No autorizado" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -188,6 +193,142 @@ serve(async (req) => {
       const updateData = await updateRes.json();
       if (!updateRes.ok || updateData.error || !updateData.id) {
         throw new Error(updateData.error?.message || updateData.msg || "Error al actualizar contraseña");
+      }
+
+      return new Response(
+        JSON.stringify({ ok: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Acción: crear usuario familia ─────────────────
+    if (action === "crear_usuario_familia") {
+      const createRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "apikey": SERVICE_KEY,
+        },
+        body: JSON.stringify({
+          email:         payload.email,
+          password:      payload.password,
+          email_confirm: true,
+        }),
+      });
+      const authData = await createRes.json();
+      if (!createRes.ok || !authData.id) {
+        throw new Error(authData.error?.message || authData.msg || "Error al crear usuario en Auth");
+      }
+
+      const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/usuarios`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "apikey": SERVICE_KEY,
+          "Prefer": "resolution=merge-duplicates",
+        },
+        body: JSON.stringify({
+          id:              authData.id,
+          email:           payload.email,
+          nombre_completo: payload.nombre_completo,
+          rol:             "familia",
+          activo:          true,
+          institucion_id:  perfil.institucion_id,
+        }),
+      });
+      if (!upsertRes.ok) {
+        const err = await upsertRes.json().catch(() => ({}));
+        throw new Error("Error al crear perfil: " + (err.message || err.details || upsertRes.status));
+      }
+
+      if (payload.alumno_ids?.length) {
+        const links = payload.alumno_ids.map((aid: string) => ({
+          usuario_id: authData.id,
+          alumno_id:  aid,
+        }));
+        const linkRes = await fetch(`${SUPABASE_URL}/rest/v1/familia_alumno`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+            "Prefer": "resolution=ignore-duplicates",
+          },
+          body: JSON.stringify(links),
+        });
+        if (!linkRes.ok) {
+          const err = await linkRes.json().catch(() => ({}));
+          throw new Error("Error al vincular alumnos: " + (err.message || err.details || linkRes.status));
+        }
+      }
+
+      return new Response(
+        JSON.stringify({ id: authData.id }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Acción: actualizar usuario familia ────────────
+    if (action === "actualizar_usuario_familia") {
+      const targetRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/usuarios?id=eq.${payload.usuario_id}&select=institucion_id,rol`,
+        { headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "apikey": SERVICE_KEY } }
+      );
+      const targetArr = await targetRes.json();
+      const target = Array.isArray(targetArr) ? targetArr[0] : null;
+      if (!target || target.institucion_id !== perfil.institucion_id || target.rol !== "familia") {
+        return new Response(JSON.stringify({ error: "Usuario no encontrado o no válido" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (payload.nombre_completo) {
+        await fetch(`${SUPABASE_URL}/rest/v1/usuarios?id=eq.${payload.usuario_id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+          },
+          body: JSON.stringify({ nombre_completo: payload.nombre_completo }),
+        });
+      }
+
+      // Reemplazar vínculos alumno
+      await fetch(`${SUPABASE_URL}/rest/v1/familia_alumno?usuario_id=eq.${payload.usuario_id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "apikey": SERVICE_KEY },
+      });
+      if (payload.alumno_ids?.length) {
+        const links = payload.alumno_ids.map((aid: string) => ({
+          usuario_id: payload.usuario_id,
+          alumno_id:  aid,
+        }));
+        await fetch(`${SUPABASE_URL}/rest/v1/familia_alumno`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+            "Prefer": "resolution=ignore-duplicates",
+          },
+          body: JSON.stringify(links),
+        });
+      }
+
+      if (payload.password) {
+        await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${payload.usuario_id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+          },
+          body: JSON.stringify({ password: payload.password }),
+        });
       }
 
       return new Response(
