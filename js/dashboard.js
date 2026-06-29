@@ -840,7 +840,7 @@ async function rDashDocente() {
       .eq('docente_id', miId)
       .eq('anio_lectivo', INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()),
     sb.from('eventos_institucionales')
-      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,creado_por')
+      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,convocatoria_grupos,creado_por')
       .eq('institucion_id', instId)
       .lte('fecha_inicio', sem.fin)
       .or(`fecha_fin.gte.${sem.inicio},fecha_inicio.gte.${sem.inicio}`)
@@ -853,7 +853,7 @@ async function rDashDocente() {
 
   window._diasNoLectivos = new Set((noLectRes.data || []).map(r => r.fecha));
 
-  const eventosSem = eventosRes.data || [];
+  const eventosSem = (eventosRes.data || []).filter(_eventoEsParaMi);
   const pendientes = (respRes.data   || []).filter(r => r.eventos_institucionales);
 
   // Cursos únicos asignados
@@ -1018,7 +1018,7 @@ async function rDashPreceptor() {
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento']),
     sb.from('eventos_institucionales')
-      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,creado_por')
+      .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,convocatoria_grupos,creado_por')
       .eq('institucion_id', instId)
       .lte('fecha_inicio', sem.fin)
       .or(`fecha_fin.gte.${sem.inicio},fecha_inicio.gte.${sem.inicio}`)
@@ -1033,7 +1033,7 @@ async function rDashPreceptor() {
 
   const cursos     = cursosRes.data   || [];
   const probs      = probRes.data     || [];
-  const eventosSem = eventosRes.data  || [];
+  const eventosSem = (eventosRes.data || []).filter(_eventoEsParaMi);
   const pendResp   = (respRes.data    || []).filter(r => r.eventos_institucionales);
   const cursoIdsList = cursos.map(c => c.id);
 
