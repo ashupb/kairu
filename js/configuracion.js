@@ -3319,57 +3319,70 @@ function _renderModalFamilia(u) {
   const wrap = document.getElementById('fam-modal-wrap');
   if (!wrap) return;
 
-  const alumnosHtml = _famAlumnos.map(a => {
-    const sel = _famAlumnosSelIds.includes(a.id);
-    return `
-      <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;
-        ${sel ? 'background:var(--verde-l)' : ''}">
-        <input type="checkbox" value="${a.id}" ${sel ? 'checked' : ''}
-          onchange="_toggleFamAlumno(this.value, this.checked)"
-          style="accent-color:var(--verde);width:15px;height:15px">
-        <span style="font-size:12px">${a.apellido}, ${a.nombre}
-          <span style="color:var(--txt3)">— ${a.cursos.nombre}${a.cursos.division||''}</span>
-        </span>
-      </label>`;
-  }).join('');
+  const esPreceptor = USUARIO_ACTUAL.rol === 'preceptor';
+
+  // Niveles y cursos disponibles (de los alumnos cargados)
+  const nivelesDisp = [...new Set(_famAlumnos.map(a => a.cursos?.nivel).filter(Boolean))].sort();
+  const cursosDisp  = [...new Map(_famAlumnos.map(a => [a.curso_id, a.cursos])).values()].filter(Boolean)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const alumnosHtml = _buildAlumnosListHtml(_famAlumnos);
+
+  const filtrosNivelCurso = esPreceptor ? '' : `
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <select id="fam-fil-nivel" onchange="_famFiltrarLista()" style="flex:1;font-size:12px">
+        <option value="">Todos los niveles</option>
+        ${nivelesDisp.map(n => `<option value="${n}">${NIVEL_LABELS_ADM[n]||n}</option>`).join('')}
+      </select>
+      <select id="fam-fil-curso" onchange="_famFiltrarLista()" style="flex:1;font-size:12px">
+        <option value="">Todos los cursos</option>
+        ${cursosDisp.map(c => `<option value="${c.id}">${c.nombre}${c.division||''}</option>`).join('')}
+      </select>
+    </div>`;
 
   wrap.innerHTML = `
-    <div class="modal-overlay" onclick="_cerrarModalFamilia(event)" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px">
-      <div class="card" onclick="event.stopPropagation()" style="width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px">
+    <div class="modal-overlay" onclick="_cerrarModalFamilia(event)"
+      style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px">
+      <div class="card" onclick="event.stopPropagation()"
+        style="width:100%;max-width:480px;max-height:88vh;overflow-y:auto;padding:20px">
+
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <div style="font-size:14px;font-weight:700">${u ? 'Editar usuario familia' : 'Nuevo usuario familia'}</div>
-          <button onclick="_cerrarModalFamilia()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--txt2)">×</button>
+          <button onclick="_cerrarModalFamilia()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--txt2);line-height:1">×</button>
         </div>
 
-        <div style="display:flex;flex-direction:column;gap:12px">
-          <div>
-            <div class="sec-lb" style="margin:0 0 4px">Nombre completo</div>
-            <input id="fam-nombre" class="inp" placeholder="Ej: García, Ana" value="${u?.nombre_completo || ''}">
+        <div class="adm-form-row">
+          <label class="adm-label">Nombre completo</label>
+          <input type="text" id="fam-nombre" value="${_esc(u?.nombre_completo)}" placeholder="Ej: García, Ana">
+        </div>
+        <div class="adm-form-row">
+          <label class="adm-label">Email</label>
+          <input type="email" id="fam-email" value="${_esc(u?.email)}" placeholder="email@ejemplo.com"
+            ${u ? 'readonly style="opacity:.6;cursor:default"' : ''}>
+          ${u ? '<div style="font-size:10px;color:var(--txt2);margin-top:3px">El email no se puede cambiar.</div>' : ''}
+        </div>
+        <div class="adm-form-row">
+          <label class="adm-label">${u ? 'Nueva contraseña (opcional)' : 'Contraseña'}</label>
+          <input type="password" id="fam-pass" placeholder="${u ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'}">
+        </div>
+
+        <div class="adm-form-row">
+          <label class="adm-label">Alumnos vinculados</label>
+          ${filtrosNivelCurso}
+          <input type="text" id="fam-buscar-al" placeholder="Buscar por nombre..."
+            oninput="_famFiltrarLista()" style="margin-bottom:8px;font-size:12px">
+          <div id="fam-al-lista"
+            style="max-height:210px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad);padding:4px">
+            ${alumnosHtml}
           </div>
-          <div>
-            <div class="sec-lb" style="margin:0 0 4px">Email</div>
-            <input id="fam-email" class="inp" type="email" placeholder="email@ejemplo.com"
-              value="${u?.email || ''}" ${u ? 'readonly style="background:var(--surf2);color:var(--txt2)"' : ''}>
-            ${u ? '<div style="font-size:10px;color:var(--txt3);margin-top:2px">El email no se puede cambiar</div>' : ''}
-          </div>
-          <div>
-            <div class="sec-lb" style="margin:0 0 4px">${u ? 'Nueva contraseña (opcional)' : 'Contraseña'}</div>
-            <input id="fam-pass" class="inp" type="password" placeholder="${u ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'}">
+          <div id="fam-sel-count" style="font-size:10px;color:var(--txt3);margin-top:4px">
+            ${_famAlumnosSelIds.length ? `${_famAlumnosSelIds.length} alumno(s) seleccionado(s)` : ''}
           </div>
         </div>
 
-        <div style="margin-top:16px">
-          <div class="sec-lb" style="margin:0 0 6px">Alumnos vinculados</div>
-          <input id="fam-buscar-al" class="inp" placeholder="Buscar alumno..."
-            oninput="_filtrarAlumnosFam(this.value)" style="margin-bottom:8px;font-size:12px">
-          <div id="fam-al-lista" style="max-height:200px;overflow-y:auto;border:1px solid var(--brd);border-radius:var(--rad);padding:4px">
-            ${alumnosHtml || '<div style="padding:8px;font-size:12px;color:var(--txt3)">Sin alumnos disponibles</div>'}
-          </div>
-        </div>
+        <div id="fam-contactos-sugerencia"></div>
 
-        <div id="fam-contactos-sugerencia" style="margin-top:10px"></div>
-
-        <div style="display:flex;gap:8px;margin-top:16px">
+        <div style="display:flex;gap:8px;margin-top:4px">
           <button class="btn-p" style="flex:1" onclick="_guardarFamilia('${u?.id || ''}')">
             ${u ? 'Guardar cambios' : 'Crear usuario'}
           </button>
@@ -3381,25 +3394,60 @@ function _renderModalFamilia(u) {
   _mostrarSugerenciasContacto();
 }
 
+function _buildAlumnosListHtml(alumnos) {
+  if (!alumnos.length) return '<div style="padding:8px;font-size:12px;color:var(--txt3)">Sin alumnos disponibles</div>';
+  return alumnos.map(a => {
+    const sel = _famAlumnosSelIds.includes(a.id);
+    return `<label data-alumno-id="${a.id}" data-nivel="${a.cursos?.nivel||''}" data-curso-id="${a.curso_id||''}"
+      style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;${sel?'background:var(--verde-l)':''}">
+      <input type="checkbox" value="${a.id}" ${sel?'checked':''}
+        onchange="_toggleFamAlumno(this.value,this.checked)"
+        style="accent-color:var(--verde);width:15px;height:15px;flex-shrink:0">
+      <span style="font-size:12px">${_esc(a.apellido)}, ${_esc(a.nombre)}
+        <span style="color:var(--txt3)">— ${_esc(a.cursos?.nombre||'')}${a.cursos?.division||''}</span>
+      </span>
+    </label>`;
+  }).join('');
+}
+
 function _toggleFamAlumno(alumnoId, checked) {
   if (checked) {
     if (!_famAlumnosSelIds.includes(alumnoId)) _famAlumnosSelIds.push(alumnoId);
   } else {
     _famAlumnosSelIds = _famAlumnosSelIds.filter(id => id !== alumnoId);
   }
-  // Actualizar estilos
   document.querySelectorAll('#fam-al-lista label').forEach(lbl => {
     const cb = lbl.querySelector('input[type=checkbox]');
     lbl.style.background = cb?.checked ? 'var(--verde-l)' : '';
   });
+  const cnt = document.getElementById('fam-sel-count');
+  if (cnt) cnt.textContent = _famAlumnosSelIds.length ? `${_famAlumnosSelIds.length} alumno(s) seleccionado(s)` : '';
   _mostrarSugerenciasContacto();
 }
 
-function _filtrarAlumnosFam(q) {
-  const term = q.toLowerCase();
-  document.querySelectorAll('#fam-al-lista label').forEach(lbl => {
-    const txt = lbl.textContent.toLowerCase();
-    lbl.style.display = (!term || txt.includes(term)) ? '' : 'none';
+function _famFiltrarLista() {
+  const q      = (document.getElementById('fam-buscar-al')?.value || '').toLowerCase();
+  const nivel  = document.getElementById('fam-fil-nivel')?.value || '';
+  const cursoId= document.getElementById('fam-fil-curso')?.value || '';
+
+  // Cuando cambia el nivel, recargar opciones de curso
+  if (nivel) {
+    const sel = document.getElementById('fam-fil-curso');
+    if (sel) {
+      const cursosDelNivel = [...new Map(
+        _famAlumnos.filter(a => a.cursos?.nivel === nivel).map(a => [a.curso_id, a.cursos])
+      ).values()].filter(Boolean).sort((a,b) => a.nombre.localeCompare(b.nombre));
+      sel.innerHTML = `<option value="">Todos los cursos</option>` +
+        cursosDelNivel.map(c => `<option value="${c.id}" ${c.id === cursoId?'selected':''}>${c.nombre}${c.division||''}</option>`).join('');
+    }
+  }
+
+  document.querySelectorAll('#fam-al-lista label[data-alumno-id]').forEach(lbl => {
+    const txt     = lbl.textContent.toLowerCase();
+    const lNivel  = lbl.dataset.nivel  || '';
+    const lCurso  = lbl.dataset.cursoId|| '';
+    const ok = (!q || txt.includes(q)) && (!nivel || lNivel === nivel) && (!cursoId || lCurso === cursoId);
+    lbl.style.display = ok ? '' : 'none';
   });
 }
 
