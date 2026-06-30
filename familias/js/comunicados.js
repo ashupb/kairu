@@ -73,6 +73,17 @@ async function rComunicados() {
         </div>
       </div>`;
 
+    // Auto-marcar no leídos como leídos y actualizar campana
+    const noLeidos = _COM_DATA.filter(c => !leidosIds.has(c.id));
+    if (noLeidos.length) {
+      await sb.from('comunicado_lecturas').upsert(
+        noLeidos.map(c => ({ comunicado_id: c.id, usuario_id: USUARIO_FAMILIAR.id })),
+        { onConflict: 'comunicado_id,usuario_id' }
+      );
+      _COM_LEIDOS = new Set(_COM_DATA.map(c => c.id));
+      fetchUnreadCount();
+    }
+
     // Deep link: scrollear y resaltar el comunicado específico si viene de inicio
     const targetId = _DEEP_LINK_ID;
     _DEEP_LINK_ID = null;
@@ -134,13 +145,6 @@ function _comCardText(c, leidosIds) {
       <p class="com-titulo">${c.titulo}</p>
       ${c.cuerpo ? `<p class="com-text-cuerpo">${c.cuerpo.replace(/\n/g, '<br>')}</p>` : ''}
       ${autor ? `<p class="com-autor" style="margin-top:10px">— ${autor}</p>` : ''}
-      <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--color-border,rgba(0,0,0,0.07))">
-        <button class="btn-visto${sinLeer ? '' : ' visto'}" id="btn-visto-${c.id}"
-          onclick="_comMarcarVisto('${c.id}', this)"
-          ${sinLeer ? '' : 'disabled'}>
-          ${sinLeer ? '👁 Marcar como visto' : '✓ Visto'}
-        </button>
-      </div>
     </div>`;
 }
 
