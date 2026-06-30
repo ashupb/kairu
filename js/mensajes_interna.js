@@ -114,7 +114,7 @@ function _mfiRender(el) {
         <select class="inp-base" onchange="_mfiSetFiltroC(this.value)">
           <option value="">Todos los cursos</option>${opts}
         </select>
-        <input class="inp-base" type="search" placeholder="Buscar alumno..."
+        <input class="inp-base" type="text" placeholder="Apellido o nombre…"
                value="${_esc(_MSGFAM_F_NOMBRE)}"
                oninput="_mfiSetFiltroN(this.value)">
       </div>

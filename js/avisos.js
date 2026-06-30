@@ -6,117 +6,113 @@ let _AVISOS_DATA    = [];   // novedades
 let _COM_INT_DATA   = [];   // comunicados por curso
 let _COM_INT_CURSOS = [];   // cursos disponibles para selector
 let _COM_INT_VISTOS = {};   // { comunicado_id: count } de lecturas confirmadas
-let _AVISOS_TAB     = 'novedades';
-let _AVISOS_FILTRO_NOV = '';  // '' = todos, 'inicial', 'primario', 'secundario'
-let _AVISOS_FILTRO_COM = '';  // '' = todos, 'inicial', 'primario', 'secundario'
+let _AVISOS_FILTRO_NOV_NIVEL = '';
+let _AVISOS_FILTRO_NOV_CURSO = '';
+let _AVISOS_FILTRO_COM_NIVEL = '';
+let _AVISOS_FILTRO_COM_CURSO = '';
 const _AV_NIVEL_LABEL = { inicial: 'Inicial', primario: 'Primario', secundario: 'Secundario' };
 
-async function rAvisos() {
-  const el = document.getElementById('page-avisos');
+// ── Carga datos compartidos (novedades + comunicados + cursos) ─────
+async function _avisosCargarDatos() {
+  const [novRes, comRes, curRes] = await Promise.all([
+    sb.from('comunicados')
+      .select('id, titulo, cuerpo, nivel, curso_id, imagen_url, created_at, usuarios(nombre_completo), comunicado_imagenes(id, imagen_url, orden)')
+      .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+      .eq('tipo', 'novedad')
+      .order('created_at', { ascending: false })
+      .limit(40),
+    sb.from('comunicados')
+      .select('id, titulo, cuerpo, curso_id, created_at, usuarios(nombre_completo), cursos(id, nombre, division, nivel)')
+      .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+      .eq('tipo', 'comunicado')
+      .order('created_at', { ascending: false })
+      .limit(40),
+    sb.from('cursos')
+      .select('id, nombre, division, nivel')
+      .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+      .order('nivel').order('nombre'),
+  ]);
+
+  let novedades = novRes.data || [];
+  if (novRes.error) {
+    const { data: nov2 } = await sb
+      .from('comunicados')
+      .select('id, titulo, cuerpo, nivel, curso_id, imagen_url, created_at, usuarios(nombre_completo)')
+      .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+      .eq('tipo', 'novedad')
+      .order('created_at', { ascending: false })
+      .limit(40);
+    novedades = nov2 || [];
+  } else {
+    novedades = novedades.map(c => ({
+      ...c,
+      comunicado_imagenes: (c.comunicado_imagenes || []).sort((a, b) => a.orden - b.orden),
+    }));
+  }
+
+  _AVISOS_DATA    = novedades;
+  _COM_INT_DATA   = comRes.data || [];
+  _COM_INT_CURSOS = curRes.data || [];
+
+  _COM_INT_VISTOS = {};
+  const comIds = _COM_INT_DATA.map(c => c.id);
+  if (comIds.length) {
+    const { data: lecturasData } = await sb
+      .from('comunicado_lecturas')
+      .select('comunicado_id')
+      .in('comunicado_id', comIds);
+    (lecturasData || []).forEach(l => {
+      _COM_INT_VISTOS[l.comunicado_id] = (_COM_INT_VISTOS[l.comunicado_id] || 0) + 1;
+    });
+  }
+}
+
+// ── Página Novedades ──────────────────────────────────
+async function rNovedades() {
+  const el = document.getElementById('page-novedades');
   if (!el) return;
-  showLoading('avisos');
+  showLoading('novedades');
   const perms = _avisosPermisos();
-
+  _AVISOS_FILTRO_NOV_NIVEL = '';
+  _AVISOS_FILTRO_NOV_CURSO = '';
   try {
-    // Fetch novedades, comunicados y cursos en paralelo
-    const [novRes, comRes, curRes] = await Promise.all([
-      sb.from('comunicados')
-        .select('id, titulo, cuerpo, nivel, imagen_url, created_at, usuarios(nombre_completo), comunicado_imagenes(id, imagen_url, orden)')
-        .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-        .eq('tipo', 'novedad')
-        .order('created_at', { ascending: false })
-        .limit(40),
-      sb.from('comunicados')
-        .select('id, titulo, cuerpo, curso_id, created_at, usuarios(nombre_completo), cursos(id, nombre, division, nivel)')
-        .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-        .eq('tipo', 'comunicado')
-        .order('created_at', { ascending: false })
-        .limit(40),
-      sb.from('cursos')
-        .select('id, nombre, division, nivel')
-        .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-        .order('nivel').order('nombre'),
-    ]);
-
-    // Si el join de comunicado_imagenes falla (tabla no existe aún), reintentar sin join
-    let novedades = novRes.data || [];
-    if (novRes.error) {
-      const { data: nov2 } = await sb
-        .from('comunicados')
-        .select('id, titulo, cuerpo, nivel, imagen_url, created_at, usuarios(nombre_completo)')
-        .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-        .eq('tipo', 'novedad')
-        .order('created_at', { ascending: false })
-        .limit(40);
-      novedades = nov2 || [];
-    } else {
-      novedades = novedades.map(c => ({
-        ...c,
-        comunicado_imagenes: (c.comunicado_imagenes || []).sort((a, b) => a.orden - b.orden),
-      }));
-    }
-
-    _AVISOS_DATA    = novedades;
-    _COM_INT_DATA   = comRes.data || [];
-    _COM_INT_CURSOS = curRes.data || [];
-    _AVISOS_TAB     = 'novedades';
-
-    // Conteo de vistos (lecturas confirmadas) por comunicado
-    _COM_INT_VISTOS = {};
-    const comIds = _COM_INT_DATA.map(c => c.id);
-    if (comIds.length) {
-      const { data: lecturasData } = await sb
-        .from('comunicado_lecturas')
-        .select('comunicado_id')
-        .in('comunicado_id', comIds);
-      (lecturasData || []).forEach(l => {
-        _COM_INT_VISTOS[l.comunicado_id] = (_COM_INT_VISTOS[l.comunicado_id] || 0) + 1;
-      });
-    }
-
+    await _avisosCargarDatos();
     el.innerHTML = `
       <div style="max-width:860px;margin:0 auto;padding:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px">
-          <h2 style="font-size:18px;font-weight:700;color:var(--txt)">Portal familiar</h2>
-          ${perms.crear ? `<button class="btn-p" id="av-btn-nuevo" onclick="_avisosAbrirForm()">+ Nuevo</button>` : ''}
+          <h2 style="font-size:18px;font-weight:700;color:var(--txt)">Novedades</h2>
+          ${perms.crear ? `<button class="btn-p" id="av-btn-nuevo" onclick="_avisosFormNovedad()">+ Nueva novedad</button>` : ''}
         </div>
-
-        <div style="display:flex;border-bottom:1.5px solid var(--brd);margin-bottom:16px">
-          <button id="av-tab-novedades" onclick="_avisosTab('novedades')" style="${_tabStyle(true)}">Novedades</button>
-          <button id="av-tab-comunicados" onclick="_avisosTab('comunicados')" style="${_tabStyle(false)}">Comunicados</button>
-        </div>
-
         <div id="av-form-wrap"></div>
-
-        <div id="av-pane-novedades">
-          ${_avisosNovPaneHtml(novedades, perms)}
-        </div>
-        <div id="av-pane-comunicados" style="display:none">
-          ${_avisosComPaneHtml(_COM_INT_DATA, perms)}
-        </div>
+        ${_avisosNovPaneHtml(_AVISOS_DATA, perms)}
       </div>`;
-
-  } catch (e) {
-    el.innerHTML = `<div style="padding:60px;text-align:center;color:var(--txt3)">No se pudo cargar la comunicación. Intentá de nuevo.</div>`;
+  } catch(e) {
+    el.innerHTML = `<div style="padding:60px;text-align:center;color:var(--txt3)">No se pudo cargar las novedades. Intentá de nuevo.</div>`;
   }
 }
 
-// ── Tabs ──────────────────────────────────────────────
-function _tabStyle(active) {
-  if (active) {
-    return `flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:none;background:rgba(34,153,87,0.09);cursor:pointer;border-bottom:2.5px solid var(--green);color:var(--green);margin-bottom:-1.5px;border-radius:6px 6px 0 0;transition:color .15s,border-color .15s,background .15s`;
+// ── Página Comunicados ────────────────────────────────
+async function rComunicados() {
+  const el = document.getElementById('page-comunicados');
+  if (!el) return;
+  showLoading('comunicados');
+  const perms = _avisosPermisos();
+  _AVISOS_FILTRO_COM_NIVEL = '';
+  _AVISOS_FILTRO_COM_CURSO = '';
+  try {
+    await _avisosCargarDatos();
+    el.innerHTML = `
+      <div style="max-width:860px;margin:0 auto;padding:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px">
+          <h2 style="font-size:18px;font-weight:700;color:var(--txt)">Comunicados</h2>
+          ${perms.crear ? `<button class="btn-p" id="av-btn-nuevo" onclick="_avisosFormComunicado()">+ Nuevo comunicado</button>` : ''}
+        </div>
+        <div id="av-form-wrap"></div>
+        ${_avisosComPaneHtml(_COM_INT_DATA, perms)}
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<div style="padding:60px;text-align:center;color:var(--txt3)">No se pudo cargar los comunicados. Intentá de nuevo.</div>`;
   }
-  return `flex:1;padding:10px 6px;font-size:13px;font-weight:500;border:none;background:transparent;cursor:pointer;border-bottom:2px solid transparent;color:var(--txt2);margin-bottom:-1.5px;border-radius:6px 6px 0 0;transition:color .15s,border-color .15s,background .15s`;
-}
-
-function _avisosTab(tab) {
-  _AVISOS_TAB = tab;
-  document.getElementById('av-pane-novedades').style.display  = tab === 'novedades'  ? '' : 'none';
-  document.getElementById('av-pane-comunicados').style.display = tab === 'comunicados' ? '' : 'none';
-  document.getElementById('av-tab-novedades').style.cssText   = _tabStyle(tab === 'novedades');
-  document.getElementById('av-tab-comunicados').style.cssText = _tabStyle(tab === 'comunicados');
-  const formWrap = document.getElementById('av-form-wrap');
-  if (formWrap) formWrap.innerHTML = '';
 }
 
 // ── Filtro pills ──────────────────────────────────────
@@ -126,52 +122,113 @@ function _avFiltroStyle(active) {
     : `padding:4px 14px;border-radius:20px;font-size:12px;font-weight:500;border:1.5px solid var(--brd);background:var(--bg2,#f5f5f5);color:var(--txt2);cursor:pointer;transition:background .15s`;
 }
 
+// ── Panel HTML — Novedades ────────────────────────────
 function _avisosNovPaneHtml(todos, perms) {
-  const filtrada = _AVISOS_FILTRO_NOV ? todos.filter(c => c.nivel === _AVISOS_FILTRO_NOV) : todos;
   const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.nivel === n));
-  const filtroHtml = todos.length > 0 && nivelesPresentes.length > 0 ? `
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-      <button class="av-fn" data-val="" onclick="_avNovFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV === '')}">Todos los niveles</button>
+  const filtroNivelHtml = todos.length > 0 && nivelesPresentes.length > 0 ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="av-fn" data-val="" onclick="_avNovFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV_NIVEL === '')}">Todos los niveles</button>
       ${nivelesPresentes.map(n => `
-        <button class="av-fn" data-val="${n}" onclick="_avNovFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV === n)}">${_AV_NIVEL_LABEL[n]}</button>
+        <button class="av-fn" data-val="${n}" onclick="_avNovFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV_NIVEL === n)}">${_AV_NIVEL_LABEL[n]}</button>
       `).join('')}
     </div>` : '';
-  return `${filtroHtml}<div id="av-nov-lista">${_avisosNovListaHtml(filtrada, perms)}</div>`;
+
+  const cursoOpts = _COM_INT_CURSOS.map(c => {
+    const lbl = `${c.nombre}${c.division ? ' ' + c.division : ''} — ${_AV_NIVEL_LABEL[c.nivel] || c.nivel}`;
+    return `<option value="${c.id}" ${_AVISOS_FILTRO_NOV_CURSO === c.id ? 'selected' : ''}>${lbl}</option>`;
+  }).join('');
+  const filtroCursoHtml = _COM_INT_CURSOS.length ? `
+    <div style="margin-bottom:14px">
+      <select class="inp-base" style="max-width:280px" onchange="_avNovFiltrarCurso(this.value)">
+        <option value="">Todos los cursos</option>${cursoOpts}
+      </select>
+    </div>` : '';
+
+  const filtrada = _avAplicarFiltrosNov(todos);
+  return `${filtroNivelHtml}${filtroCursoHtml}<div id="av-nov-lista">${_avisosNovListaHtml(filtrada, perms)}</div>`;
 }
 
+// ── Panel HTML — Comunicados ──────────────────────────
 function _avisosComPaneHtml(todos, perms) {
-  const filtrada = _AVISOS_FILTRO_COM ? todos.filter(c => c.cursos?.nivel === _AVISOS_FILTRO_COM) : todos;
   const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.cursos?.nivel === n));
-  const filtroHtml = todos.length > 0 && nivelesPresentes.length > 1 ? `
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
-      <button class="av-fc" data-val="" onclick="_avComFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM === '')}">Todos</button>
+  const filtroNivelHtml = todos.length > 0 && nivelesPresentes.length > 1 ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+      <button class="av-fc" data-val="" onclick="_avComFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM_NIVEL === '')}">Todos</button>
       ${nivelesPresentes.map(n => `
-        <button class="av-fc" data-val="${n}" onclick="_avComFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM === n)}">${_AV_NIVEL_LABEL[n]}</button>
+        <button class="av-fc" data-val="${n}" onclick="_avComFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM_NIVEL === n)}">${_AV_NIVEL_LABEL[n]}</button>
       `).join('')}
     </div>` : '';
-  return `${filtroHtml}<div id="av-com-lista">${_avisosComListaHtml(filtrada, perms)}</div>`;
+
+  const cursoOpts = _COM_INT_CURSOS.map(c => {
+    const lbl = `${c.nombre}${c.division ? ' ' + c.division : ''} — ${_AV_NIVEL_LABEL[c.nivel] || c.nivel}`;
+    return `<option value="${c.id}" ${_AVISOS_FILTRO_COM_CURSO === c.id ? 'selected' : ''}>${lbl}</option>`;
+  }).join('');
+  const filtroCursoHtml = _COM_INT_CURSOS.length ? `
+    <div style="margin-bottom:14px">
+      <select class="inp-base" style="max-width:280px" onchange="_avComFiltrarCurso(this.value)">
+        <option value="">Todos los cursos</option>${cursoOpts}
+      </select>
+    </div>` : '';
+
+  const filtrada = _avAplicarFiltrosCom(todos);
+  return `${filtroNivelHtml}${filtroCursoHtml}<div id="av-com-lista">${_avisosComListaHtml(filtrada, perms)}</div>`;
 }
 
+// ── Aplicar filtros ───────────────────────────────────
+function _avAplicarFiltrosNov(todos) {
+  let lista = todos;
+  if (_AVISOS_FILTRO_NOV_NIVEL) lista = lista.filter(c => c.nivel === _AVISOS_FILTRO_NOV_NIVEL);
+  if (_AVISOS_FILTRO_NOV_CURSO) {
+    const curso = _COM_INT_CURSOS.find(c => c.id === _AVISOS_FILTRO_NOV_CURSO);
+    lista = lista.filter(n =>
+      n.curso_id === _AVISOS_FILTRO_NOV_CURSO ||
+      (!n.curso_id && (n.nivel === null || n.nivel === (curso?.nivel || '')))
+    );
+  }
+  return lista;
+}
+
+function _avAplicarFiltrosCom(todos) {
+  let lista = todos;
+  if (_AVISOS_FILTRO_COM_NIVEL) lista = lista.filter(c => c.cursos?.nivel === _AVISOS_FILTRO_COM_NIVEL);
+  if (_AVISOS_FILTRO_COM_CURSO) lista = lista.filter(c => c.curso_id === _AVISOS_FILTRO_COM_CURSO);
+  return lista;
+}
+
+// ── Filtrar novedades ─────────────────────────────────
 function _avNovFiltrar(nivel) {
-  _AVISOS_FILTRO_NOV = nivel;
+  _AVISOS_FILTRO_NOV_NIVEL = nivel;
   const perms = _avisosPermisos();
-  const lista = nivel ? _AVISOS_DATA.filter(c => c.nivel === nivel) : _AVISOS_DATA;
   const listaEl = document.getElementById('av-nov-lista');
-  if (listaEl) listaEl.innerHTML = _avisosNovListaHtml(lista, perms);
+  if (listaEl) listaEl.innerHTML = _avisosNovListaHtml(_avAplicarFiltrosNov(_AVISOS_DATA), perms);
   document.querySelectorAll('.av-fn').forEach(b => {
     b.style.cssText = _avFiltroStyle(b.dataset.val === nivel);
   });
 }
 
-function _avComFiltrar(nivel) {
-  _AVISOS_FILTRO_COM = nivel;
+function _avNovFiltrarCurso(cursoId) {
+  _AVISOS_FILTRO_NOV_CURSO = cursoId;
   const perms = _avisosPermisos();
-  const lista = nivel ? _COM_INT_DATA.filter(c => c.cursos?.nivel === nivel) : _COM_INT_DATA;
+  const listaEl = document.getElementById('av-nov-lista');
+  if (listaEl) listaEl.innerHTML = _avisosNovListaHtml(_avAplicarFiltrosNov(_AVISOS_DATA), perms);
+}
+
+// ── Filtrar comunicados ───────────────────────────────
+function _avComFiltrar(nivel) {
+  _AVISOS_FILTRO_COM_NIVEL = nivel;
+  const perms = _avisosPermisos();
   const listaEl = document.getElementById('av-com-lista');
-  if (listaEl) listaEl.innerHTML = _avisosComListaHtml(lista, perms);
+  if (listaEl) listaEl.innerHTML = _avisosComListaHtml(_avAplicarFiltrosCom(_COM_INT_DATA), perms);
   document.querySelectorAll('.av-fc').forEach(b => {
     b.style.cssText = _avFiltroStyle(b.dataset.val === nivel);
   });
+}
+
+function _avComFiltrarCurso(cursoId) {
+  _AVISOS_FILTRO_COM_CURSO = cursoId;
+  const perms = _avisosPermisos();
+  const listaEl = document.getElementById('av-com-lista');
+  if (listaEl) listaEl.innerHTML = _avisosComListaHtml(_avAplicarFiltrosCom(_COM_INT_DATA), perms);
 }
 
 // ── Permisos ──────────────────────────────────────────
@@ -180,19 +237,11 @@ function _avisosPermisos() {
   return { crear: ['director_general', 'directivo_nivel', 'preceptor'].includes(rol) };
 }
 
-// ── Abrir formulario (decide tipo según tab activo) ───
-function _avisosAbrirForm() {
-  const wrap = document.getElementById('av-form-wrap');
-  if (!wrap) return;
-  if (wrap.innerHTML) { wrap.innerHTML = ''; return; }
-  if (_AVISOS_TAB === 'comunicados') _avisosFormComunicado();
-  else _avisosFormNovedad();
-}
-
 // ── Form: nueva / editar novedad ──────────────────────
 function _avisosFormNovedad(editData = null) {
   const wrap = document.getElementById('av-form-wrap');
   if (!wrap) return;
+  if (!editData && wrap.innerHTML) { wrap.innerHTML = ''; return; }
   const c = editData;
   const isEdit = !!c;
 
@@ -269,6 +318,7 @@ function _avisosEditImgsHtml(c) {
 function _avisosFormComunicado(editData = null) {
   const wrap = document.getElementById('av-form-wrap');
   if (!wrap) return;
+  if (!editData && wrap.innerHTML) { wrap.innerHTML = ''; return; }
   const c = editData;
   const isEdit = !!c;
 
@@ -522,7 +572,7 @@ async function _avisosGuardar() {
       }
     }
 
-    await rAvisos();
+    await rNovedades();
   } catch (e) {
     alert('No se pudo publicar. Intentá de nuevo.');
     if (btn) { btn.disabled = false; btn.textContent = 'Publicar novedad'; }
@@ -557,8 +607,7 @@ async function _avisosGuardarComunicado() {
     }));
     const { error } = await sb.from('comunicados').insert(inserts);
     if (error) throw error;
-    await rAvisos();
-    _avisosTab('comunicados');
+    await rComunicados();
   } catch (e) {
     alert('No se pudo enviar. Intentá de nuevo.');
     if (btn) { btn.disabled = false; btn.textContent = 'Enviar comunicado'; }
@@ -569,7 +618,6 @@ async function _avisosGuardarComunicado() {
 function _avisosEditarNovedad(id) {
   const c = _AVISOS_DATA.find(x => x.id === id);
   if (!c) return;
-  _avisosTab('novedades');
   _avisosFormNovedad(c);
   document.getElementById('av-form-wrap')?.scrollIntoView({ behavior: 'smooth' });
 }
@@ -578,7 +626,6 @@ function _avisosEditarNovedad(id) {
 function _avisosEditarComunicado(id) {
   const c = _COM_INT_DATA.find(x => x.id === id);
   if (!c) return;
-  _avisosTab('comunicados');
   _avisosFormComunicado(c);
   document.getElementById('av-form-wrap')?.scrollIntoView({ behavior: 'smooth' });
 }
@@ -613,7 +660,7 @@ async function _avisosGuardarEdicion(id) {
       } catch (_) {}
     }
 
-    await rAvisos();
+    await rNovedades();
   } catch (e) {
     alert('No se pudo guardar. Intentá de nuevo.');
     if (btn) { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
@@ -634,8 +681,7 @@ async function _avisosGuardarComunicadoEdicion(id) {
   try {
     const { error } = await sb.from('comunicados').update({ titulo, cuerpo, curso_id: cursoId }).eq('id', id);
     if (error) throw error;
-    await rAvisos();
-    _avisosTab('comunicados');
+    await rComunicados();
   } catch (e) {
     alert('No se pudo guardar. Intentá de nuevo.');
     if (btn) { btn.disabled = false; btn.textContent = 'Guardar cambios'; }
@@ -670,7 +716,7 @@ async function _avisosEliminar(id) {
       if (m) paths.push(m[1]);
     }
     if (paths.length) await sb.storage.from('comunicados').remove(paths).catch(() => {});
-    await rAvisos();
+    await rNovedades();
   } catch (e) {
     alert('No se pudo eliminar. Intentá de nuevo.');
   }
@@ -689,8 +735,7 @@ async function _avisosEliminarComunicadoGrupo(ids) {
   try {
     const { error } = await sb.from('comunicados').delete().in('id', ids);
     if (error) throw error;
-    await rAvisos();
-    _avisosTab('comunicados');
+    await rComunicados();
   } catch (e) {
     alert('No se pudo eliminar. Intentá de nuevo.');
   }
