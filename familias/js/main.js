@@ -11,6 +11,7 @@ const NAV_ITEMS = [
     id: 'inicio', label: 'Inicio',
     svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`
   },
+  { section: 'Portal Familiar' },
   {
     id: 'novedades', label: 'Novedades',
     svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`
@@ -19,6 +20,11 @@ const NAV_ITEMS = [
     id: 'comunicados', label: 'Comunicados', badge: true,
     svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>`
   },
+  {
+    id: 'mensajes', label: 'Mensajes', badge: 'msg',
+    svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`
+  },
+  { section: 'Vida Escolar' },
   {
     id: 'seguimiento', label: 'Seguimiento',
     svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>`
@@ -30,10 +36,6 @@ const NAV_ITEMS = [
   {
     id: 'convocatorias', label: 'Convocatorias', badge: 'conv',
     svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`
-  },
-  {
-    id: 'mensajes', label: 'Mensajes', badge: 'msg',
-    svg: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`
   },
 ];
 
@@ -140,6 +142,9 @@ function renderSidebarNav() {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
   nav.innerHTML = NAV_ITEMS.map(item => {
+    if (item.section) {
+      return `<div class="sidebar-nav-section">${item.section}</div>`;
+    }
     const badgeCount = item.badge === 'conv' ? CONV_NOTIF_COUNT : item.badge === 'msg' ? MSG_UNREAD_COUNT : UNREAD_COUNT;
     const badge = item.badge && badgeCount > 0
       ? `<span class="nav-badge" data-page="${item.id}">${badgeCount > 9 ? '9+' : badgeCount}</span>`

@@ -1259,7 +1259,7 @@ async function _tabMensajes(c) {
   const p = legPermisos();
 
   const { data, error } = await sb.from('mensajes_familia')
-    .select('id,enviado_por_id,enviado_por_tipo,cuerpo,leido_familia,leido_institucion,requiere_respuesta,created_at,remitente:enviado_por_id(nombre_completo)')
+    .select('id,enviado_por_id,enviado_por_tipo,parent_id,cuerpo,leido_familia,leido_institucion,requiere_respuesta,created_at,remitente:enviado_por_id(nombre_completo)')
     .eq('alumno_id', alumnoId)
     .order('created_at', { ascending: true });
 
@@ -1279,9 +1279,7 @@ async function _tabMensajes(c) {
     sinLeer.forEach(m => { m.leido_institucion = true; });
   }
 
-  const bubbles = mensajes.length
-    ? mensajes.map(_msgFamBubble).join('')
-    : '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Todavía no hay mensajes con la familia.</div>';
+  const bubbles = _renderMsgFamThread(mensajes);
 
   c.innerHTML = `
     <div class="card" style="margin-top:12px">
@@ -1299,6 +1297,23 @@ async function _tabMensajes(c) {
 
   const thread = document.getElementById('msgfam-thread');
   if (thread) thread.scrollTop = thread.scrollHeight;
+}
+
+function _renderMsgFamThread(mensajes) {
+  if (!mensajes.length) return '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Todavía no hay mensajes con la familia.</div>';
+  const roots = mensajes.filter(m => !m.parent_id);
+  const childMap = {};
+  mensajes.filter(m => m.parent_id).forEach(m => {
+    if (!childMap[m.parent_id]) childMap[m.parent_id] = [];
+    childMap[m.parent_id].push(m);
+  });
+  return roots.map(m => {
+    const replies = childMap[m.id] || [];
+    const repliesHtml = replies.length
+      ? `<div class="msgfam-replies">${replies.map(_msgFamBubble).join('')}</div>`
+      : '';
+    return _msgFamBubble(m) + repliesHtml;
+  }).join('');
 }
 
 function _msgFamBubble(m) {
@@ -1389,6 +1404,7 @@ function inyectarEstilosLeg() {
     .msgfam-fecha{font-size:10px;color:var(--txt3)}
     .msgfam-cuerpo{font-size:12px;line-height:1.45;color:var(--txt)}
     .msgfam-estado{font-size:9px;color:var(--txt3);margin-top:4px;text-align:right}
+    .msgfam-replies{margin-top:6px;margin-left:12px;border-left:2px solid rgba(34,153,87,0.2);padding-left:10px;display:flex;flex-direction:column;gap:6px}
     @media(max-width:600px){
       .leg-anios-grid,.leg-cursos-grid{grid-template-columns:repeat(2,1fr)}
       .leg-dato-grid{grid-template-columns:1fr}

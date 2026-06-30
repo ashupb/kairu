@@ -29,7 +29,7 @@ async function rMensajes() {
   try {
     const { data, error } = await sb
       .from('mensajes_familia')
-      .select('id, enviado_por_id, enviado_por_tipo, cuerpo, leido_familia, leido_institucion, requiere_respuesta, created_at, remitente:enviado_por_id(nombre_completo, rol)')
+      .select('id, enviado_por_id, enviado_por_tipo, parent_id, cuerpo, leido_familia, leido_institucion, requiere_respuesta, created_at, remitente:enviado_por_id(nombre_completo, rol)')
       .eq('alumno_id', ALUMNO_ACTUAL.id)
       .order('created_at', { ascending: true });
 
@@ -49,9 +49,7 @@ async function rMensajes() {
         </p>
         <div class="card">
           <div class="msg-thread" id="msg-thread">
-            ${_MSG_DATA.length
-              ? _MSG_DATA.map(_msgBubbleFam).join('')
-              : '<p class="empty-msg">Todavía no hay mensajes con la institución.</p>'}
+            ${_renderMsgThread()}
           </div>
         </div>
         <div class="card" id="msg-nuevo-wrap">
@@ -75,6 +73,23 @@ async function rMensajes() {
   }
 }
 
+function _renderMsgThread() {
+  if (!_MSG_DATA.length) return '<p class="empty-msg">Todavía no hay mensajes con la institución.</p>';
+  const roots = _MSG_DATA.filter(m => !m.parent_id);
+  const childMap = {};
+  _MSG_DATA.filter(m => m.parent_id).forEach(m => {
+    if (!childMap[m.parent_id]) childMap[m.parent_id] = [];
+    childMap[m.parent_id].push(m);
+  });
+  return roots.map(m => {
+    const replies = childMap[m.id] || [];
+    const repliesHtml = replies.length
+      ? `<div class="msg-replies">${replies.map(_msgBubbleFam).join('')}</div>`
+      : '';
+    return _msgBubbleFam(m) + repliesHtml;
+  }).join('');
+}
+
 function _msgBubbleFam(m) {
   const esInst = m.enviado_por_tipo === 'institucion';
   const fecha  = fechaRelativa(m.created_at);
@@ -91,7 +106,9 @@ function _msgBubbleFam(m) {
         <p class="msg-cuerpo">${_escMsg(m.cuerpo).replace(/\n/g, '<br>')}</p>
         ${m.requiere_respuesta ? '<span class="badge badge-warning" style="margin-top:6px">Requiere tu respuesta</span>' : ''}
         <div class="msg-acciones">
-          <button class="msg-btn" onclick="_msgResponder('${m.id}')">↩ Responder</button>
+          ${m.requiere_respuesta
+            ? `<button class="msg-btn" onclick="_msgResponder('${m.id}')">↩ Responder</button>`
+            : ''}
           ${m.leido_familia
             ? '<span class="msg-visto-lbl">✓ Marcado como leído</span>'
             : `<button class="msg-btn msg-btn--ghost" onclick="_msgMarcarLeido('${m.id}', this)">👁 Marcar como leído</button>`}
@@ -144,6 +161,7 @@ async function _msgEnviarRespuesta(mensajeId) {
     enviado_por_id:   null,
     enviado_por_tipo: 'familia',
     destinatario_id:  orig.enviado_por_id,
+    parent_id:        mensajeId,
     cuerpo,
   });
   if (error) { alert('No se pudo enviar el mensaje. Intentá de nuevo.'); return; }
