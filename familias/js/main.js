@@ -3,7 +3,8 @@ let CUR_PAGE = 'login';
 let UNREAD_COUNT = 0;
 let CONV_NOTIF_COUNT = 0;
 let MSG_UNREAD_COUNT = 0;
-let _DEEP_LINK_ID = null; // ID del ítem a destacar tras la próxima navegación
+let _DEEP_LINK_ID = null;
+let _BELL_DROPDOWN_ITEMS = [];
 
 // ── Ítems del nav ─────────────────────────────────────────────────
 const NAV_ITEMS = [
@@ -187,24 +188,29 @@ async function fetchConvNotifCount() {
   } catch (_) {}
 }
 
-// ── Campana: solo cuenta comunicados (tipo='comunicado') del curso del alumno ──
+// ── Campana: cuenta comunicados no leídos del alumno activo (curso + nivel) ──
 async function fetchUnreadCount() {
   if (!USUARIO_FAMILIAR || !ALUMNO_ACTUAL) return;
   const cursoId = ALUMNO_ACTUAL.cursos?.id;
-  if (!cursoId) { updateBellBadge(0); return; }
+  const nivel   = ALUMNO_ACTUAL.cursos?.nivel;
+  if (!cursoId) { updateBellBadge(0, []); return; }
 
   try {
+    const nivelFilter = nivel ? `nivel.is.null,nivel.eq.${nivel}` : 'nivel.is.null';
+    const cursoFilter = `curso_id.is.null,curso_id.eq.${cursoId}`;
+
     const { data: todos } = await sb
       .from('comunicados')
-      .select('id')
+      .select('id, titulo, created_at, curso_id, nivel')
       .eq('institucion_id', USUARIO_FAMILIAR.institucion_id)
       .eq('tipo', 'comunicado')
-      .eq('curso_id', cursoId)
+      .or(nivelFilter)
+      .or(cursoFilter)
       .order('created_at', { ascending: false })
       .limit(50);
 
     const ids = (todos || []).map(c => c.id);
-    if (!ids.length) { updateBellBadge(0); return; }
+    if (!ids.length) { updateBellBadge(0, []); return; }
 
     const { data: lecturas } = await sb
       .from('comunicado_lecturas')
@@ -212,28 +218,74 @@ async function fetchUnreadCount() {
       .eq('usuario_id', USUARIO_FAMILIAR.id)
       .in('comunicado_id', ids);
 
-    const leidos = new Set((lecturas || []).map(l => l.comunicado_id));
-    updateBellBadge(ids.filter(id => !leidos.has(id)).length);
+    const leidos  = new Set((lecturas || []).map(l => l.comunicado_id));
+    const noLeidos = (todos || []).filter(c => !leidos.has(c.id));
+    updateBellBadge(noLeidos.length, noLeidos);
   } catch (_) {}
 }
 
-function updateBellBadge(count) {
+function updateBellBadge(count, items) {
   UNREAD_COUNT = count;
+  if (items !== undefined) _BELL_DROPDOWN_ITEMS = items;
 
-  // Re-render nav para mostrar/ocultar badge en "Avisos"
   renderSidebarNav();
   updateSidebarActive(CUR_PAGE);
 
-  // Badge campana en content-topbar (desktop)
   const contentBadge = document.getElementById('content-bell-badge');
   if (contentBadge) {
     contentBadge.textContent = count > 9 ? '9+' : count;
     contentBadge.classList.toggle('visible', count > 0);
   }
 
-  // Punto rojo en mob-topbar (mobile)
   const mobBadge = document.getElementById('mob-bell-badge');
   if (mobBadge) mobBadge.style.display = count > 0 ? 'block' : 'none';
+}
+
+// ── Bell dropdown ─────────────────────────────────────────────────
+function _bellToggleDropdown(event) {
+  event.stopPropagation();
+  const existing = document.getElementById('bell-dropdown');
+  if (existing) { existing.remove(); return; }
+
+  const btn  = event.currentTarget;
+  const rect = btn.getBoundingClientRect();
+
+  const dd = document.createElement('div');
+  dd.id = 'bell-dropdown';
+  dd.className = 'bell-dropdown';
+  dd.style.top   = (rect.bottom + 6) + 'px';
+  dd.style.right = (window.innerWidth - rect.right) + 'px';
+
+  if (!_BELL_DROPDOWN_ITEMS.length) {
+    dd.innerHTML = `<div class="bell-dd-empty">Sin comunicados nuevos</div>`;
+  } else {
+    const items = _BELL_DROPDOWN_ITEMS.slice(0, 5);
+    dd.innerHTML = `
+      <div class="bell-dd-header">Sin leer (${_BELL_DROPDOWN_ITEMS.length})</div>
+      ${items.map(c => `
+        <div class="bell-dd-item" onclick="_bellIrAComunicado('${c.id}')">
+          <div class="bell-dd-titulo">${c.titulo}</div>
+          <div class="bell-dd-fecha">${fechaRelativa(c.created_at)}</div>
+        </div>`).join('')}
+      <div class="bell-dd-footer" onclick="_bellIrAComunicados()">Ver todos los comunicados →</div>`;
+  }
+
+  document.body.appendChild(dd);
+  setTimeout(() => document.addEventListener('click', _bellCloseDropdown, { once: true }), 0);
+}
+
+function _bellCloseDropdown() {
+  document.getElementById('bell-dropdown')?.remove();
+}
+
+function _bellIrAComunicado(id) {
+  _bellCloseDropdown();
+  goPageDeep('comunicados', id);
+}
+
+function _bellIrAComunicados() {
+  _bellCloseDropdown();
+  goPage('comunicados');
 }
 
 // ── Sidebar collapse / expand ─────────────────────────────────────
@@ -306,6 +358,7 @@ function setAlumno(alumnoId) {
   if (!alumno) return;
   ALUMNO_ACTUAL = alumno;
   renderSidebarStudent();
+  fetchUnreadCount();
   if (PAGE_RENDERERS[CUR_PAGE]) PAGE_RENDERERS[CUR_PAGE]();
 }
 
