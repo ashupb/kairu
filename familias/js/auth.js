@@ -48,7 +48,7 @@ async function cargarPerfilFamilia(user) {
       const alumnoIds = vinculos.map(v => v.alumno_id).filter(Boolean);
       const { data: alumnosData } = await sb
         .from('alumnos')
-        .select('id, nombre, apellido, dni, curso_id, activo, cursos(id, nombre, division, nivel)')
+        .select('id, nombre, apellido, dni, curso_id, activo, cursos(id, nombre, division, nivel, preceptor_id, preceptor:preceptor_id(nombre_completo))')
         .in('id', alumnoIds);
       alumnos = (alumnosData || []).map(a => ({
         ...a,

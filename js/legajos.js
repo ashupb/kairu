@@ -44,6 +44,7 @@ function legPermisos() {
     verObsPrivadas:       ['eoe','director_general','directivo_nivel','admin'].includes(r),
     marcarPrivada:        ['eoe','director_general','directivo_nivel','admin'].includes(r),
     subirDocs:            ['director_general','directivo_nivel','admin'].includes(r),
+    enviarMensajeFamilia: ['preceptor','docente','eoe','director_general','directivo_nivel','admin'].includes(r),
   };
 }
 
@@ -85,12 +86,12 @@ async function rLeg() {
       return q;
     };
 
-    const { data, error } = await buildQuery('id,nombre,division,nivel,anio,ciclo_lectivo,created_at')
+    const { data, error } = await buildQuery('id,nombre,division,nivel,anio,ciclo_lectivo,created_at,preceptor_id')
       .order('nivel').order('nombre').order('division');
 
     // Si ciclo_lectivo no existe aún (schema viejo), reintenta sin ese campo
     if (error && (error.code === 'PGRST200' || error.message?.includes('ciclo_lectivo'))) {
-      const { data: d2, error: e2 } = await buildQuery('id,nombre,division,nivel,anio,created_at')
+      const { data: d2, error: e2 } = await buildQuery('id,nombre,division,nivel,anio,created_at,preceptor_id')
         .order('nivel').order('nombre').order('division');
       if (e2) throw e2;
       _legCursosAll = d2 || [];
@@ -298,6 +299,7 @@ const LEG_TABS_BASE = [
   { id:'objetivos',     label:'Objetivos' },
   { id:'eoe',           label:'EOE' },
   { id:'observaciones', label:'Notas' },
+  { id:'mensajes',      label:'Mensajes' },
 ];
 
 function _buildLegTabs() {
@@ -381,6 +383,7 @@ async function _cargarTabLeg(idx) {
     eoe:           _tabEOE,
     observaciones: _tabObservaciones,
     derivaciones:  _tabDerivaciones,
+    mensajes:      _tabMensajes,
   };
   const fn = fns[LEG_TABS[idx].id];
   if (fn) await fn(el);
@@ -1250,6 +1253,94 @@ async function _actualizarDerivacion(derivId) {
   await _tabDerivaciones(document.getElementById('leg-tab-contenido'));
 }
 
+// ── TAB: MENSAJES (canal familia) ─────────────────────
+async function _tabMensajes(c) {
+  const alumnoId = _legAlumnoSel?.id;
+  const p = legPermisos();
+
+  const { data, error } = await sb.from('mensajes_familia')
+    .select('id,enviado_por_id,enviado_por_tipo,cuerpo,leido_familia,leido_institucion,requiere_respuesta,created_at,remitente:enviado_por_id(nombre_completo)')
+    .eq('alumno_id', alumnoId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    c.innerHTML = `<div class="card" style="margin-top:12px"><div class="empty-state">✉<br>No se pudieron cargar los mensajes.</div></div>`;
+    return;
+  }
+
+  const mensajes = data || [];
+
+  // Marcar como leídos (lado institución) los mensajes de la familia pendientes
+  const sinLeer = mensajes.filter(m => m.enviado_por_tipo === 'familia' && !m.leido_institucion);
+  if (sinLeer.length) {
+    await sb.from('mensajes_familia')
+      .update({ leido_institucion: true, leido_institucion_en: new Date().toISOString() })
+      .in('id', sinLeer.map(m => m.id));
+    sinLeer.forEach(m => { m.leido_institucion = true; });
+  }
+
+  const bubbles = mensajes.length
+    ? mensajes.map(_msgFamBubble).join('')
+    : '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Todavía no hay mensajes con la familia.</div>';
+
+  c.innerHTML = `
+    <div class="card" style="margin-top:12px">
+      <div class="sec-lb" style="margin-bottom:12px">Mensajes con la familia</div>
+      <div class="msgfam-thread" id="msgfam-thread">${bubbles}</div>
+      ${p.enviarMensajeFamilia ? `
+      <div style="margin-top:14px;border-top:1px solid var(--brd);padding-top:12px">
+        <textarea id="msgfam-cuerpo" rows="3" placeholder="Escribir un mensaje a la familia..." style="margin-bottom:8px"></textarea>
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txt2);margin-bottom:10px">
+          <input type="checkbox" id="msgfam-requiere"> Requiere respuesta de la familia
+        </label>
+        <button class="btn-p" style="font-size:11px" onclick="_enviarMsgFam('${alumnoId}')">Enviar mensaje</button>
+      </div>` : ''}
+    </div>`;
+
+  const thread = document.getElementById('msgfam-thread');
+  if (thread) thread.scrollTop = thread.scrollHeight;
+}
+
+function _msgFamBubble(m) {
+  const esInst = m.enviado_por_tipo === 'institucion';
+  const autor  = esInst ? (m.remitente?.nombre_completo || 'Institución') : 'Familia';
+  const fecha  = new Date(m.created_at).toLocaleString('es-AR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+  const estado = esInst
+    ? (m.leido_familia ? '✓✓ Visto por la familia' : '✓ Enviado')
+    : (m.leido_institucion ? 'Leído' : 'Nuevo');
+
+  return `
+    <div class="msgfam-bubble ${esInst ? 'msgfam-bubble--inst' : 'msgfam-bubble--fam'}">
+      <div class="msgfam-meta">
+        <span class="msgfam-autor">${autor}</span>
+        <span class="msgfam-fecha">${fecha}</span>
+      </div>
+      <p class="msgfam-cuerpo">${_esc(m.cuerpo).replace(/\n/g, '<br>')}</p>
+      ${m.requiere_respuesta ? '<span class="tag ta" style="font-size:9px;margin-top:4px;display:inline-block">Requiere respuesta</span>' : ''}
+      <div class="msgfam-estado">${estado}</div>
+    </div>`;
+}
+
+async function _enviarMsgFam(alumnoId) {
+  const ta = document.getElementById('msgfam-cuerpo');
+  const cuerpo = ta?.value.trim();
+  if (!cuerpo) { alert('Escribí un mensaje antes de enviar.'); return; }
+  const requiere = document.getElementById('msgfam-requiere')?.checked || false;
+
+  const { error } = await sb.from('mensajes_familia').insert({
+    institucion_id:      USUARIO_ACTUAL.institucion_id,
+    alumno_id:           alumnoId,
+    enviado_por_id:      USUARIO_ACTUAL.id,
+    enviado_por_tipo:    'institucion',
+    destinatario_id:     null,
+    cuerpo,
+    requiere_respuesta:  requiere,
+  });
+
+  if (error) { alert('Error al enviar: ' + error.message); return; }
+  await _tabMensajes(document.getElementById('leg-tab-contenido'));
+}
+
 // ── ESTILOS ───────────────────────────────────────────
 function inyectarEstilosLeg() {
   if (document.getElementById('leg-styles')) return;
@@ -1289,6 +1380,15 @@ function inyectarEstilosLeg() {
     .nota-risk{background:var(--rojo-l);color:var(--rojo)}
     .btn-ghost{background:none;border:none;cursor:pointer;color:var(--verde);font-size:12px;font-weight:500;padding:3px 8px;border-radius:6px;font-family:'DM Sans',sans-serif;transition:background .12s}
     .btn-ghost:hover{background:var(--verde-l)}
+    .msgfam-thread{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;padding-right:2px}
+    .msgfam-bubble{max-width:80%;border-radius:var(--rad);padding:8px 12px}
+    .msgfam-bubble--inst{align-self:flex-end;background:var(--verde-l);border:1px solid transparent}
+    .msgfam-bubble--fam{align-self:flex-start;background:var(--surf2);border:1px solid var(--brd)}
+    .msgfam-meta{display:flex;justify-content:space-between;gap:10px;margin-bottom:3px}
+    .msgfam-autor{font-size:10px;font-weight:700;color:var(--txt2)}
+    .msgfam-fecha{font-size:10px;color:var(--txt3)}
+    .msgfam-cuerpo{font-size:12px;line-height:1.45;color:var(--txt)}
+    .msgfam-estado{font-size:9px;color:var(--txt3);margin-top:4px;text-align:right}
     @media(max-width:600px){
       .leg-anios-grid,.leg-cursos-grid{grid-template-columns:repeat(2,1fr)}
       .leg-dato-grid{grid-template-columns:1fr}

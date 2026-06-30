@@ -130,6 +130,7 @@ El rol `eoe` tiene acceso multi-nivel (igual que `director_general`) en asistenc
 | `tipos_instancia_evaluativa` | Tipos de instancia evaluativa configurables por institución (`nombre`, `activo`, `es_recuperatorio`, `orden`). Gestionados desde configuracion.js. **Nota**: `instancias_evaluativas.tipo_id` apunta a esta tabla (FK corregida en v20). La tabla legacy `tipos_evaluacion` queda en desuso. |
 | `instancias_evaluativas` | Instancias evaluativas de un curso × materia × período. FK `tipo_id` → `tipos_instancia_evaluativa`. Tiene columna denormalizada `es_recuperatorio`. |
 | `tareas_usuario` | Tareas personales por usuario. RLS: `usuario_id = auth.uid()`. Campos: `texto`, `fecha_vencimiento DATE`, `estado` ('pendiente'/'completada'), `observacion`, `contexto_tipo` ('alumno'/'problematica'/'general'), `contexto_id UUID`, `contexto_label`. SQL: `migrations/tareas_usuario.sql`. Gestionadas desde `js/tareas.js`. |
+| `mensajes_familia` | Canal directo bidireccional institución ↔ familia (uno por alumno, hilo cronológico). Reemplaza cuaderno de comunicaciones/WhatsApp. Campos: `enviado_por_id`/`enviado_por_tipo` ('institucion'/'familia'), `destinatario_id` (a quién va dirigido un mensaje de familia — ver routing abajo), `cuerpo`, `leido_familia`/`leido_institucion` (acuse de recibo explícito, no implícito al abrir), `requiere_respuesta`. SQL: `migrations/migration_v34_mensajes_familia.sql`. Lado institución: tab "Mensajes" en legajo de alumno (`js/legajos.js` → `_tabMensajes`). Lado familia: `familias/js/mensajes.js` (`rMensajes()`). |
 
 ### config_asistencia — columnas relevantes
 
@@ -179,6 +180,13 @@ Varios módulos usan una función `detectarMigracion()` que cachea si ciertas co
 
 ### Carga de scripts
 El orden de `<script>` en `index.html` importa porque todo es global. `config.js` va primero (define `sb`), `main.js` y `auth.js` después, luego los módulos.
+
+### Mensajes familia — routing de destinatario
+La familia nunca elige a quién le escribe; el routing lo resuelve la app:
+- **Institución → familia**: cualquier actor con acceso al legajo puede escribir (`enviado_por_id` = quien escribe).
+- **Familia → mensaje nuevo**: siempre va al `preceptor_id` del curso del alumno (`cursos.preceptor_id`). Si no hay preceptor asignado, no se puede iniciar conversación.
+- **Familia → respuesta a un mensaje puntual**: va dirigido a quien envió ese mensaje (`destinatario_id` = `enviado_por_id` del mensaje original), no necesariamente al preceptor.
+- El acuse de recibo (`leido_familia`/`leido_institucion`) es explícito: la familia debe tocar "Marcar como leído" o "Responder" — abrir el hilo no marca como leído automáticamente. Del lado institución, abrir el tab "Mensajes" del legajo sí marca como leídos los mensajes pendientes de la familia (comportamiento de bandeja estándar).
 
 ## Integración de IA
 
