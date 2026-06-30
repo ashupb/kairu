@@ -434,6 +434,197 @@ async function rDashDirector() {
   _cargarAlertasAcadDash(instId);
 }
 
+// ── Helpers: Estado académico del nivel (directivo_nivel) ────────────────
+function _cuatrimestreInfo(hoy, cierresData, anio) {
+  const c1 = (cierresData || []).some(c => c.tipo === 'cuatrimestre_1');
+  const c2 = (cierresData || []).some(c => c.tipo === 'cuatrimestre_2');
+  const q1s = `${anio}-03-01`, q1e = `${anio}-06-30`;
+  const q2s = `${anio}-07-21`, q2e = `${anio}-11-28`;
+  let cuatri, inicio, fin, cerrado;
+  if (hoy < q2s && !c1) { cuatri = 1; inicio = q1s; fin = q1e; cerrado = false; }
+  else if (c1 && !c2)    { cuatri = 2; inicio = q2s; fin = q2e; cerrado = false; }
+  else if (c2)           { cuatri = 2; inicio = q2s; fin = q2e; cerrado = true;  }
+  else                   { cuatri = 2; inicio = q2s; fin = q2e; cerrado = false; }
+  const dHoy = new Date(hoy + 'T12:00:00');
+  const dIni = new Date(inicio + 'T12:00:00');
+  const dFin = new Date(fin + 'T12:00:00');
+  const total = Math.max(1, (dFin - dIni) / 86400000);
+  const elapsed = Math.min(total, Math.max(0, (dHoy - dIni) / 86400000));
+  return {
+    cuatri, cerrado, c1, c2,
+    pct: Math.round(elapsed / total * 100),
+    restantes: Math.max(0, Math.round((dFin - dHoy) / 86400000)),
+  };
+}
+
+function _asistenciaMensual(asistData, anio) {
+  const MESES = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const meses = {};
+  (asistData || []).forEach(r => {
+    const [y, m] = r.fecha.split('-');
+    if (parseInt(y) !== anio) return;
+    const key = `${y}-${m}`;
+    if (!meses[key]) meses[key] = { total: 0, inasist: 0, mes: parseInt(m) };
+    meses[key].total++;
+    if (r.estado === 'ausente' || r.estado === 'justificado') meses[key].inasist++;
+  });
+  return Object.entries(meses)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, d]) => ({ key, label: MESES[d.mes], pct: d.total > 0 ? Math.round(d.inasist / d.total * 100) : 0 }));
+}
+
+function _califEstadoNivel(califs, instancias, asignaciones, cursosNivel) {
+  const instMap = {};
+  (instancias || []).filter(i => !i.es_recuperatorio).forEach(i => {
+    instMap[i.id] = { curso_id: i.curso_id, materia_id: i.materia_id, nombre: i.materias?.nombre || '—' };
+  });
+  const cursoNomMap = {};
+  (cursosNivel || []).forEach(c => { cursoNomMap[c.id] = `${c.nombre}${c.division || ''}`; });
+  const porMat = {}, porCurso = {};
+  (califs || []).forEach(c => {
+    if (!c.nota || c.ausente) return;
+    const inst = instMap[c.instancia_id];
+    if (!inst) return;
+    if (!porMat[inst.materia_id]) porMat[inst.materia_id] = { nombre: inst.nombre, notas: [] };
+    porMat[inst.materia_id].notas.push(c.nota);
+    if (!porCurso[inst.curso_id]) porCurso[inst.curso_id] = { nombre: cursoNomMap[inst.curso_id] || '—', notas: [] };
+    porCurso[inst.curso_id].notas.push(c.nota);
+  });
+  const avg = n => n.length ? +(n.reduce((a, b) => a + b, 0) / n.length).toFixed(1) : null;
+  const materiasArr = Object.entries(porMat)
+    .map(([id, d]) => ({ id, nombre: d.nombre, promedio: avg(d.notas) }))
+    .filter(m => m.promedio !== null).sort((a, b) => a.promedio - b.promedio);
+  const cursosArr = Object.entries(porCurso)
+    .map(([id, d]) => ({ id, nombre: d.nombre, promedio: avg(d.notas) }))
+    .filter(c => c.promedio !== null).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+  const totalCombos = new Set((asignaciones || []).map(a => `${a.materia_id}_${a.curso_id}`)).size;
+  const conNotas = new Set(
+    (califs || []).filter(c => c.nota && !c.ausente).map(c => {
+      const inst = instMap[c.instancia_id];
+      return inst ? `${inst.materia_id}_${inst.curso_id}` : null;
+    }).filter(Boolean)
+  ).size;
+  return { materiasArr, peorMateria: materiasArr[0] || null, cursosArr, totalCombos, conNotas };
+}
+
+function renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, notaMinima, tieneCalifs) {
+  const { cuatri, cerrado, pct, restantes, c1, c2 } = cuatriInfo;
+  const cuatriClr = cerrado ? 'var(--verde)' : pct >= 80 ? 'var(--rojo)' : pct >= 50 ? 'var(--ambar)' : 'var(--azul)';
+
+  const cuatriCard = `
+    <div class="card" style="margin-bottom:12px;padding:14px;cursor:pointer" onclick="goPage('notas')">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-size:12px;font-weight:700">Cuatrimestre ${cuatri}${cerrado ? ' — cerrado ✓' : ' en curso'}</div>
+          <div style="font-size:10px;color:${!cerrado && restantes <= 14 ? 'var(--rojo)' : 'var(--txt2)'};margin-top:2px">
+            ${cerrado
+              ? (c2 ? 'Año lectivo finalizado' : 'C1 cerrado — iniciando C2')
+              : restantes === 0 ? '¡Fecha de cierre!'
+              : `${restantes} días restantes aprox.`}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:26px;font-weight:800;color:${cuatriClr};font-family:'DM Sans',sans-serif;line-height:1">${pct}%</div>
+          <div style="font-size:9px;color:var(--txt2)">transcurrido</div>
+        </div>
+      </div>
+      <div style="background:var(--gris-l);border-radius:4px;height:6px">
+        <div style="width:${pct}%;background:${cuatriClr};height:6px;border-radius:4px;transition:width .4s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:9px;color:var(--txt3)">
+        <span>${cuatri === 1 ? '1 Mar' : '21 Jul'}</span>
+        <span style="color:var(--verde)">→ Ver calificaciones</span>
+        <span>${cuatri === 1 ? '30 Jun' : '28 Nov'}</span>
+      </div>
+    </div>`;
+
+  let califCard = '';
+  if (nivel !== 'inicial') {
+    if (!tieneCalifs) {
+      califCard = `
+        <div class="card" style="margin-bottom:12px;padding:14px">
+          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Calificaciones</div>
+          <div style="font-size:11px;color:var(--txt2)">Sin notas cargadas aún para este cuatrimestre.</div>
+          <button class="btn-ghost" onclick="goPage('notas')" style="margin-top:8px;font-size:11px">Ir a calificaciones →</button>
+        </div>`;
+    } else {
+      const { peorMateria, cursosArr, totalCombos, conNotas } = califStats;
+      const cobPct = totalCombos > 0 ? Math.round(conNotas / totalCombos * 100) : 0;
+      const cobClr = cobPct >= 80 ? 'var(--verde)' : cobPct >= 40 ? 'var(--ambar)' : 'var(--rojo)';
+      const peorClr = peorMateria && notaMinima && peorMateria.promedio < notaMinima ? 'var(--rojo)' : 'var(--ambar)';
+
+      califCard = `
+        <div class="card" style="margin-bottom:12px;padding:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div style="font-size:12px;font-weight:700">Calificaciones</div>
+            <button class="btn-ghost" onclick="goPage('notas')" style="font-size:10px">Ver todo →</button>
+          </div>
+          <div style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+              <div style="font-size:10px;color:var(--txt2)">Cobertura — materias con notas cargadas</div>
+              <div style="font-size:11px;font-weight:700;color:${cobClr}">${cobPct}%</div>
+            </div>
+            <div style="background:var(--gris-l);border-radius:4px;height:5px">
+              <div style="width:${cobPct}%;background:${cobClr};height:5px;border-radius:4px"></div>
+            </div>
+            <div style="font-size:9px;color:var(--txt2);margin-top:3px">${conNotas} de ${totalCombos} combinaciones materia-curso</div>
+          </div>
+          ${peorMateria ? `
+          <div style="background:${peorClr === 'var(--rojo)' ? 'var(--rojo-l)' : 'var(--amb-l)'};border-radius:var(--rad);padding:10px 12px;margin-bottom:10px;cursor:pointer" onclick="goPage('notas')">
+            <div style="font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Promedio más bajo</div>
+            <div style="font-size:13px;font-weight:700;color:${peorClr}">${peorMateria.nombre}</div>
+            <div style="font-size:11px;color:${peorClr};font-weight:600">${peorMateria.promedio} prom.${notaMinima ? ` · mín. ${notaMinima}` : ''}</div>
+          </div>` : ''}
+          ${cursosArr.length ? `
+          <div>
+            <div style="font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Promedio por curso</div>
+            ${cursosArr.map(c => {
+              const cClr = notaMinima && c.promedio < notaMinima ? 'var(--rojo)' : notaMinima && c.promedio < notaMinima + 1 ? 'var(--ambar)' : 'var(--verde)';
+              return `
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--brd);cursor:pointer" onclick="goPage('notas')">
+                  <div style="font-size:11px">${c.nombre}</div>
+                  <div style="font-size:12px;font-weight:700;color:${cClr}">${c.promedio}</div>
+                </div>`;
+            }).join('')}
+          </div>` : ''}
+        </div>`;
+    }
+  }
+
+  let asistCard = '';
+  if (mesesAsist.length > 0) {
+    const maxPct = Math.max(...mesesAsist.map(m => m.pct), 1);
+    const peorMes = mesesAsist.reduce((a, b) => b.pct > a.pct ? b : a, mesesAsist[0]);
+    asistCard = `
+      <div class="card" style="margin-bottom:12px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div style="font-size:12px;font-weight:700">Inasistencias por mes</div>
+          <button class="btn-ghost" onclick="goPage('asist')" style="font-size:10px">Ver asistencia →</button>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:6px;height:72px;margin-bottom:8px">
+          ${mesesAsist.map(m => {
+            const h = Math.max(4, Math.round(m.pct / maxPct * 56));
+            const esPeor = m.key === peorMes.key && m.pct > 0;
+            const barClr = esPeor ? 'var(--rojo)' : m.pct > 12 ? 'var(--ambar)' : 'var(--azul)';
+            return `
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0">
+                <div style="font-size:8px;color:${barClr};font-weight:${esPeor ? '700' : '400'}">${m.pct}%</div>
+                <div style="width:100%;height:${h}px;background:${barClr};border-radius:3px 3px 0 0;opacity:${esPeor ? 1 : 0.75}"></div>
+                <div style="font-size:9px;color:${esPeor ? barClr : 'var(--txt2)'};font-weight:${esPeor ? '700' : '400'}">${m.label}</div>
+              </div>`;
+          }).join('')}
+        </div>
+        ${peorMes.pct > 0 ? `<div style="font-size:10px;color:var(--txt2)">Peor mes: <span style="color:var(--rojo);font-weight:600">${peorMes.label} — ${peorMes.pct}% de inasistencias</span></div>` : ''}
+      </div>`;
+  }
+
+  return `
+    <div class="sec-lb" style="margin-top:20px;margin-bottom:10px">Estado académico del nivel</div>
+    ${cuatriCard}
+    ${califCard}
+    ${asistCard}`;
+}
+
 // ─── DIRECTIVO DE NIVEL ───────────────────────────────
 async function rDashDirectivo() {
   showLoading('dash');
@@ -441,12 +632,16 @@ async function rDashDirectivo() {
   const miId   = USUARIO_ACTUAL.id;
   const nivel  = USUARIO_ACTUAL.nivel || 'secundario';
   const sem    = _semanaActual();
+  const hoy    = sem.hoy;
+  const anio   = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
 
   const { data: _cursosNivel } = await sb.from('cursos')
-    .select('id').eq('institucion_id', instId).eq('nivel', nivel);
+    .select('id, nombre, division').eq('institucion_id', instId).eq('nivel', nivel);
   const cursoIdsNivel = (_cursosNivel || []).map(c => c.id);
+  const cursosNivel   = _cursosNivel || [];
 
-  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes, suplenciasRes, asistHoyRes] = await Promise.all([
+  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes, suplenciasRes, asistHoyRes,
+         cierresRes, asistAnioRes, instanciasRes, asignNivelRes, configCalifRes] = await Promise.all([
     sb.from('problematicas')
       .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
       .eq('institucion_id', instId)
@@ -478,8 +673,20 @@ async function rDashDirectivo() {
     sb.from('usuarios').select('id', { count:'exact', head:true })
       .eq('institucion_id', instId).eq('nivel', nivel).eq('en_licencia', true),
     cursoIdsNivel.length
-      ? sb.from('asistencia').select('estado,curso_id').in('curso_id', cursoIdsNivel).eq('fecha', sem.hoy).is('hora_clase', null)
+      ? sb.from('asistencia').select('estado,curso_id').in('curso_id', cursoIdsNivel).eq('fecha', hoy).is('hora_clase', null)
       : Promise.resolve({ data: [] }),
+    // Estado académico
+    sb.from('cierres_periodo').select('tipo').eq('institucion_id', instId).in('tipo', ['cuatrimestre_1','cuatrimestre_2']),
+    cursoIdsNivel.length
+      ? sb.from('asistencia').select('fecha,estado').in('curso_id', cursoIdsNivel).is('hora_clase', null).gte('fecha', `${anio}-01-01`).lte('fecha', hoy)
+      : Promise.resolve({ data: [] }),
+    cursoIdsNivel.length
+      ? sb.from('instancias_evaluativas').select('id,curso_id,materia_id,es_recuperatorio,materias(nombre)').in('curso_id', cursoIdsNivel)
+      : Promise.resolve({ data: [] }),
+    cursoIdsNivel.length
+      ? sb.from('asignaciones').select('materia_id,curso_id').in('curso_id', cursoIdsNivel).eq('anio_lectivo', anio)
+      : Promise.resolve({ data: [] }),
+    sb.from('config_asistencia').select('nota_minima').eq('institucion_id', instId).eq('nivel', nivel).maybeSingle(),
   ]);
 
   const probs          = probRes.data    || [];
@@ -501,8 +708,8 @@ async function rDashDirectivo() {
     : 0;
   const asistClrDir = pctAsistDir >= 85 ? 'var(--verde)' : pctAsistDir >= 70 ? 'var(--ambar)' : 'var(--rojo)';
   const cursosConListaDir = new Set(asistHoyDir.map(a => a.curso_id).filter(Boolean)).size;
-  const listasPendDir = esFechaHabil(sem.hoy) ? Math.max(0, cursoIdsNivel.length - cursosConListaDir) : 0;
-  const asistCardDir = !esFechaHabil(sem.hoy) ? `
+  const listasPendDir = esFechaHabil(hoy) ? Math.max(0, cursoIdsNivel.length - cursosConListaDir) : 0;
+  const asistCardDir = !esFechaHabil(hoy) ? `
     <div class="card" style="margin-bottom:14px;border-left:4px solid var(--gris)">
       <div style="font-size:12px;color:var(--txt2)">📋 Asistencia hoy — Día no lectivo</div>
     </div>` : asistHoyDir.length > 0 ? `
@@ -526,6 +733,27 @@ async function rDashDirectivo() {
       <div style="font-size:12px;color:var(--txt2)">📋 Asistencia hoy — Sin registros todavía${cursoIdsNivel.length > 0 ? ` · ${cursoIdsNivel.length} listas pendientes` : ''}</div>
     </div>`;
 
+  // ── Estado académico: calificaciones (fetch secuencial) ──
+  const cierres    = cierresRes.data    || [];
+  const asistAnio  = asistAnioRes.data  || [];
+  const instancias = instanciasRes.data || [];
+  const asignNivel = asignNivelRes.data || [];
+  const notaMinima = configCalifRes?.data?.nota_minima ?? null;
+
+  const instanciaIds = instancias.filter(i => !i.es_recuperatorio).map(i => i.id);
+  let califs = [];
+  if (instanciaIds.length && nivel !== 'inicial') {
+    const { data: califData } = await sb.from('calificaciones')
+      .select('nota, instancia_id, ausente')
+      .in('instancia_id', instanciaIds)
+      .not('nota', 'is', null);
+    califs = (califData || []).filter(c => !c.ausente);
+  }
+
+  const cuatriInfo = _cuatrimestreInfo(hoy, cierres, anio);
+  const mesesAsist = _asistenciaMensual(asistAnio, anio);
+  const califStats = nivel !== 'inicial' ? _califEstadoNivel(califs, instancias, asignNivel, cursosNivel) : null;
+
   const nc = NIVEL_CONFIG[nivel] || NIVEL_CONFIG.todos;
   const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
 
@@ -542,9 +770,10 @@ async function rDashDirectivo() {
       <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probsNivel.length}</div><div class="mc-l">SITUACIONES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
 
-    ${renderProximasActividades(eventosSem, sem.hoy, nivel)}
+    ${renderProximasActividades(eventosSem, hoy, nivel)}
     ${renderAlertasProb(alertas)}
     ${renderPendientesRespuesta(pendientes)}
+    ${renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, notaMinima, califs.length > 0)}
     ${renderObjetivosStrip(objetivos)}
 
     <div class="dash-cols">
