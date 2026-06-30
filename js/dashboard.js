@@ -605,7 +605,8 @@ function renderAlertasCruzadasNivel(alertas) {
         <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:${a.bg};border-left:3px solid ${a.clr};border-radius:var(--rad);margin-bottom:7px;cursor:pointer" onclick="goPage('${a.goPage}')">
           <div style="flex:1;min-width:0">
             <div style="font-size:12px;font-weight:600;color:${a.clr}">${a.titulo}</div>
-            <div style="font-size:11px;color:var(--txt2);margin-top:2px">${a.subtexto}</div>
+            ${a.subtexto ? `<div style="font-size:11px;color:var(--txt2);margin-top:2px">${a.subtexto}</div>` : ''}
+            ${a.items?.length ? `<div style="margin-top:5px">${a.items.map(item => `<div style="font-size:10px;color:var(--txt2);line-height:1.7">· ${item}</div>`).join('')}</div>` : ''}
           </div>
           <div style="font-size:12px;color:${a.clr};flex-shrink:0;padding-top:2px">→</div>
         </div>`).join('')}
@@ -836,13 +837,17 @@ async function rDashDirectivo() {
       return conds >= 2;
     });
     if (alumnosEnRiesgo.length) {
-      const prim = alumnosEnRiesgo[0];
-      const cursoNom   = cursosNivel.find(c => c.id === prim.curso_id);
-      const cursoLabel = cursoNom ? `${cursoNom.nombre}${cursoNom.division||''}` : '';
+      const alumnosItems = alumnosEnRiesgo.slice(0, 8).map(al => {
+        const c = cursosNivel.find(c => c.id === al.curso_id);
+        const cn = c ? `${c.nombre}${c.division||''}` : '';
+        return `${al.apellido}, ${al.nombre}${cn?' · '+cn:''}`;
+      });
+      if (alumnosEnRiesgo.length > 8) alumnosItems.push(`…y ${alumnosEnRiesgo.length - 8} más`);
       alertasCruzadas.push({
         clr:'var(--rojo)', bg:'var(--rojo-l)',
         titulo: `${alumnosEnRiesgo.length} alumno${alumnosEnRiesgo.length>1?'s':''} con múltiples indicadores de riesgo`,
-        subtexto: `${prim.apellido}, ${prim.nombre}${cursoLabel?' · '+cursoLabel:''}${alumnosEnRiesgo.length>1?` y ${alumnosEnRiesgo.length-1} más`:''}`,
+        subtexto: null,
+        items: alumnosItems,
         goPage: 'leg',
       });
     }
@@ -905,7 +910,11 @@ async function rDashDirectivo() {
       ${esDiaHabil
         ? `<div style="font-size:9px;color:var(--txt2);margin-top:4px;line-height:1.6">${asistCnt.presente} pres · ${asistCnt.ausente} aus${asistCnt.tardanza+asistCnt.media_falta?' · '+(asistCnt.tardanza+asistCnt.media_falta)+' tard':''}</div>`
         : `<div style="font-size:9px;color:var(--txt3);margin-top:4px">Día no lectivo</div>`}
-      ${listasPend > 0 ? `<div style="font-size:9px;color:var(--ambar);margin-top:2px">${listasPend} lista${listasPend>1?'s':''} pendiente${listasPend>1?'s':''}</div>` : ''}
+      ${esDiaHabil
+        ? listasPend === 0
+          ? `<div style="font-size:9px;color:var(--verde-m);margin-top:2px;font-weight:600">✓ listas al día</div>`
+          : `<div style="font-size:9px;color:var(--ambar);margin-top:2px">Faltan ${listasPend} de ${cursoIdsNivel.length} listas</div>`
+        : ''}
       <div style="font-size:9px;color:var(--verde);margin-top:5px;font-weight:600">Ver →</div>
     </div>`;
 
@@ -918,8 +927,9 @@ async function rDashDirectivo() {
     </div>` : `
     <div class="mc" style="cursor:pointer;border-top:3px solid ${cobClr}" onclick="goPage('notas')">
       <div class="mc-v" style="color:${cobClr};font-size:${totalCombos>=10?'22px':'28px'}">${conNotas}/${totalCombos}</div>
-      <div class="mc-l">NOTAS CARGADAS</div>
-      <div style="font-size:9px;color:${cuatriInfo.restantes<=14?'var(--rojo)':'var(--txt2)'};margin-top:4px">C${cuatriInfo.cuatri} · ${cuatriInfo.cerrado?'cerrado ✓':cuatriInfo.restantes+' días'}</div>
+      <div class="mc-l">COBERTURA DE NOTAS</div>
+      <div style="font-size:9px;color:var(--txt3);margin-top:2px">mat-cursos con ≥1 nota · C${cuatriInfo.cuatri}</div>
+      <div style="font-size:9px;color:${cuatriInfo.restantes<=14?'var(--rojo)':'var(--txt2)'};margin-top:2px">${cuatriInfo.cerrado?'Cuatrimestre cerrado ✓':cuatriInfo.restantes+' días para el cierre'}</div>
       <div style="font-size:9px;color:var(--verde);margin-top:5px;font-weight:600">Ver →</div>
     </div>`;
 
