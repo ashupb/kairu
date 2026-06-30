@@ -7,7 +7,9 @@ const NAV_CONFIG = {
     { sec: 'General' },
     { id:'dash',    icon:'⌂',  label:'Mi Día' },
     { id:'agenda',  icon:'▦',  label:'Agenda' },
-    { id:'avisos',  icon:'📢', label:'Portal familiar' },
+    { sec: 'Portal familiar' },
+    { id:'avisos',  icon:'📢', label:'Comunicados' },
+    { id:'msgfam',  icon:'✉',  label:'Mensajes', badge: true },
     { sec: 'Gestión institucional' },
     { id:'prob',    icon:'△',  label:'Problemáticas' },
     { id:'obj',     icon:'◎',  label:'Objetivos' },
@@ -24,7 +26,9 @@ const NAV_CONFIG = {
     { sec: 'General' },
     { id:'dash',    icon:'⌂',  label:'Mi Día' },
     { id:'agenda',  icon:'▦',  label:'Agenda' },
-    { id:'avisos',  icon:'📢', label:'Portal familiar' },
+    { sec: 'Portal familiar' },
+    { id:'avisos',  icon:'📢', label:'Comunicados' },
+    { id:'msgfam',  icon:'✉',  label:'Mensajes', badge: true },
     { sec: 'Gestión' },
     { id:'prob',    icon:'△',  label:'Problemáticas' },
     { id:'obj',     icon:'◎',  label:'Objetivos' },
@@ -48,11 +52,15 @@ const NAV_CONFIG = {
     { id:'prob',    icon:'△',  label:'Problemáticas' },
     { id:'leg',     icon:'▤',  label:'Resumen del estudiante' },
     { id:'obj',     icon:'◎',  label:'Objetivos' },
+    { sec: 'Portal familiar' },
+    { id:'msgfam',  icon:'✉',  label:'Mensajes', badge: true },
   ],
   docente: [
     { sec: 'General' },
     { id:'dash',    icon:'⌂',  label:'Mi Día' },
     { id:'agenda',  icon:'▦',  label:'Agenda' },
+    { sec: 'Portal familiar' },
+    { id:'msgfam',  icon:'✉',  label:'Mensajes', badge: true },
     { sec: 'Mis clases' },
     { id:'asist',    icon:'✓',  label:'Asistencia' },
     { id:'notas',    icon:'≡',  label:'Calificaciones' },
@@ -65,7 +73,9 @@ const NAV_CONFIG = {
     { sec: 'General' },
     { id:'dash',  icon:'⌂',   label:'Mi Día' },
     { id:'agenda',icon:'▦',   label:'Agenda' },
-    { id:'avisos',icon:'📢',  label:'Portal familiar' },
+    { sec: 'Portal familiar' },
+    { id:'avisos',icon:'📢',  label:'Comunicados' },
+    { id:'msgfam',icon:'✉',   label:'Mensajes', badge: true },
     { sec: 'Mis cursos' },
     { id:'asist',    icon:'✓',  label:'Tomar lista' },
     { id:'notas',    icon:'≡',  label:'Calificaciones' },
@@ -143,7 +153,10 @@ function renderNav() {
     const el = document.createElement('div');
     el.className = 'nav-it' + (item.id === CUR_PAGE ? ' on' : '');
     el.onclick   = () => goPage(item.id);
-    el.innerHTML = `<span class="ni-icon">${item.icon}</span><span class="ni-label">${item.label}</span>`;
+    const badge = item.badge && MSG_FAM_UNREAD > 0
+      ? `<span class="ni-badge">${MSG_FAM_UNREAD > 9 ? '9+' : MSG_FAM_UNREAD}</span>`
+      : '';
+    el.innerHTML = `<span class="ni-icon">${item.icon}</span><span class="ni-label">${item.label}</span>${badge}`;
     nav.appendChild(el);
   });
 }

@@ -2,10 +2,11 @@
 // MAIN.JS — Arranque y navegación
 // =====================================================
 
-let CUR_PAGE  = 'dash';
-let DARK      = false;
-let SB_OPEN   = true;
-let EX        = null;
+let CUR_PAGE      = 'dash';
+let DARK          = false;
+let SB_OPEN       = true;
+let EX            = null;
+let MSG_FAM_UNREAD = 0;
 
 const PAGE_LABELS = {
   dash:      'Mi Día',
@@ -21,6 +22,7 @@ const PAGE_LABELS = {
   avisos:    'Comunicados a familias',
   informes:  'Informes',
   tareas:    'Mis tareas',
+  msgfam:    'Mensajes con familias',
 };
 
 // ── ARRANQUE ─────────────────────────────────────────
@@ -49,6 +51,7 @@ async function iniciarApp() {
   iniciarReloj();
   renderNav();
   cargarNotificaciones();
+  fetchMsgFamUnread();
   renderBottomNav();
   await goPage('dash');
 }
@@ -86,6 +89,7 @@ async function goPage(id) {
     avisos:    rAvisos,
     informes:  rInformes,
     tareas:    rTareas,
+    msgfam:    rMsgFam,
   };
   if (renderers[id]) await renderers[id]();
 
