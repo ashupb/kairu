@@ -507,136 +507,148 @@ function _califEstadoNivel(califs, instancias, asignaciones, cursosNivel) {
   return { materiasArr, peorMateria: materiasArr[0] || null, mejorMateria: materiasArr[materiasArr.length - 1] || null, cursosArr, totalCombos, conNotas };
 }
 
-function renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, notaMinima, tieneCalifs) {
-  const { cuatri, cerrado, pct, restantes, c1, c2 } = cuatriInfo;
-  const cuatriClr = cerrado ? 'var(--verde)' : pct >= 80 ? 'var(--rojo)' : pct >= 50 ? 'var(--ambar)' : 'var(--azul)';
+function renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, notaMinima) {
+  // Columna izquierda: promedio por curso + materias destacadas
+  let colIzq = '';
+  if (nivel !== 'inicial' && califStats && (califStats.cursosArr.length || califStats.peorMateria)) {
+    const { peorMateria, mejorMateria, cursosArr } = califStats;
+    const cursosOrd    = [...cursosArr].sort((a, b) => a.promedio - b.promedio);
+    const idPeorCurso  = cursosOrd[0]?.id;
+    const idMejorCurso = cursosOrd[cursosOrd.length - 1]?.id;
 
-  // Circular SVG: r=24, stroke=5, center=29, total=58, circ≈150.8
-  const _circ = 150.8;
-  const _off  = +((1 - pct / 100) * _circ).toFixed(1);
-  const cuatriCard = `
-    <div class="card" style="margin-bottom:12px;padding:12px 14px;cursor:pointer" onclick="goPage('notas')">
-      <div style="display:flex;align-items:center;gap:14px">
-        <div style="position:relative;flex-shrink:0;width:58px;height:58px">
-          <svg width="58" height="58" viewBox="0 0 58 58" style="transform:rotate(-90deg)">
-            <circle cx="29" cy="29" r="24" fill="none" stroke="var(--gris-l)" stroke-width="5"/>
-            <circle cx="29" cy="29" r="24" fill="none" stroke="${cuatriClr}" stroke-width="5"
-              stroke-dasharray="${_circ}" stroke-dashoffset="${_off}" stroke-linecap="round"/>
-          </svg>
-          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
-            <span style="font-size:12px;font-weight:800;color:${cuatriClr};line-height:1">${pct}%</span>
-          </div>
-        </div>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:12px;font-weight:700">Cuatrimestre ${cuatri}${cerrado ? ' · cerrado ✓' : ' en curso'}</div>
-          <div style="font-size:10px;color:${!cerrado && restantes <= 14 ? 'var(--rojo)' : 'var(--txt2)'};margin-top:3px">
-            ${cerrado
-              ? (c2 ? 'Año lectivo finalizado' : 'C1 cerrado — iniciando C2')
-              : restantes === 0 ? '¡Fecha de cierre!'
-              : `${restantes} días para el cierre`}
-          </div>
-          <div style="font-size:9px;color:var(--txt3);margin-top:4px">${cuatri === 1 ? '1 Mar → 10 Jul' : '21 Jul → 28 Nov'} &nbsp;·&nbsp; <span style="color:var(--azul)">Ver notas →</span></div>
-        </div>
-      </div>
-    </div>`;
-
-  let califCard = '';
-  if (nivel !== 'inicial') {
-    if (!tieneCalifs) {
-      califCard = `
-        <div class="card" style="margin-bottom:12px;padding:14px">
-          <div style="font-size:12px;font-weight:700;margin-bottom:6px">Calificaciones</div>
-          <div style="font-size:11px;color:var(--txt2)">Sin notas cargadas aún para este cuatrimestre.</div>
-          <button class="btn-ghost" onclick="goPage('notas')" style="margin-top:8px;font-size:11px">Ir a calificaciones →</button>
-        </div>`;
-    } else {
-      const { peorMateria, mejorMateria, cursosArr, totalCombos, conNotas } = califStats;
-      const cobPct = totalCombos > 0 ? Math.round(conNotas / totalCombos * 100) : 0;
-      const cobClr = cobPct >= 80 ? 'var(--verde)' : cobPct >= 40 ? 'var(--ambar)' : 'var(--rojo)';
-      const peorClr = peorMateria && notaMinima && peorMateria.promedio < notaMinima ? 'var(--rojo)' : 'var(--ambar)';
-      const labelCerradas = cerrado ? 'cerradas' : 'evaluadas';
-
-      califCard = `
-        <div class="card" style="margin-bottom:12px;padding:14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <div style="font-size:12px;font-weight:700">Calificaciones</div>
-            <button class="btn-ghost" onclick="goPage('notas')" style="font-size:10px">Ver todo →</button>
-          </div>
-          <div style="margin-bottom:12px">
-            <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-              <div style="font-size:10px;color:var(--txt2)">Cobertura — materias con notas cargadas</div>
-              <div style="font-size:11px;font-weight:700;color:${cobClr}">${cobPct}%</div>
-            </div>
-            <div style="background:var(--gris-l);border-radius:4px;height:5px">
-              <div style="width:${cobPct}%;background:${cobClr};height:5px;border-radius:4px"></div>
-            </div>
-            <div style="font-size:9px;color:var(--txt2);margin-top:3px">
-              <span style="color:${cobClr};font-weight:600">${conNotas} ${labelCerradas}</span> de ${totalCombos} combinaciones materia-curso
-            </div>
-          </div>
-          ${peorMateria || mejorMateria ? `
-          <div style="display:flex;gap:8px;margin-bottom:10px">
-            ${peorMateria ? `
-            <div style="flex:1;background:${peorClr === 'var(--rojo)' ? 'var(--rojo-l)' : 'var(--amb-l)'};border-radius:var(--rad);padding:9px 10px;cursor:pointer" onclick="goPage('notas')">
-              <div style="font-size:8px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Más baja</div>
-              <div style="font-size:12px;font-weight:700;color:${peorClr};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${peorMateria.nombre}</div>
-              <div style="font-size:11px;color:${peorClr};font-weight:600">${peorMateria.promedio}${notaMinima ? ` / mín.${notaMinima}` : ''}</div>
-            </div>` : ''}
-            ${mejorMateria && mejorMateria.id !== peorMateria?.id ? `
-            <div style="flex:1;background:var(--verde-l);border-radius:var(--rad);padding:9px 10px;cursor:pointer" onclick="goPage('notas')">
-              <div style="font-size:8px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Más alta</div>
-              <div style="font-size:12px;font-weight:700;color:var(--verde);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mejorMateria.nombre}</div>
-              <div style="font-size:11px;color:var(--verde);font-weight:600">${mejorMateria.promedio}</div>
-            </div>` : ''}
+    colIzq = `
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Promedio por curso</div>
+        ${cursosArr.length ? cursosArr.map(c => {
+          const enRiesgo = notaMinima && c.promedio < notaMinima;
+          const cerca    = notaMinima && c.promedio >= notaMinima && c.promedio < notaMinima + 1;
+          const cClr     = enRiesgo ? 'var(--rojo)' : cerca ? 'var(--ambar)' : 'var(--verde)';
+          const esMejor  = c.id === idMejorCurso && !enRiesgo;
+          const esPeor   = c.id === idPeorCurso  && enRiesgo;
+          const barW     = notaMinima ? Math.min(100, Math.round(c.promedio / 10 * 100)) : 100;
+          return `
+            <div style="padding:7px 0;border-bottom:1px solid var(--brd)">
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+                <span style="font-size:12px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.nombre}</span>
+                ${esMejor ? `<span style="font-size:8px;background:var(--verde-l);color:var(--verde-m);border-radius:4px;padding:1px 5px;font-weight:700">Mejor</span>` : ''}
+                ${esPeor  ? `<span style="font-size:8px;background:var(--rojo-l);color:var(--rojo);border-radius:4px;padding:1px 5px;font-weight:700">Atención</span>` : ''}
+                <span style="font-size:13px;font-weight:700;color:${cClr};flex-shrink:0">${c.promedio}</span>
+              </div>
+              <div style="background:var(--gris-l);border-radius:2px;height:3px">
+                <div style="width:${barW}%;background:${cClr};height:3px;border-radius:2px"></div>
+              </div>
+            </div>`;
+        }).join('') : `<div style="font-size:11px;color:var(--txt3);padding:8px 0">Sin datos de notas</div>`}
+        ${(peorMateria || mejorMateria) ? `
+        <div style="margin-top:12px;display:flex;gap:8px">
+          ${peorMateria ? `
+          <div style="flex:1;background:var(--rojo-l);border-radius:var(--rad);padding:8px;cursor:pointer" onclick="goPage('notas')">
+            <div style="font-size:8px;color:var(--txt2);text-transform:uppercase;letter-spacing:.04em">Materia más baja</div>
+            <div style="font-size:11px;font-weight:700;color:var(--rojo);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${peorMateria.nombre}</div>
+            <div style="font-size:14px;font-weight:800;color:var(--rojo)">${peorMateria.promedio}</div>
           </div>` : ''}
-          ${cursosArr.length ? `
-          <div>
-            <div style="font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Promedio por curso</div>
-            ${cursosArr.map(c => {
-              const cClr = notaMinima && c.promedio < notaMinima ? 'var(--rojo)' : notaMinima && c.promedio < notaMinima + 1 ? 'var(--ambar)' : 'var(--verde)';
-              return `
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--brd);cursor:pointer" onclick="goPage('notas')">
-                  <div style="font-size:11px">${c.nombre}</div>
-                  <div style="font-size:12px;font-weight:700;color:${cClr}">${c.promedio}</div>
-                </div>`;
-            }).join('')}
+          ${mejorMateria && mejorMateria.id !== peorMateria?.id ? `
+          <div style="flex:1;background:var(--verde-l);border-radius:var(--rad);padding:8px;cursor:pointer" onclick="goPage('notas')">
+            <div style="font-size:8px;color:var(--txt2);text-transform:uppercase;letter-spacing:.04em">Materia más alta</div>
+            <div style="font-size:11px;font-weight:700;color:var(--verde-m);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${mejorMateria.nombre}</div>
+            <div style="font-size:14px;font-weight:800;color:var(--verde)">${mejorMateria.promedio}</div>
           </div>` : ''}
-        </div>`;
-    }
+        </div>` : ''}
+      </div>`;
+  } else {
+    colIzq = `<div style="padding:20px 0;text-align:center;color:var(--txt3);font-size:11px">${nivel === 'inicial' ? 'Nivel inicial — evaluación narrativa' : 'Sin datos de calificaciones'}</div>`;
   }
 
-  let asistCard = '';
+  // Columna derecha: inasistencias por mes
+  let colDer = '';
   if (mesesAsist.length > 0) {
-    const maxPct = Math.max(...mesesAsist.map(m => m.pct), 1);
+    const maxPct  = Math.max(...mesesAsist.map(m => m.pct), 1);
     const peorMes = mesesAsist.reduce((a, b) => b.pct > a.pct ? b : a, mesesAsist[0]);
-    asistCard = `
-      <div class="card" style="margin-bottom:12px;padding:14px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div style="font-size:12px;font-weight:700">Inasistencias por mes</div>
-          <button class="btn-ghost" onclick="goPage('asist')" style="font-size:10px">Ver asistencia →</button>
-        </div>
-        <div style="display:flex;align-items:flex-end;gap:6px;height:72px;margin-bottom:8px">
+    colDer = `
+      <div>
+        <div style="font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Inasistencias por mes</div>
+        <div style="display:flex;align-items:flex-end;gap:5px;height:80px;margin-bottom:6px">
           ${mesesAsist.map(m => {
-            const h = Math.max(4, Math.round(m.pct / maxPct * 56));
+            const h      = Math.max(4, Math.round(m.pct / maxPct * 64));
             const esPeor = m.key === peorMes.key && m.pct > 0;
             const barClr = esPeor ? 'var(--rojo)' : m.pct > 12 ? 'var(--ambar)' : 'var(--azul)';
             return `
-              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0">
-                <div style="font-size:8px;color:${barClr};font-weight:${esPeor ? '700' : '400'}">${m.pct}%</div>
-                <div style="width:100%;height:${h}px;background:${barClr};border-radius:3px 3px 0 0;opacity:${esPeor ? 1 : 0.75}"></div>
-                <div style="font-size:9px;color:${esPeor ? barClr : 'var(--txt2)'};font-weight:${esPeor ? '700' : '400'}">${m.label}</div>
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0">
+                <div style="font-size:7px;color:${barClr};font-weight:${esPeor?'700':'400'}">${m.pct}%</div>
+                <div style="width:100%;height:${h}px;background:${barClr};border-radius:2px 2px 0 0;opacity:${esPeor?1:0.7}"></div>
+                <div style="font-size:8px;color:${esPeor?barClr:'var(--txt3)'};font-weight:${esPeor?'700':'400'}">${m.label}</div>
               </div>`;
           }).join('')}
         </div>
-        ${peorMes.pct > 0 ? `<div style="font-size:10px;color:var(--txt2)">Peor mes: <span style="color:var(--rojo);font-weight:600">${peorMes.label} — ${peorMes.pct}% de inasistencias</span></div>` : ''}
+        ${peorMes.pct > 0 ? `<div style="font-size:10px;color:var(--txt2);padding:7px 0;border-top:1px solid var(--brd)">Peor mes: <span style="color:var(--rojo);font-weight:600">${peorMes.label} · ${peorMes.pct}%</span></div>` : ''}
+        <div style="text-align:right;margin-top:4px"><button class="btn-ghost" onclick="goPage('asist')" style="font-size:10px">Ver asistencia →</button></div>
       </div>`;
   }
 
+  if (!colIzq && !colDer) return '';
   return `
-    <div class="sec-lb" style="margin-top:20px;margin-bottom:10px">Estado académico del nivel</div>
-    ${cuatriCard}
-    ${califCard}
-    ${asistCard}`;
+    <div class="sec-lb" style="margin-top:20px;margin-bottom:12px">Estado académico del nivel</div>
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div class="dash-acad-cols">
+        <div style="padding-right:14px;border-right:1px solid var(--brd)">${colIzq}</div>
+        <div style="padding-left:14px">${colDer || '<div style="padding:20px 0;text-align:center;color:var(--txt3);font-size:11px">Sin datos de asistencia</div>'}</div>
+      </div>
+    </div>`;
+}
+
+function renderAlertasCruzadasNivel(alertas) {
+  if (!alertas.length) return '';
+  return `
+    <div style="margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;color:var(--rojo);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">△ Alertas — requieren atención</div>
+      ${alertas.map(a => `
+        <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;background:${a.bg};border-left:3px solid ${a.clr};border-radius:var(--rad);margin-bottom:7px;cursor:pointer" onclick="goPage('${a.goPage}')">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;color:${a.clr}">${a.titulo}</div>
+            <div style="font-size:11px;color:var(--txt2);margin-top:2px">${a.subtexto}</div>
+          </div>
+          <div style="font-size:12px;color:${a.clr};flex-shrink:0;padding-top:2px">→</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderObjetivosDirectivo(objetivos) {
+  const lista = (objetivos || []).filter(o => o.estado !== 'archivado' && o.estado !== 'logrado');
+  if (!lista.length) return '';
+  const empeorando = lista.filter(o => o.tendencia === 'empeorando');
+  const ESTADO_LBL = {
+    en_seguimiento: { l:'Seguimiento', c:'var(--azul)',  b:'var(--azul-l)'  },
+    en_riesgo:      { l:'En riesgo',   c:'var(--rojo)',  b:'var(--rojo-l)'  },
+    activo:         { l:'Activo',      c:'var(--verde)', b:'var(--verde-l)' },
+    nuevo:          { l:'Nuevo',       c:'var(--txt2)',  b:'var(--gris-l)'  },
+  };
+  const dotClr = o => o.tendencia === 'mejorando' ? 'var(--verde)' : o.tendencia === 'empeorando' ? 'var(--rojo)' : 'var(--txt3)';
+  const ei     = o => ESTADO_LBL[o.estado] || { l: o.estado || '—', c:'var(--txt2)', b:'var(--gris-l)' };
+  return `
+    ${empeorando.length ? `
+    <div class="alr" style="margin-bottom:14px">
+      <div class="alr-t">↓ ${empeorando.length} objetivo${empeorando.length>1?'s':''} empeorando${empeorando.length>1?'n':''}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-top:4px">${empeorando.slice(0,2).map(o=>o.nombre).join(', ')}${empeorando.length>2?' y más...':''}</div>
+      <div class="acc" style="margin-top:8px"><button class="btn-d" onclick="goPage('obj')">Ver objetivos →</button></div>
+    </div>` : ''}
+    <div class="card" style="padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span class="sec-lb" style="margin:0">◎ Objetivos institucionales</span>
+        <button class="btn-ghost" style="font-size:10px" onclick="goPage('obj')">Ver todos →</button>
+      </div>
+      <div style="display:flex;flex-direction:column">
+        ${lista.slice(0, 6).map(o => {
+          const e = ei(o);
+          return `
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--brd);cursor:pointer" onclick="goPage('obj')">
+              <span style="color:${dotClr(o)};flex-shrink:0;font-size:14px;line-height:1">●</span>
+              <span style="flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.nombre}</span>
+              <span style="font-size:9px;background:${e.b};color:${e.c};border-radius:4px;padding:2px 7px;font-weight:600;flex-shrink:0;white-space:nowrap">${e.l}</span>
+            </div>`;
+        }).join('')}
+        ${lista.length > 6 ? `<div style="font-size:10px;color:var(--txt2);padding-top:6px">+ ${lista.length-6} más →</div>` : ''}
+      </div>
+    </div>`;
 }
 
 // ─── DIRECTIVO DE NIVEL ───────────────────────────────
@@ -654,141 +666,295 @@ async function rDashDirectivo() {
   const cursoIdsNivel = (_cursosNivel || []).map(c => c.id);
   const cursosNivel   = _cursosNivel || [];
 
-  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes, suplenciasRes, asistHoyRes,
-         cierresRes, asistAnioRes, instanciasRes, asignNivelRes, configCalifRes] = await Promise.all([
+  // Fecha de corte para intervenciones recientes (7 días)
+  const dHace7 = new Date(hoy + 'T00:00:00');
+  dHace7.setDate(dHace7.getDate() - 7);
+  const hace7ISO = dHace7.toISOString().slice(0, 10);
+
+  const [
+    probRes, objRes, eventosRes, respRes, alertasRes,
+    alumnosRes, suplenciasRes, asistHoyRes,
+    cierresRes, asistAnioRes, instanciasRes, asignNivelRes, configCalifRes,
+    docentesActivosRes,
+  ] = await Promise.all([
+    // 1. Problematicas activas
     sb.from('problematicas')
-      .select('id,urgencia,alumno:alumnos(curso:cursos(nivel))')
+      .select('id,urgencia,estado,alumno_id,alumno:alumnos(curso:cursos(nivel))')
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento']),
+    // 2. Objetivos
     sb.from('objetivos')
       .select('id,nombre,estado,tendencia')
       .eq('institucion_id', instId)
       .not('estado', 'in', '("archivado","logrado")'),
+    // 3. Eventos semana
     sb.from('eventos_institucionales')
       .select('id,nombre,hora,lugar,nivel,fecha_inicio,fecha_fin,convocados_ids,creado_por')
       .eq('institucion_id', instId)
       .lte('fecha_inicio', sem.fin)
       .or(`fecha_fin.gte.${sem.inicio},fecha_inicio.gte.${sem.inicio}`)
       .order('fecha_inicio').order('hora', { nullsFirst: true }),
+    // 4. Respuestas pendientes
     sb.from('evento_respuestas')
       .select('id,eventos_institucionales(nombre,hora,lugar)')
       .eq('usuario_id', miId).eq('respuesta', 'pendiente'),
+    // 5. Alertas prob sin leer
     sb.from('alertas_problematicas')
       .select('id,problematica:problematicas(id,tipo,urgencia,alumno:alumnos(nombre,apellido))')
       .eq('usuario_id', miId).eq('leida', false)
       .order('created_at', { ascending:false }).limit(10),
+    // 6. Alumnos del nivel (full select — necesario para alertas cruzadas)
     cursoIdsNivel.length
-      ? sb.from('alumnos').select('id', { count:'exact', head:true })
+      ? sb.from('alumnos').select('id, nombre, apellido, curso_id')
           .in('curso_id', cursoIdsNivel).or('activo.is.null,activo.eq.true')
-      : Promise.resolve({ count: 0 }),
-    cursoIdsNivel.length
-      ? sb.from('asignaciones').select('docente_id, doc:usuarios!docente_id(activo)').in('curso_id', cursoIdsNivel)
       : Promise.resolve({ data: [] }),
+    // 7. Suplencias (en licencia) filtradas por nivel
     sb.from('usuarios').select('id', { count:'exact', head:true })
       .eq('institucion_id', instId).eq('nivel', nivel).eq('en_licencia', true),
+    // 8. Asistencia hoy
     cursoIdsNivel.length
       ? sb.from('asistencia').select('estado,curso_id').in('curso_id', cursoIdsNivel).eq('fecha', hoy).is('hora_clase', null)
       : Promise.resolve({ data: [] }),
-    // Estado académico
+    // 9. Cierres de periodo
     sb.from('cierres_periodo').select('tipo').eq('institucion_id', instId).in('tipo', ['cuatrimestre_1','cuatrimestre_2']),
+    // 10. Asistencia anual (con alumno_id para alertas cruzadas)
     cursoIdsNivel.length
-      ? sb.from('asistencia').select('fecha,estado').in('curso_id', cursoIdsNivel).is('hora_clase', null).gte('fecha', `${anio}-01-01`).lte('fecha', hoy)
+      ? sb.from('asistencia').select('fecha,estado,alumno_id').in('curso_id', cursoIdsNivel).is('hora_clase', null).gte('fecha', `${anio}-01-01`).lte('fecha', hoy)
       : Promise.resolve({ data: [] }),
+    // 11. Instancias evaluativas
     cursoIdsNivel.length
       ? sb.from('instancias_evaluativas').select('id,curso_id,materia_id,es_recuperatorio,materias(nombre)').in('curso_id', cursoIdsNivel)
       : Promise.resolve({ data: [] }),
+    // 12. Asignaciones del nivel
     cursoIdsNivel.length
       ? sb.from('asignaciones').select('materia_id,curso_id').in('curso_id', cursoIdsNivel).eq('anio_lectivo', anio)
       : Promise.resolve({ data: [] }),
-    sb.from('config_asistencia').select('nota_minima').eq('institucion_id', instId).eq('nivel', nivel).maybeSingle(),
+    // 13. Config calificaciones (umbral de alerta incluido)
+    sb.from('config_asistencia').select('nota_minima, umbral_alerta_1, umbral_alerta_2')
+      .eq('institucion_id', instId).eq('nivel', nivel).maybeSingle(),
+    // 14. Docentes activos del nivel (por rol)
+    sb.from('usuarios').select('id', { count:'exact', head:true })
+      .eq('institucion_id', instId).eq('nivel', nivel).in('rol', ['docente','preceptor']),
   ]);
 
-  const probs          = probRes.data    || [];
-  const objetivos      = objRes.data     || [];
-  const eventosSem     = eventosRes.data || [];
-  const pendientes     = (respRes.data   || []).filter(r => r.eventos_institucionales);
-  const alertas        = alertasRes.error ? [] : (alertasRes.data || []);
-  const totalAlumnos   = alumnosRes.count  ?? 0;
-  const totalDocentes  = new Set((docentesRes.data || []).filter(a => a.doc?.activo !== false).map(a => a.docente_id).filter(Boolean)).size;
-  const totalSuplencias = suplenciasRes.count ?? 0;
-  const probsNivel     = probs.filter(p => p.alumno?.curso?.nivel === nivel);
+  // ── Datos base ──
+  const probs              = probRes.data    || [];
+  const objetivos          = objRes.data     || [];
+  const eventosSem         = eventosRes.data || [];
+  const pendientes         = (respRes.data   || []).filter(r => r.eventos_institucionales);
+  const alertasProb        = alertasRes.error ? [] : (alertasRes.data || []);
+  const alumnosData        = alumnosRes.data  || [];
+  const totalAlumnos       = alumnosData.length;
+  const totalSuplencias    = suplenciasRes.count    ?? 0;
+  const totalDocentesActivos = docentesActivosRes.count ?? 0;
+  const probsNivel         = probs.filter(p => p.alumno?.curso?.nivel === nivel);
   checkAlertasProb(instId).catch(() => {});
 
+  // ── Asistencia hoy ──
   const asistHoyDir = asistHoyRes.data || [];
-  const asistCnt = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
+  const asistCnt    = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
   asistHoyDir.forEach(a => { if (asistCnt[a.estado] !== undefined) asistCnt[a.estado]++; });
   const pctAsistDir = totalAlumnos > 0
     ? Math.min(100, Math.round((asistCnt.presente + asistCnt.tardanza + asistCnt.media_falta) / totalAlumnos * 100))
     : 0;
-  const asistClrDir = pctAsistDir >= 85 ? 'var(--verde)' : pctAsistDir >= 70 ? 'var(--ambar)' : 'var(--rojo)';
-  const cursosConListaDir = new Set(asistHoyDir.map(a => a.curso_id).filter(Boolean)).size;
-  const listasPendDir = esFechaHabil(hoy) ? Math.max(0, cursoIdsNivel.length - cursosConListaDir) : 0;
-  const asistCardDir = !esFechaHabil(hoy) ? `
-    <div class="card" style="margin-bottom:14px;border-left:4px solid var(--gris)">
-      <div style="font-size:12px;color:var(--txt2)">📋 Asistencia hoy — Día no lectivo</div>
-    </div>` : asistHoyDir.length > 0 ? `
-    <div class="card" style="margin-bottom:14px;border-left:4px solid ${asistClrDir}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div style="font-size:12px;font-weight:600">📋 Asistencia hoy</div>
-        <div style="font-size:16px;font-weight:700;color:${asistClrDir}">${pctAsistDir}%</div>
-      </div>
-      <div style="background:var(--gris-l);border-radius:4px;height:6px;margin-bottom:10px">
-        <div style="width:${pctAsistDir}%;background:${asistClrDir};height:6px;border-radius:4px;transition:width .3s"></div>
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px">
-        <span style="color:var(--verde)">✅ ${asistCnt.presente} presentes</span>
-        <span style="color:var(--rojo)">❌ ${asistCnt.ausente} ausentes</span>
-        ${asistCnt.media_falta+asistCnt.tardanza > 0 ? `<span style="color:var(--ambar)">🕐 ${asistCnt.media_falta+asistCnt.tardanza} tardanzas/MF</span>` : ''}
-        ${asistCnt.justificado > 0 ? `<span style="color:var(--azul)">📋 ${asistCnt.justificado} justificados</span>` : ''}
-        ${listasPendDir > 0 ? `<span style="color:var(--ambar)">⏳ ${listasPendDir} ${listasPendDir === 1 ? 'lista pendiente' : 'listas pendientes'}</span>` : `<span style="color:var(--verde)">✓ Todas las listas tomadas</span>`}
-      </div>
-    </div>` : `
-    <div class="card" style="margin-bottom:14px;border-left:4px solid var(--gris)">
-      <div style="font-size:12px;color:var(--txt2)">📋 Asistencia hoy — Sin registros todavía${cursoIdsNivel.length > 0 ? ` · ${cursoIdsNivel.length} listas pendientes` : ''}</div>
-    </div>`;
+  const asistClrDir     = pctAsistDir >= 85 ? 'var(--verde)' : pctAsistDir >= 70 ? 'var(--ambar)' : 'var(--rojo)';
+  const cursosConLista  = new Set(asistHoyDir.map(a => a.curso_id).filter(Boolean)).size;
+  const listasPend      = esFechaHabil(hoy) ? Math.max(0, cursoIdsNivel.length - cursosConLista) : 0;
+  const esDiaHabil      = esFechaHabil(hoy);
 
-  // ── Estado académico: calificaciones (fetch secuencial) ──
+  // ── Estado académico: califs + intervenciones recientes en paralelo ──
   const cierres    = cierresRes.data    || [];
   const asistAnio  = asistAnioRes.data  || [];
   const instancias = instanciasRes.data || [];
   const asignNivel = asignNivelRes.data || [];
-  const notaMinima = configCalifRes?.data?.nota_minima ?? null;
+  const notaMinima = configCalifRes?.data?.nota_minima    ?? null;
+  const umbral1    = configCalifRes?.data?.umbral_alerta_1 ?? null;
+  const umbral2    = configCalifRes?.data?.umbral_alerta_2 ?? null;
 
-  const instanciaIds = instancias.filter(i => !i.es_recuperatorio).map(i => i.id);
-  let califs = [];
-  if (instanciaIds.length && nivel !== 'inicial') {
-    const { data: califData } = await sb.from('calificaciones')
-      .select('nota, instancia_id, ausente')
-      .in('instancia_id', instanciaIds)
-      .not('nota', 'is', null);
-    califs = (califData || []).filter(c => !c.ausente);
-  }
+  const instanciaIds  = instancias.filter(i => !i.es_recuperatorio).map(i => i.id);
+  const probsNivelIds = probsNivel.map(p => p.id);
 
+  const [califRes, interv7dRes] = await Promise.all([
+    instanciaIds.length && nivel !== 'inicial'
+      ? sb.from('calificaciones').select('nota, instancia_id, ausente, alumno_id')
+          .in('instancia_id', instanciaIds).not('nota', 'is', null)
+      : Promise.resolve({ data: [] }),
+    probsNivelIds.length
+      ? sb.from('intervenciones').select('problematica_id')
+          .in('problematica_id', probsNivelIds).gte('created_at', hace7ISO + 'T00:00:00')
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const califs = (califRes.data || []).filter(c => !c.ausente);
+
+  // Probs sin intervención en los últimos 7 días
+  const probsConInterv = new Set((interv7dRes.data || []).map(i => i.problematica_id));
+  const sinInterv      = probsNivel.filter(p => !probsConInterv.has(p.id)).length;
+
+  // ── Cálculos generales ──
   const cuatriInfo = _cuatrimestreInfo(hoy, cierres, anio);
   const mesesAsist = _asistenciaMensual(asistAnio, anio);
   const califStats = nivel !== 'inicial' ? _califEstadoNivel(califs, instancias, asignNivel, cursosNivel) : null;
 
+  const conNotas    = califStats?.conNotas    ?? 0;
+  const totalCombos = califStats?.totalCombos ?? 0;
+  const cobPct      = totalCombos > 0 ? Math.round(conNotas / totalCombos * 100) : 0;
+  const cobClr      = cobPct >= 80 ? 'var(--verde)' : cobPct >= 50 ? 'var(--ambar)' : 'var(--rojo)';
+
+  // ── Alertas cruzadas ──
+  const alertasCruzadas = [];
+
+  if (nivel !== 'inicial') {
+    // Per-alumno asistencia
+    const aMap = {};
+    asistAnio.forEach(r => {
+      if (!r.alumno_id) return;
+      if (!aMap[r.alumno_id]) aMap[r.alumno_id] = { total:0, inasist:0 };
+      aMap[r.alumno_id].total++;
+      if (r.estado === 'ausente' || r.estado === 'justificado') aMap[r.alumno_id].inasist++;
+    });
+    // Per-alumno calificaciones
+    const nMap = {};
+    califs.forEach(c => {
+      if (!c.alumno_id || !c.nota) return;
+      if (!nMap[c.alumno_id]) nMap[c.alumno_id] = [];
+      nMap[c.alumno_id].push(c.nota);
+    });
+    const alumnosConProbSet = new Set(probsNivel.filter(p => p.alumno_id).map(p => p.alumno_id));
+    const alumnosEnRiesgo   = alumnosData.filter(al => {
+      let conds = 0;
+      if (alumnosConProbSet.has(al.id)) conds++;
+      const ns = nMap[al.id];
+      if (ns?.length && notaMinima) {
+        const avg = ns.reduce((a, b) => a + b, 0) / ns.length;
+        if (avg < notaMinima) conds++;
+      }
+      const as = aMap[al.id];
+      if (as?.total && umbral1) {
+        if ((as.inasist / as.total * 100) > umbral1) conds++;
+      }
+      return conds >= 2;
+    });
+    if (alumnosEnRiesgo.length) {
+      const prim = alumnosEnRiesgo[0];
+      const cursoNom   = cursosNivel.find(c => c.id === prim.curso_id);
+      const cursoLabel = cursoNom ? `${cursoNom.nombre}${cursoNom.division||''}` : '';
+      alertasCruzadas.push({
+        clr:'var(--rojo)', bg:'var(--rojo-l)',
+        titulo: `${alumnosEnRiesgo.length} alumno${alumnosEnRiesgo.length>1?'s':''} con múltiples indicadores de riesgo`,
+        subtexto: `${prim.apellido}, ${prim.nombre}${cursoLabel?' · '+cursoLabel:''}${alumnosEnRiesgo.length>1?` y ${alumnosEnRiesgo.length-1} más`:''}`,
+        goPage: 'leg',
+      });
+    }
+
+    // Cursos con promedio comprometido (cierre próximo)
+    if (califStats?.cursosArr?.length && cuatriInfo.restantes <= 15 && notaMinima) {
+      const cursosRiesgo = califStats.cursosArr.filter(c => c.promedio < notaMinima);
+      if (cursosRiesgo.length) {
+        alertasCruzadas.push({
+          clr:'var(--ambar)', bg:'var(--amb-l)',
+          titulo: `${cursosRiesgo.length} curso${cursosRiesgo.length>1?'s':''} con promedio bajo al cierre`,
+          subtexto: cursosRiesgo.slice(0,2).map(c=>`${c.nombre} (${c.promedio})`).join(', ')
+            + (cursosRiesgo.length>2?` y ${cursosRiesgo.length-2} más`:'')
+            + ` · cierre en ${cuatriInfo.restantes} días`,
+          goPage: 'notas',
+        });
+      }
+    }
+
+    // Cobertura de notas crítica
+    if (cobPct < 30 && cuatriInfo.restantes <= 15 && totalCombos > 0) {
+      alertasCruzadas.push({
+        clr:'var(--rojo)', bg:'var(--rojo-l)',
+        titulo: 'Cobertura de notas crítica',
+        subtexto: `Solo el ${cobPct}% de materias tiene notas cargadas · cierre en ${cuatriInfo.restantes} días`,
+        goPage: 'notas',
+      });
+    }
+  }
+
+  // Mes pico de inasistencias (últimos 2 meses)
+  if (umbral2 && mesesAsist.length) {
+    const mesHoy = parseInt(hoy.split('-')[1]);
+    const pico = mesesAsist.find(m => {
+      const mNum = parseInt(m.key.split('-')[1]);
+      const diff = mesHoy >= mNum ? mesHoy - mNum : 12 - mNum + mesHoy;
+      return diff <= 2 && m.pct > umbral2;
+    });
+    if (pico) {
+      alertasCruzadas.push({
+        clr:'var(--ambar)', bg:'var(--amb-l)',
+        titulo: `Pico de inasistencias en ${pico.label}`,
+        subtexto: `${pico.pct}% — por encima del umbral configurado (${umbral2}%)`,
+        goPage: 'asist',
+      });
+    }
+  }
+
+  // Compartir probs activos para que tareas.js pueda detectar tareas vinculadas
+  window._dashProbsActivosNivel = new Set(probsNivelIds);
+
   const nc = NIVEL_CONFIG[nivel] || NIVEL_CONFIG.todos;
   const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
 
+  // ── 4 metric cards ──
+  const card1 = `
+    <div class="mc" style="cursor:pointer;border-top:3px solid ${esDiaHabil ? asistClrDir : 'var(--gris)'}" onclick="goPage('asist')">
+      <div class="mc-v" style="color:${esDiaHabil ? asistClrDir : 'var(--txt3)'}">${esDiaHabil ? pctAsistDir + '%' : '—'}</div>
+      <div class="mc-l">ASISTENCIA HOY</div>
+      ${esDiaHabil
+        ? `<div style="font-size:9px;color:var(--txt2);margin-top:4px;line-height:1.6">${asistCnt.presente} pres · ${asistCnt.ausente} aus${asistCnt.tardanza+asistCnt.media_falta?' · '+(asistCnt.tardanza+asistCnt.media_falta)+' tard':''}</div>`
+        : `<div style="font-size:9px;color:var(--txt3);margin-top:4px">Día no lectivo</div>`}
+      ${listasPend > 0 ? `<div style="font-size:9px;color:var(--ambar);margin-top:2px">${listasPend} lista${listasPend>1?'s':''} pendiente${listasPend>1?'s':''}</div>` : ''}
+      <div style="font-size:9px;color:var(--verde);margin-top:5px;font-weight:600">Ver →</div>
+    </div>`;
+
+  const card2 = nivel === 'inicial' ? `
+    <div class="mc" style="cursor:pointer" onclick="goPage('informes')">
+      <div class="mc-v" style="color:var(--azul)">${totalAlumnos}</div>
+      <div class="mc-l">ALUMNOS</div>
+      <div style="font-size:9px;color:var(--txt2);margin-top:4px">Nivel inicial</div>
+      <div style="font-size:9px;color:var(--verde);margin-top:5px;font-weight:600">Ver →</div>
+    </div>` : `
+    <div class="mc" style="cursor:pointer;border-top:3px solid ${cobClr}" onclick="goPage('notas')">
+      <div class="mc-v" style="color:${cobClr};font-size:${totalCombos>=10?'22px':'28px'}">${conNotas}/${totalCombos}</div>
+      <div class="mc-l">NOTAS CARGADAS</div>
+      <div style="font-size:9px;color:${cuatriInfo.restantes<=14?'var(--rojo)':'var(--txt2)'};margin-top:4px">C${cuatriInfo.cuatri} · ${cuatriInfo.cerrado?'cerrado ✓':cuatriInfo.restantes+' días'}</div>
+      <div style="font-size:9px;color:var(--verde);margin-top:5px;font-weight:600">Ver →</div>
+    </div>`;
+
+  const card3 = `
+    <div class="mc" style="cursor:pointer" onclick="_adminTab='docentes';goPage('admin')">
+      <div class="mc-v">${totalDocentesActivos}</div>
+      <div class="mc-l">DOCENTES</div>
+      <div style="font-size:9px;color:${totalSuplencias>0?'var(--ambar)':'var(--txt2)'};margin-top:4px">${totalSuplencias} suplencia${totalSuplencias!==1?'s':''}</div>
+      <div style="font-size:9px;color:var(--verde);margin-top:5px;font-weight:600">Ver →</div>
+    </div>`;
+
+  const card4 = `
+    <div class="mc" style="cursor:pointer;border-top:3px solid ${probsNivel.length?'var(--rojo)':'var(--verde)'}" onclick="goPage('prob')">
+      <div class="mc-v" style="color:${probsNivel.length?'var(--rojo)':'var(--txt)'}">${probsNivel.length}</div>
+      <div class="mc-l">SITUACIONES</div>
+      <div style="font-size:9px;color:${sinInterv>0?'var(--ambar)':'var(--txt2)'};margin-top:4px">${sinInterv} sin interv. reciente</div>
+      <div style="font-size:9px;color:var(--verde);margin-top:5px;font-weight:600">Ver →</div>
+    </div>`;
+
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
-    <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
+    <div class="pg-s" style="margin-bottom:16px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
 
-    ${asistCardDir}
-
-    <div class="metrics m4" style="margin-bottom:14px">
-      <div class="mc" style="cursor:pointer" onclick="goPage('leg')"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="_adminTab='docentes';goPage('admin')"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="_adminTab='suplencias';goPage('admin')"><div class="mc-v" style="color:${totalSuplencias > 0 ? 'var(--ambar)' : 'var(--txt2)'}">${totalSuplencias}</div><div class="mc-l">SUPLENCIAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probsNivel.length}</div><div class="mc-l">SITUACIONES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+    <div class="metrics m4" style="margin-bottom:16px">
+      ${card1}${card2}${card3}${card4}
     </div>
 
+    ${renderAlertasCruzadasNivel(alertasCruzadas.slice(0, 4))}
     ${renderProximasActividades(eventosSem, hoy, nivel)}
-    ${renderAlertasProb(alertas)}
+    ${renderAlertasProb(alertasProb)}
     ${renderPendientesRespuesta(pendientes)}
-    ${renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, notaMinima, califs.length > 0)}
-    ${renderObjetivosStrip(objetivos)}
+
+    ${renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, notaMinima)}
+
+    ${renderObjetivosDirectivo(objetivos)}
 
     <div class="dash-cols">
       <div class="dash-col-l" id="tareas-col"></div>
@@ -1584,6 +1750,13 @@ function inyectarEstilosDash() {
     /* Botón ghost (enlace sin borde) */
     .btn-ghost{background:none;border:none;cursor:pointer;color:var(--verde);font-size:12px;font-weight:500;padding:3px 8px;border-radius:6px;font-family:'DM Sans',sans-serif;transition:background .12s}
     .btn-ghost:hover{background:var(--verde-l)}
+
+    /* Estado académico del nivel — 2 columnas */
+    .dash-acad-cols{display:grid;grid-template-columns:1fr 1fr;gap:0;align-items:start}
+    @media(max-width:640px){
+      .dash-acad-cols{grid-template-columns:1fr}
+      .dash-acad-cols>div+div{border-right:none!important;border-left:none!important;padding-left:0!important;padding-right:0!important;padding-top:14px;border-top:1px solid var(--brd)}
+    }
   `;
   document.head.appendChild(st);
 }
