@@ -5,7 +5,8 @@
 let _MSGFAM_CURSOS  = [];
 let _MSGFAM_ALUMNOS = [];
 let _MSGFAM_RESUMEN = {};    // { alumno_id: { last, unread } }
-let _MSGFAM_F_CURSO = '';
+let _MSGFAM_F_NIVEL  = '';
+let _MSGFAM_F_CURSO  = '';
 let _MSGFAM_F_NOMBRE = '';
 
 async function rMsgFam() {
@@ -46,6 +47,7 @@ async function rMsgFam() {
       if (m.enviado_por_tipo === 'familia' && !m.leido_institucion) _MSGFAM_RESUMEN[m.alumno_id].unread++;
     });
 
+    _MSGFAM_F_NIVEL  = '';
     _MSGFAM_F_CURSO  = '';
     _MSGFAM_F_NOMBRE = '';
     _mfiRender(el);
@@ -60,12 +62,14 @@ async function _mfiGetCursos() {
   const inst = USUARIO_ACTUAL.institucion_id;
   const base = sb.from('cursos').select('id,nombre,division,nivel,anio').eq('activo', true);
 
-  if (['director_general', 'eoe'].includes(rol)) {
+  if (rol === 'director_general') {
     const { data } = await base.eq('institucion_id', inst).order('nivel').order('anio');
     return data || [];
   }
-  if (rol === 'directivo_nivel') {
-    const { data } = await base.eq('institucion_id', inst).eq('nivel', USUARIO_ACTUAL.nivel).order('anio');
+  if (['directivo_nivel', 'eoe'].includes(rol)) {
+    const nivelFil = USUARIO_ACTUAL.nivel;
+    const q = base.eq('institucion_id', inst).order('anio');
+    const { data } = await (nivelFil ? q.eq('nivel', nivelFil) : q);
     return data || [];
   }
   if (rol === 'preceptor') {
@@ -84,11 +88,22 @@ async function _mfiGetCursos() {
 }
 
 function _mfiRender(el) {
-  const opts = _MSGFAM_CURSOS.map(c =>
+  const esDir = USUARIO_ACTUAL?.rol === 'director_general';
+  const _NV   = { inicial: 'Inicial', primario: 'Primario', secundario: 'Secundario' };
+
+  // Cursos visibles según filtro de nivel (solo director puede cambiar nivel)
+  let cursosVis = _MSGFAM_CURSOS;
+  if (esDir && _MSGFAM_F_NIVEL) cursosVis = cursosVis.filter(c => c.nivel === _MSGFAM_F_NIVEL);
+
+  const opts = cursosVis.map(c =>
     `<option value="${c.id}" ${_MSGFAM_F_CURSO === c.id ? 'selected' : ''}>${_mfiNombreCurso(c)}</option>`
   ).join('');
 
   let lista = _MSGFAM_ALUMNOS;
+  if (esDir && _MSGFAM_F_NIVEL) {
+    const idSet = new Set(cursosVis.map(c => c.id));
+    lista = lista.filter(a => idSet.has(a.curso_id));
+  }
   if (_MSGFAM_F_CURSO)  lista = lista.filter(a => a.curso_id === _MSGFAM_F_CURSO);
   if (_MSGFAM_F_NOMBRE) {
     const q = _MSGFAM_F_NOMBRE.toLowerCase();
@@ -104,12 +119,25 @@ function _mfiRender(el) {
     return new Date(_MSGFAM_RESUMEN[b.id]?.last?.created_at || 0) - new Date(_MSGFAM_RESUMEN[a.id]?.last?.created_at || 0);
   });
 
+  // Pills de nivel: solo director_general y solo si hay más de un nivel en sus cursos
+  const nivelesDisp = [...new Set(_MSGFAM_CURSOS.map(c => c.nivel))].filter(Boolean)
+    .sort((a, b) => ['inicial','primario','secundario'].indexOf(a) - ['inicial','primario','secundario'].indexOf(b));
+  const nivelPillsHtml = esDir && nivelesDisp.length > 1 ? `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="mfi-np" data-val="" onclick="_mfiSetFiltroNivel('')"
+        style="${_mfiFiltroStyle(!_MSGFAM_F_NIVEL)}">Todos los niveles</button>
+      ${nivelesDisp.map(n => `
+        <button class="mfi-np" data-val="${n}" onclick="_mfiSetFiltroNivel('${n}')"
+          style="${_mfiFiltroStyle(_MSGFAM_F_NIVEL === n)}">${_NV[n] || n}</button>`).join('')}
+    </div>` : '';
+
   el.innerHTML = `
     <div class="page-inner">
       <div class="page-hdr-row" style="margin-bottom:14px">
         <span class="section-title">Mensajes con familias</span>
         ${totalUnread > 0 ? `<span class="tag ta">${totalUnread} sin leer</span>` : ''}
       </div>
+      ${nivelPillsHtml}
       <div class="mfi-filtros">
         <select class="inp-base" onchange="_mfiSetFiltroC(this.value)">
           <option value="">Todos los cursos</option>${opts}
@@ -122,7 +150,7 @@ function _mfiRender(el) {
         ? conMsgs.map(_mfiRowAlumno).join('')
         : `<div class="card" style="margin-top:12px">
              <p class="empty-state">
-               ${_MSGFAM_F_CURSO || _MSGFAM_F_NOMBRE
+               ${_MSGFAM_F_CURSO || _MSGFAM_F_NOMBRE || _MSGFAM_F_NIVEL
                  ? 'No hay mensajes que coincidan con los filtros.'
                  : 'No hay mensajes de familias todavía.'}
              </p>
@@ -252,6 +280,18 @@ async function _mfiEnviar(alumnoId, nombre) {
 
   const wrap = document.getElementById('mfi-hilo-' + alumnoId);
   if (wrap) await _mfiCargarHilo(alumnoId, nombre, wrap);
+}
+
+function _mfiFiltroStyle(active) {
+  return active
+    ? 'padding:4px 14px;border-radius:20px;font-size:12px;font-weight:600;border:none;background:var(--green);color:#fff;cursor:pointer;transition:background .15s'
+    : 'padding:4px 14px;border-radius:20px;font-size:12px;font-weight:500;border:1.5px solid var(--brd);background:var(--bg2,#f5f5f5);color:var(--txt2);cursor:pointer;transition:background .15s';
+}
+
+function _mfiSetFiltroNivel(nivel) {
+  _MSGFAM_F_NIVEL = nivel;
+  _MSGFAM_F_CURSO = ''; // resetea el curso porque puede no existir en el nuevo nivel
+  _mfiRender(document.getElementById('page-msgfam'));
 }
 
 function _mfiSetFiltroC(val) {

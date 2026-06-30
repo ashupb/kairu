@@ -14,6 +14,16 @@ const _AV_NIVEL_LABEL = { inicial: 'Inicial', primario: 'Primario', secundario: 
 
 // ── Carga datos compartidos (novedades + comunicados + cursos) ─────
 async function _avisosCargarDatos() {
+  const esDir    = USUARIO_ACTUAL?.rol === 'director_general';
+  const nivelFil = esDir ? null : (USUARIO_ACTUAL?.nivel || null);
+
+  // Cursos: director ve todos; los demás solo su nivel
+  let cursosQ = sb.from('cursos')
+    .select('id, nombre, division, nivel')
+    .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+    .order('nivel').order('nombre');
+  if (nivelFil) cursosQ = cursosQ.eq('nivel', nivelFil);
+
   const [novRes, comRes, curRes] = await Promise.all([
     sb.from('comunicados')
       .select('id, titulo, cuerpo, nivel, curso_id, imagen_url, created_at, usuarios(nombre_completo), comunicado_imagenes(id, imagen_url, orden)')
@@ -27,10 +37,7 @@ async function _avisosCargarDatos() {
       .eq('tipo', 'comunicado')
       .order('created_at', { ascending: false })
       .limit(40),
-    sb.from('cursos')
-      .select('id, nombre, division, nivel')
-      .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
-      .order('nivel').order('nombre'),
+    cursosQ,
   ]);
 
   let novedades = novRes.data || [];
@@ -73,7 +80,7 @@ async function rNovedades() {
   if (!el) return;
   showLoading('novedades');
   const perms = _avisosPermisos();
-  _AVISOS_FILTRO_NOV_NIVEL = '';
+  _AVISOS_FILTRO_NOV_NIVEL = USUARIO_ACTUAL?.rol === 'director_general' ? '' : (USUARIO_ACTUAL?.nivel || '');
   _AVISOS_FILTRO_NOV_CURSO = '';
   try {
     await _avisosCargarDatos();
@@ -97,7 +104,7 @@ async function rComunicados() {
   if (!el) return;
   showLoading('comunicados');
   const perms = _avisosPermisos();
-  _AVISOS_FILTRO_COM_NIVEL = '';
+  _AVISOS_FILTRO_COM_NIVEL = USUARIO_ACTUAL?.rol === 'director_general' ? '' : (USUARIO_ACTUAL?.nivel || '');
   _AVISOS_FILTRO_COM_CURSO = '';
   try {
     await _avisosCargarDatos();
@@ -124,8 +131,9 @@ function _avFiltroStyle(active) {
 
 // ── Panel HTML — Novedades ────────────────────────────
 function _avisosNovPaneHtml(todos, perms) {
+  const esDir = USUARIO_ACTUAL?.rol === 'director_general';
   const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.nivel === n));
-  const filtroNivelHtml = todos.length > 0 && nivelesPresentes.length > 0 ? `
+  const filtroNivelHtml = esDir && todos.length > 0 && nivelesPresentes.length > 0 ? `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       <button class="av-fn" data-val="" onclick="_avNovFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV_NIVEL === '')}">Todos los niveles</button>
       ${nivelesPresentes.map(n => `
@@ -150,8 +158,9 @@ function _avisosNovPaneHtml(todos, perms) {
 
 // ── Panel HTML — Comunicados ──────────────────────────
 function _avisosComPaneHtml(todos, perms) {
+  const esDir = USUARIO_ACTUAL?.rol === 'director_general';
   const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.cursos?.nivel === n));
-  const filtroNivelHtml = todos.length > 0 && nivelesPresentes.length > 1 ? `
+  const filtroNivelHtml = esDir && todos.length > 0 && nivelesPresentes.length > 1 ? `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       <button class="av-fc" data-val="" onclick="_avComFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM_NIVEL === '')}">Todos</button>
       ${nivelesPresentes.map(n => `
