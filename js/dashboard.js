@@ -1463,14 +1463,16 @@ async function rDashPreceptor() {
   const hoyHabil  = esFechaHabil(sem.hoy);
   const ayerHabil = esFechaHabil(ayer);
 
-  // Asistencia hoy + ayer + alertas (requiere cursos)
-  let asistHoy = [], asistAyer = [], alertasAlumnos = [], totalAlumnos = 0;
+  // Asistencia hoy + ayer + alertas + cierres pendientes (requiere cursos)
+  let asistHoy = [], asistAyer = [], alertasAlumnos = [], totalAlumnos = 0, cierresPendCount = 0;
   if (cursoIdsList.length) {
     const queries = [
       sb.from('asistencia').select('curso_id,estado')
         .in('curso_id', cursoIdsList).eq('fecha', sem.hoy).is('hora_clase', null),
       sb.from('alumnos').select('id')
         .in('curso_id', cursoIdsList).eq('activo', true),
+      sb.from('cierres_materia_cuatrimestre').select('id', { count: 'exact', head: true })
+        .in('curso_id', cursoIdsList).not('cerrado_at', 'is', null).is('validado_at', null),
     ];
     if (ayerHabil) {
       queries.push(sb.from('asistencia').select('curso_id')
@@ -1480,7 +1482,8 @@ async function rDashPreceptor() {
     asistHoy = results[0].data || [];
     const alumnoIds = (results[1].data || []).map(a => a.id);
     totalAlumnos = alumnoIds.length;
-    if (ayerHabil) asistAyer = results[2]?.data || [];
+    cierresPendCount = results[2].count ?? 0;
+    if (ayerHabil) asistAyer = results[3]?.data || [];
     if (alumnoIds.length) {
       const { data: alertasData } = await sb.from('alertas_asistencia')
         .select('alumno_id,tipo_alerta,total_faltas,alumnos(nombre,apellido,cursos(nombre,division))')
@@ -1566,8 +1569,18 @@ async function rDashPreceptor() {
       <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${asistColor}">${asistPct}%</div><div class="mc-l">ASISTENCIA HOY</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${pendColor}">${pendientesHoy.length}</div><div class="mc-l">LISTAS PENDIENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${urgentesNivel}</div><div class="mc-l">URGENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:var(--ambar)">${alertasAlumnos.length}</div><div class="mc-l">ALERTAS ASIST.</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+      <div class="mc" style="cursor:pointer" onclick="goPage('notas')"><div class="mc-v" style="color:${cierresPendCount > 0 ? 'var(--ambar)' : 'var(--txt3)'}">${cierresPendCount}</div><div class="mc-l">PARA VALIDAR</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
     </div>
+
+    ${cierresPendCount > 0 ? `
+    <div style="background:var(--amb-l);border-left:4px solid var(--ambar);border-radius:var(--rad);padding:12px 14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between"
+      onclick="goPage('notas')">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--ambar)">⏳ Cuatrimestres pendientes de validación</div>
+        <div style="font-size:11px;color:var(--txt2);margin-top:2px">${cierresPendCount} materia${cierresPendCount !== 1 ? 's' : ''} cerrada${cierresPendCount !== 1 ? 's' : ''} por docentes — requiere tu validación</div>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:var(--ambar);flex-shrink:0;margin-left:12px">→</span>
+    </div>` : ''}
 
     ${renderProximasActividades(eventosSem, sem.hoy, nivel)}
     ${listasHTML}
