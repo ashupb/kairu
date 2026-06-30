@@ -438,7 +438,7 @@ async function rDashDirector() {
 function _cuatrimestreInfo(hoy, cierresData, anio) {
   const c1 = (cierresData || []).some(c => c.tipo === 'cuatrimestre_1');
   const c2 = (cierresData || []).some(c => c.tipo === 'cuatrimestre_2');
-  const q1s = `${anio}-03-01`, q1e = `${anio}-06-30`;
+  const q1s = `${anio}-03-01`, q1e = `${anio}-07-10`;
   const q2s = `${anio}-07-21`, q2e = `${anio}-11-28`;
   let cuatri, inicio, fin, cerrado;
   if (hoy < q2s && !c1) { cuatri = 1; inicio = q1s; fin = q1e; cerrado = false; }
@@ -504,37 +504,39 @@ function _califEstadoNivel(califs, instancias, asignaciones, cursosNivel) {
       return inst ? `${inst.materia_id}_${inst.curso_id}` : null;
     }).filter(Boolean)
   ).size;
-  return { materiasArr, peorMateria: materiasArr[0] || null, cursosArr, totalCombos, conNotas };
+  return { materiasArr, peorMateria: materiasArr[0] || null, mejorMateria: materiasArr[materiasArr.length - 1] || null, cursosArr, totalCombos, conNotas };
 }
 
 function renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, notaMinima, tieneCalifs) {
   const { cuatri, cerrado, pct, restantes, c1, c2 } = cuatriInfo;
   const cuatriClr = cerrado ? 'var(--verde)' : pct >= 80 ? 'var(--rojo)' : pct >= 50 ? 'var(--ambar)' : 'var(--azul)';
 
+  // Circular SVG: r=24, stroke=5, center=29, total=58, circ≈150.8
+  const _circ = 150.8;
+  const _off  = +((1 - pct / 100) * _circ).toFixed(1);
   const cuatriCard = `
-    <div class="card" style="margin-bottom:12px;padding:14px;cursor:pointer" onclick="goPage('notas')">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div>
-          <div style="font-size:12px;font-weight:700">Cuatrimestre ${cuatri}${cerrado ? ' — cerrado ✓' : ' en curso'}</div>
-          <div style="font-size:10px;color:${!cerrado && restantes <= 14 ? 'var(--rojo)' : 'var(--txt2)'};margin-top:2px">
+    <div class="card" style="margin-bottom:12px;padding:12px 14px;cursor:pointer" onclick="goPage('notas')">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="position:relative;flex-shrink:0;width:58px;height:58px">
+          <svg width="58" height="58" viewBox="0 0 58 58" style="transform:rotate(-90deg)">
+            <circle cx="29" cy="29" r="24" fill="none" stroke="var(--gris-l)" stroke-width="5"/>
+            <circle cx="29" cy="29" r="24" fill="none" stroke="${cuatriClr}" stroke-width="5"
+              stroke-dasharray="${_circ}" stroke-dashoffset="${_off}" stroke-linecap="round"/>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
+            <span style="font-size:12px;font-weight:800;color:${cuatriClr};line-height:1">${pct}%</span>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:700">Cuatrimestre ${cuatri}${cerrado ? ' · cerrado ✓' : ' en curso'}</div>
+          <div style="font-size:10px;color:${!cerrado && restantes <= 14 ? 'var(--rojo)' : 'var(--txt2)'};margin-top:3px">
             ${cerrado
               ? (c2 ? 'Año lectivo finalizado' : 'C1 cerrado — iniciando C2')
               : restantes === 0 ? '¡Fecha de cierre!'
-              : `${restantes} días restantes aprox.`}
+              : `${restantes} días para el cierre`}
           </div>
+          <div style="font-size:9px;color:var(--txt3);margin-top:4px">${cuatri === 1 ? '1 Mar → 10 Jul' : '21 Jul → 28 Nov'} &nbsp;·&nbsp; <span style="color:var(--azul)">Ver notas →</span></div>
         </div>
-        <div style="text-align:right">
-          <div style="font-size:26px;font-weight:800;color:${cuatriClr};font-family:'DM Sans',sans-serif;line-height:1">${pct}%</div>
-          <div style="font-size:9px;color:var(--txt2)">transcurrido</div>
-        </div>
-      </div>
-      <div style="background:var(--gris-l);border-radius:4px;height:6px">
-        <div style="width:${pct}%;background:${cuatriClr};height:6px;border-radius:4px;transition:width .4s"></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:9px;color:var(--txt3)">
-        <span>${cuatri === 1 ? '1 Mar' : '21 Jul'}</span>
-        <span style="color:var(--verde)">→ Ver calificaciones</span>
-        <span>${cuatri === 1 ? '30 Jun' : '28 Nov'}</span>
       </div>
     </div>`;
 
@@ -548,10 +550,11 @@ function renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, n
           <button class="btn-ghost" onclick="goPage('notas')" style="margin-top:8px;font-size:11px">Ir a calificaciones →</button>
         </div>`;
     } else {
-      const { peorMateria, cursosArr, totalCombos, conNotas } = califStats;
+      const { peorMateria, mejorMateria, cursosArr, totalCombos, conNotas } = califStats;
       const cobPct = totalCombos > 0 ? Math.round(conNotas / totalCombos * 100) : 0;
       const cobClr = cobPct >= 80 ? 'var(--verde)' : cobPct >= 40 ? 'var(--ambar)' : 'var(--rojo)';
       const peorClr = peorMateria && notaMinima && peorMateria.promedio < notaMinima ? 'var(--rojo)' : 'var(--ambar)';
+      const labelCerradas = cerrado ? 'cerradas' : 'evaluadas';
 
       califCard = `
         <div class="card" style="margin-bottom:12px;padding:14px">
@@ -567,13 +570,24 @@ function renderEstadoAcademicoNivel(nivel, cuatriInfo, califStats, mesesAsist, n
             <div style="background:var(--gris-l);border-radius:4px;height:5px">
               <div style="width:${cobPct}%;background:${cobClr};height:5px;border-radius:4px"></div>
             </div>
-            <div style="font-size:9px;color:var(--txt2);margin-top:3px">${conNotas} de ${totalCombos} combinaciones materia-curso</div>
+            <div style="font-size:9px;color:var(--txt2);margin-top:3px">
+              <span style="color:${cobClr};font-weight:600">${conNotas} ${labelCerradas}</span> de ${totalCombos} combinaciones materia-curso
+            </div>
           </div>
-          ${peorMateria ? `
-          <div style="background:${peorClr === 'var(--rojo)' ? 'var(--rojo-l)' : 'var(--amb-l)'};border-radius:var(--rad);padding:10px 12px;margin-bottom:10px;cursor:pointer" onclick="goPage('notas')">
-            <div style="font-size:9px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Promedio más bajo</div>
-            <div style="font-size:13px;font-weight:700;color:${peorClr}">${peorMateria.nombre}</div>
-            <div style="font-size:11px;color:${peorClr};font-weight:600">${peorMateria.promedio} prom.${notaMinima ? ` · mín. ${notaMinima}` : ''}</div>
+          ${peorMateria || mejorMateria ? `
+          <div style="display:flex;gap:8px;margin-bottom:10px">
+            ${peorMateria ? `
+            <div style="flex:1;background:${peorClr === 'var(--rojo)' ? 'var(--rojo-l)' : 'var(--amb-l)'};border-radius:var(--rad);padding:9px 10px;cursor:pointer" onclick="goPage('notas')">
+              <div style="font-size:8px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Más baja</div>
+              <div style="font-size:12px;font-weight:700;color:${peorClr};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${peorMateria.nombre}</div>
+              <div style="font-size:11px;color:${peorClr};font-weight:600">${peorMateria.promedio}${notaMinima ? ` / mín.${notaMinima}` : ''}</div>
+            </div>` : ''}
+            ${mejorMateria && mejorMateria.id !== peorMateria?.id ? `
+            <div style="flex:1;background:var(--verde-l);border-radius:var(--rad);padding:9px 10px;cursor:pointer" onclick="goPage('notas')">
+              <div style="font-size:8px;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px">Más alta</div>
+              <div style="font-size:12px;font-weight:700;color:var(--verde);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${mejorMateria.nombre}</div>
+              <div style="font-size:11px;color:var(--verde);font-weight:600">${mejorMateria.promedio}</div>
+            </div>` : ''}
           </div>` : ''}
           ${cursosArr.length ? `
           <div>
