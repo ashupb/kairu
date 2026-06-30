@@ -815,7 +815,7 @@ async function _cargarSituacionDocenteGlobal(cursoMap) {
   const _cursoUsaConc = (cuId) => {
     const cu = cursoMap[cuId];
     if (!cu) return false;
-    return cu.nivel === 'inicial' || _esPrimerCiclo(cu.nombre) || CONFIG_NOTAS[cu.nivel]?.escala === 'conceptual';
+    return cu.nivel === 'inicial' || (cu.nivel === 'primario' && _esPrimerCiclo(cu.nombre)) || CONFIG_NOTAS[cu.nivel]?.escala === 'conceptual';
   };
 
   const getPromedio = (al) => {
