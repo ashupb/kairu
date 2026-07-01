@@ -91,7 +91,7 @@ async function rNovedades() {
           ${perms.crear ? `<button class="btn-p" id="av-btn-nuevo" onclick="_avisosFormNovedad()">+ Nueva novedad</button>` : ''}
         </div>
         <div id="av-form-wrap"></div>
-        ${_avisosNovPaneHtml(_AVISOS_DATA, perms)}
+        <div id="av-nov-pane">${_avisosNovPaneHtml(_AVISOS_DATA, perms)}</div>
       </div>`;
   } catch(e) {
     el.innerHTML = `<div style="padding:60px;text-align:center;color:var(--txt3)">No se pudo cargar las novedades. Intentá de nuevo.</div>`;
@@ -115,7 +115,7 @@ async function rComunicados() {
           ${perms.crear ? `<button class="btn-p" id="av-btn-nuevo" onclick="_avisosFormComunicado()">+ Nuevo comunicado</button>` : ''}
         </div>
         <div id="av-form-wrap"></div>
-        ${_avisosComPaneHtml(_COM_INT_DATA, perms)}
+        <div id="av-com-pane">${_avisosComPaneHtml(_COM_INT_DATA, perms)}</div>
       </div>`;
   } catch(e) {
     el.innerHTML = `<div style="padding:60px;text-align:center;color:var(--txt3)">No se pudo cargar los comunicados. Intentá de nuevo.</div>`;
@@ -132,20 +132,23 @@ function _avFiltroStyle(active) {
 // ── Panel HTML — Novedades ────────────────────────────
 function _avisosNovPaneHtml(todos, perms) {
   const esDir = USUARIO_ACTUAL?.rol === 'director_general';
-  const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.nivel === n));
-  const filtroNivelHtml = esDir && todos.length > 0 && nivelesPresentes.length > 0 ? `
+  const nivelesDisp = ['inicial', 'primario', 'secundario'].filter(n => _COM_INT_CURSOS.some(c => c.nivel === n));
+  const filtroNivelHtml = esDir && nivelesDisp.length > 0 ? `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       <button class="av-fn" data-val="" onclick="_avNovFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV_NIVEL === '')}">Todos los niveles</button>
-      ${nivelesPresentes.map(n => `
+      ${nivelesDisp.map(n => `
         <button class="av-fn" data-val="${n}" onclick="_avNovFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_NOV_NIVEL === n)}">${_AV_NIVEL_LABEL[n]}</button>
       `).join('')}
     </div>` : '';
 
-  const cursoOpts = _COM_INT_CURSOS.map(c => {
-    const lbl = `${c.nombre}${c.division ? ' ' + c.division : ''} — ${_AV_NIVEL_LABEL[c.nivel] || c.nivel}`;
-    return `<option value="${c.id}" ${_AVISOS_FILTRO_NOV_CURSO === c.id ? 'selected' : ''}>${lbl}</option>`;
+  const cursosDropdown = (esDir && _AVISOS_FILTRO_NOV_NIVEL)
+    ? _COM_INT_CURSOS.filter(c => c.nivel === _AVISOS_FILTRO_NOV_NIVEL)
+    : _COM_INT_CURSOS;
+  const cursoOpts = cursosDropdown.map(c => {
+    const sufijo = (!esDir || !_AVISOS_FILTRO_NOV_NIVEL) ? ` — ${_AV_NIVEL_LABEL[c.nivel] || c.nivel}` : '';
+    return `<option value="${c.id}" ${_AVISOS_FILTRO_NOV_CURSO === c.id ? 'selected' : ''}>${c.nombre}${c.division ? ' ' + c.division : ''}${sufijo}</option>`;
   }).join('');
-  const filtroCursoHtml = _COM_INT_CURSOS.length ? `
+  const filtroCursoHtml = cursosDropdown.length ? `
     <div style="margin-bottom:14px">
       <select class="inp-base" style="max-width:280px" onchange="_avNovFiltrarCurso(this.value)">
         <option value="">Todos los cursos</option>${cursoOpts}
@@ -159,20 +162,23 @@ function _avisosNovPaneHtml(todos, perms) {
 // ── Panel HTML — Comunicados ──────────────────────────
 function _avisosComPaneHtml(todos, perms) {
   const esDir = USUARIO_ACTUAL?.rol === 'director_general';
-  const nivelesPresentes = ['inicial', 'primario', 'secundario'].filter(n => todos.some(c => c.cursos?.nivel === n));
-  const filtroNivelHtml = esDir && todos.length > 0 && nivelesPresentes.length > 1 ? `
+  const nivelesDisp = ['inicial', 'primario', 'secundario'].filter(n => _COM_INT_CURSOS.some(c => c.nivel === n));
+  const filtroNivelHtml = esDir && nivelesDisp.length > 0 ? `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
       <button class="av-fc" data-val="" onclick="_avComFiltrar('')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM_NIVEL === '')}">Todos</button>
-      ${nivelesPresentes.map(n => `
+      ${nivelesDisp.map(n => `
         <button class="av-fc" data-val="${n}" onclick="_avComFiltrar('${n}')" style="${_avFiltroStyle(_AVISOS_FILTRO_COM_NIVEL === n)}">${_AV_NIVEL_LABEL[n]}</button>
       `).join('')}
     </div>` : '';
 
-  const cursoOpts = _COM_INT_CURSOS.map(c => {
-    const lbl = `${c.nombre}${c.division ? ' ' + c.division : ''} — ${_AV_NIVEL_LABEL[c.nivel] || c.nivel}`;
-    return `<option value="${c.id}" ${_AVISOS_FILTRO_COM_CURSO === c.id ? 'selected' : ''}>${lbl}</option>`;
+  const cursosDropdown = (esDir && _AVISOS_FILTRO_COM_NIVEL)
+    ? _COM_INT_CURSOS.filter(c => c.nivel === _AVISOS_FILTRO_COM_NIVEL)
+    : _COM_INT_CURSOS;
+  const cursoOpts = cursosDropdown.map(c => {
+    const sufijo = (!esDir || !_AVISOS_FILTRO_COM_NIVEL) ? ` — ${_AV_NIVEL_LABEL[c.nivel] || c.nivel}` : '';
+    return `<option value="${c.id}" ${_AVISOS_FILTRO_COM_CURSO === c.id ? 'selected' : ''}>${c.nombre}${c.division ? ' ' + c.division : ''}${sufijo}</option>`;
   }).join('');
-  const filtroCursoHtml = _COM_INT_CURSOS.length ? `
+  const filtroCursoHtml = cursosDropdown.length ? `
     <div style="margin-bottom:14px">
       <select class="inp-base" style="max-width:280px" onchange="_avComFiltrarCurso(this.value)">
         <option value="">Todos los cursos</option>${cursoOpts}
@@ -207,12 +213,9 @@ function _avAplicarFiltrosCom(todos) {
 // ── Filtrar novedades ─────────────────────────────────
 function _avNovFiltrar(nivel) {
   _AVISOS_FILTRO_NOV_NIVEL = nivel;
-  const perms = _avisosPermisos();
-  const listaEl = document.getElementById('av-nov-lista');
-  if (listaEl) listaEl.innerHTML = _avisosNovListaHtml(_avAplicarFiltrosNov(_AVISOS_DATA), perms);
-  document.querySelectorAll('.av-fn').forEach(b => {
-    b.style.cssText = _avFiltroStyle(b.dataset.val === nivel);
-  });
+  _AVISOS_FILTRO_NOV_CURSO = '';
+  const pane = document.getElementById('av-nov-pane');
+  if (pane) pane.innerHTML = _avisosNovPaneHtml(_AVISOS_DATA, _avisosPermisos());
 }
 
 function _avNovFiltrarCurso(cursoId) {
@@ -225,12 +228,9 @@ function _avNovFiltrarCurso(cursoId) {
 // ── Filtrar comunicados ───────────────────────────────
 function _avComFiltrar(nivel) {
   _AVISOS_FILTRO_COM_NIVEL = nivel;
-  const perms = _avisosPermisos();
-  const listaEl = document.getElementById('av-com-lista');
-  if (listaEl) listaEl.innerHTML = _avisosComListaHtml(_avAplicarFiltrosCom(_COM_INT_DATA), perms);
-  document.querySelectorAll('.av-fc').forEach(b => {
-    b.style.cssText = _avFiltroStyle(b.dataset.val === nivel);
-  });
+  _AVISOS_FILTRO_COM_CURSO = '';
+  const pane = document.getElementById('av-com-pane');
+  if (pane) pane.innerHTML = _avisosComPaneHtml(_COM_INT_DATA, _avisosPermisos());
 }
 
 function _avComFiltrarCurso(cursoId) {
