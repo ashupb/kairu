@@ -100,37 +100,6 @@ function renderAgendaSemana(eventosSem, sem, nivelFiltro) {
     </div>`;
 }
 
-// ── SHARED: Strip de objetivos ─────────────────────────
-function renderObjetivosStrip(objetivos) {
-  const lista = (objetivos || []).filter(o => o.estado !== 'archivado' && o.estado !== 'logrado');
-  if (!lista.length) return '';
-
-  const empeorando = lista.filter(o => o.tendencia === 'empeorando');
-
-  return `
-    ${empeorando.length ? `
-    <div class="alr" style="margin-bottom:14px">
-      <div class="alr-t">↓ ${empeorando.length} objetivo${empeorando.length>1?'s':''} empeorando${empeorando.length>1?'n':''}</div>
-      <div style="font-size:11px;color:var(--txt2);margin-top:4px">${empeorando.slice(0,2).map(o=>o.nombre).join(', ')}${empeorando.length>2?' y más...':''}</div>
-      <div class="acc" style="margin-top:8px"><button class="btn-d" onclick="goPage('obj')">Ver objetivos →</button></div>
-    </div>` : ''}
-    <div class="card obj-strip" onclick="goPage('obj')" style="cursor:pointer;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <span style="font-size:12px;font-weight:600">◎ Objetivos institucionales</span>
-        <button class="btn-ghost" style="font-size:10px" onclick="event.stopPropagation();goPage('obj')">Ver todos →</button>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:7px">
-        ${lista.slice(0, 6).map(o => `
-          <div style="display:flex;align-items:center;gap:8px;font-size:12px">
-            <span style="color:${o.estado==='en_riesgo'?'var(--rojo)':o.tendencia==='empeorando'?'var(--ambar)':'var(--verde)'};flex-shrink:0">●</span>
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.nombre}</span>
-            ${o.estado==='en_riesgo' ? `<span class="tag tr" style="font-size:9px;flex-shrink:0">Riesgo</span>` : o.tendencia==='empeorando' ? `<span class="tag ta" style="font-size:9px;flex-shrink:0">Empeorando</span>` : ''}
-          </div>`).join('')}
-        ${lista.length > 6 ? `<div style="font-size:10px;color:var(--txt2);margin-top:2px">+ ${lista.length-6} más</div>` : ''}
-      </div>
-    </div>`;
-}
-
 // ── SHARED: Panel de estado por nivel ─────────────────
 function renderNivelPanel(nivel, problematicasFull) {
   const nc = NIVEL_CONFIG[nivel] || { color:'#888', bg:'#f5f5f5', label: nivel };
@@ -181,56 +150,58 @@ function renderAlertasProb(alertasProb) {
     </div>`;
 }
 
-// ── Director: Alertas de asistencia ───────────────────
-function renderAlertasAsistDir(alertasAsist) {
-  if (!alertasAsist.length) return '';
+// ── Director: Card comparativa de estado por nivel ────
+function renderNivelCardDirector(nivel, d) {
+  const nc = NIVEL_CONFIG[nivel] || { color:'#888', label: nivel };
+  const coberturaBaja     = d.notas && d.notas.pct < 60;
+  const coberturaCritica  = d.notas && d.notas.pct < 30 && d.cierreProximo;
+
+  let estadoTag = 'tg', estadoLbl = 'ok';
+  if (d.alertaAsistencia || coberturaCritica)      { estadoTag = 'tr'; estadoLbl = 'alerta'; }
+  else if (d.situaciones > 0 || coberturaBaja)     { estadoTag = 'ta'; estadoLbl = 'atención'; }
+
+  const asistLinea = d.asistPct === null
+    ? `<div style="font-size:11px;color:var(--txt3)">Asistencia — pendiente de registro</div>`
+    : `<div style="font-size:11px;color:var(--txt2)">Asistencia hoy — <span style="font-weight:700;color:${d.asistPct>=85?'var(--verde)':d.asistPct>=70?'var(--ambar)':'var(--rojo)'}">${d.asistPct}%</span></div>`;
+
+  let segundaLinea = '';
+  if (nivel === 'inicial') {
+    segundaLinea = d.informesAlDia
+      ? `<span class="tag tg" style="font-size:9px">Informes al día</span>`
+      : `<span class="tag ta" style="font-size:9px">Informes pendientes</span>`;
+  } else if (d.notas) {
+    const cobTag = d.notas.pct >= 80 ? 'tg' : d.notas.pct >= 30 ? 'ta' : 'tr';
+    segundaLinea = `<span class="tag ${cobTag}" style="font-size:9px">Notas cuatrimestre ${d.notas.cuatri} — cobertura ${d.notas.pct}%</span>`;
+  }
+
   return `
-    <div class="alr" style="margin-bottom:14px;border-left-color:var(--ambar)">
-      <div class="alr-t">⚠️ ${alertasAsist.length} alerta${alertasAsist.length > 1 ? 's' : ''} de inasistencia</div>
-      <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">
-        ${alertasAsist.slice(0, 5).map(a => {
-          const al  = a.alumnos;
-          const cu  = al?.cursos;
-          const nom = al ? `${al.apellido}, ${al.nombre}` : '—';
-          const cur = cu ? `${cu.nombre}${cu.division || ''}` : '';
-          const niv = cu?.nivel || '';
-          return `<div style="display:flex;align-items:center;gap:8px;font-size:11px;cursor:pointer" onclick="goPage('asist')">
-            <span class="tag ${a.tipo_alerta >= 3 ? 'tr' : 'ta'}" style="font-size:9px">${a.tipo_alerta >= 3 ? 'Crítico' : 'Aviso'}</span>
-            <span>${nom}${cur ? ' · ' + cur : ''}${niv ? ' · ' + niv : ''} · ${a.total_faltas} faltas</span>
-          </div>`;
-        }).join('')}
-        ${alertasAsist.length > 5 ? `<div style="font-size:10px;color:var(--ambar);cursor:pointer" onclick="goPage('asist')">+ ${alertasAsist.length - 5} más →</div>` : ''}
+    <div class="card" style="border-top:3px solid ${nc.color}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:${nc.color};letter-spacing:.04em">${nc.label.toUpperCase()}</div>
+        <span class="tag ${estadoTag}" style="font-size:9px">${estadoLbl}</span>
       </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px">
+        <div class="ns"><div class="ns-v">${d.alumnos}</div><div class="ns-l">Alumnos</div></div>
+        <div class="ns"><div class="ns-v">${d.docentes}</div><div class="ns-l">Docentes</div></div>
+        <div class="ns"><div class="ns-v" style="color:${d.situaciones>0?'var(--rojo)':'var(--txt)'}">${d.situaciones}</div><div class="ns-l">Situaciones</div></div>
+      </div>
+      ${asistLinea}
+      ${segundaLinea ? `<div style="margin-top:7px">${segundaLinea}</div>` : ''}
     </div>`;
 }
 
-// ── Director: Panel por nivel con nuevas métricas ─────
-function renderNivelPanelSituaciones(nivel, problematicasFull) {
-  const nc = NIVEL_CONFIG[nivel] || { color:'#888', bg:'#f5f5f5', label: nivel };
-  const probsNivel  = problematicasFull.filter(p => p.alumno?.curso?.nivel === nivel);
-  const urgentes    = probsNivel.filter(p => p.urgencia === 'alta');
-  const seguimiento = probsNivel.filter(p => p.estado === 'en_seguimiento');
-  const sinAtender  = probsNivel.filter(p => p.estado === 'abierta');
-
+// ── Director: Panel de alertas institucionales cruzadas ─
+function renderAlertasInstitucionales(alertas) {
+  if (!alertas.length) return '';
   return `
-    <div class="nivel-panel" style="border-top:3px solid ${nc.color}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:12px;font-weight:700;color:${nc.color}">${nc.label}</div>
-        <button class="btn-s" style="font-size:9px;padding:3px 10px" onclick="goPage('prob')">Ir →</button>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
-        <div class="ns" style="cursor:pointer" onclick="goPage('prob')">
-          <div class="ns-v" style="color:var(--rojo)">${urgentes.length}</div>
-          <div class="ns-l">Urgentes</div>
-        </div>
-        <div class="ns" style="cursor:pointer" onclick="goPage('prob')">
-          <div class="ns-v" style="color:var(--ambar)">${seguimiento.length}</div>
-          <div class="ns-l">En Seguimiento</div>
-        </div>
-        <div class="ns" style="cursor:pointer" onclick="goPage('prob')">
-          <div class="ns-v">${sinAtender.length}</div>
-          <div class="ns-l">Sin atender</div>
-        </div>
+    <div style="background:var(--rojo-l);border:1px solid rgba(214,59,47,0.16);border-radius:12px;padding:14px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--rojo);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">△ Alertas institucionales</div>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        ${alertas.map(a => `
+          <div style="border-left:3px solid ${a.clr};border-radius:0 8px 8px 0;background:var(--surf);padding:10px 12px;cursor:pointer" onclick="goPage('${a.goPage}')">
+            <div style="font-size:12px;font-weight:600;color:${a.clr}">${a.titulo}</div>
+            ${a.subtexto ? `<div style="font-size:11px;color:var(--txt2);margin-top:2px">${a.subtexto}</div>` : ''}
+          </div>`).join('')}
       </div>
     </div>`;
 }
@@ -310,12 +281,22 @@ async function rDashDirector() {
   const instId = USUARIO_ACTUAL.institucion_id;
   const miId   = USUARIO_ACTUAL.id;
   const sem    = _semanaActual();
+  const hoy    = sem.hoy;
+  const anio   = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
 
-  const hoy = sem.hoy;
+  // Fecha de corte para intervenciones recientes (7 días) y semestre narrativo (inicial)
+  const dHace7 = new Date(hoy + 'T00:00:00');
+  dHace7.setDate(dHace7.getDate() - 7);
+  const hace7ISO       = dHace7.toISOString().slice(0, 10);
+  const semestreActual = hoy < `${anio}-07-21` ? 1 : 2;
 
-  const [probRes, objRes, eventosRes, respRes, alertasRes, alumnosRes, docentesRes, asistHoyRes, noLectRes, cursosRes, alertasAsistRes] = await Promise.all([
+  const [
+    probRes, objRes, eventosRes, respRes, alertasRes,
+    alumnosRes, docentesRes, asistHoyRes, noLectRes, cursosRes, alertasAsistRes,
+    cierresRes, configRes,
+  ] = await Promise.all([
     sb.from('problematicas')
-      .select('id,urgencia,estado,alumno:alumnos(curso:cursos(nivel))')
+      .select('id,urgencia,estado,alumno_id,alumno:alumnos(curso:cursos(nivel))')
       .eq('institucion_id', instId)
       .in('estado', ['abierta','en_seguimiento']),
     sb.from('objetivos')
@@ -335,10 +316,10 @@ async function rDashDirector() {
       .select('id,problematica:problematicas(id,tipo,urgencia,alumno:alumnos(nombre,apellido))')
       .eq('usuario_id', miId).eq('leida', false)
       .order('created_at', { ascending:false }).limit(10),
-    sb.from('alumnos').select('id', { count:'exact', head:true })
+    sb.from('alumnos').select('id,nombre,apellido,curso_id,cursos(nombre,division,nivel)')
       .eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
-    sb.from('usuarios').select('id', { count:'exact', head:true })
-      .eq('institucion_id', instId).eq('rol', 'docente').or('activo.is.null,activo.eq.true'),
+    sb.from('usuarios').select('id,nivel,rol')
+      .eq('institucion_id', instId).in('rol', ['docente','preceptor']).or('activo.is.null,activo.eq.true'),
     sb.from('asistencia').select('estado,curso_id').eq('fecha', hoy).is('hora_clase', null),
     sb.from('dias_no_lectivos').select('fecha').eq('institucion_id', instId),
     sb.from('cursos').select('id,nivel').eq('institucion_id', instId),
@@ -346,25 +327,30 @@ async function rDashDirector() {
       .select('alumno_id,tipo_alerta,total_faltas,alumnos(nombre,apellido,cursos(nombre,division,nivel))')
       .eq('institucion_id', instId)
       .order('tipo_alerta', { ascending: false }),
+    sb.from('cierres_periodo').select('tipo').eq('institucion_id', instId).in('tipo', ['cuatrimestre_1','cuatrimestre_2']),
+    sb.from('config_asistencia').select('nivel,nota_minima,umbral_alerta_1,umbral_alerta_2,dimensiones_informe').eq('institucion_id', instId),
   ]);
 
   window._diasNoLectivos = new Set((noLectRes.data || []).map(r => r.fecha));
+  checkAlertasProb(instId).catch(() => {});
 
   const probs         = probRes.data    || [];
   const objetivos     = objRes.data     || [];
   const eventosSem    = eventosRes.data || [];
   const pendientes    = (respRes.data   || []).filter(r => r.eventos_institucionales);
   const alertas       = alertasRes.error ? [] : (alertasRes.data || []);
-  const totalAlumnos  = alumnosRes.count  ?? 0;
-  const totalDocentes = docentesRes.count ?? 0;
-  const sinActividad  = window._alertasProbCache?.sinActividad ?? 0;
-  checkAlertasProb(instId).catch(() => {});
-
-  const asistHoy = asistHoyRes.data || [];
-  const cursosData   = cursosRes.data || [];
-  const totalCursos  = cursosData.length;
+  const alumnosData   = alumnosRes.data  || [];
+  const docentesData  = docentesRes.data || [];
+  const totalAlumnos  = alumnosData.length;
+  const totalDocentes = docentesData.length;
+  const cursosData    = cursosRes.data || [];
+  const totalCursos   = cursosData.length;
   const nivelesActivos = [...new Set(cursosData.map(c => c.nivel))];
-  const alertasAsist = alertasAsistRes.error ? [] : (alertasAsistRes.data || []);
+  const alertasAsist  = alertasAsistRes.error ? [] : (alertasAsistRes.data || []);
+  const configData    = configRes.data || [];
+
+  // ── Barra de asistencia institucional (sin cambios) ──
+  const asistHoy = asistHoyRes.data || [];
   const asistContador = { presente:0, ausente:0, media_falta:0, tardanza:0, justificado:0 };
   asistHoy.forEach(a => { if (asistContador[a.estado] !== undefined) asistContador[a.estado]++; });
   const pctAsist = totalAlumnos > 0
@@ -397,11 +383,213 @@ async function rDashDirector() {
       <div style="font-size:12px;color:var(--txt2)">📋 Asistencia hoy — Sin registros todavía${totalCursos > 0 ? ` · ${totalCursos} listas pendientes` : ''}</div>
     </div>`;
 
-  const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
+  // ── Mapas de cruce (curso→nivel, config por nivel) ──
+  const cursoNivelMap = {};
+  cursosData.forEach(c => { cursoNivelMap[c.id] = c.nivel; });
+  const configPorNivel = {};
+  configData.forEach(c => { configPorNivel[c.nivel] = c; });
 
-  const nivelesPanel = ['inicial','primario','secundario']
-    .filter(n => nivelesActivos.includes(n))
-    .map(n => renderNivelPanelSituaciones(n, probs)).join('');
+  // ── Alumnos / docentes / situaciones por nivel ──
+  const alumnosPorNivel = {};
+  alumnosData.forEach(a => {
+    const n = a.cursos?.nivel;
+    if (!n) return;
+    if (!alumnosPorNivel[n]) alumnosPorNivel[n] = [];
+    alumnosPorNivel[n].push(a);
+  });
+  const docentesPorNivel = {};
+  docentesData.forEach(d => {
+    if (!d.nivel) return;
+    docentesPorNivel[d.nivel] = (docentesPorNivel[d.nivel] || 0) + 1;
+  });
+  const probsPorNivel = {};
+  probs.forEach(p => {
+    const n = p.alumno?.curso?.nivel;
+    if (!n) return;
+    if (!probsPorNivel[n]) probsPorNivel[n] = [];
+    probsPorNivel[n].push(p);
+  });
+
+  // ── Asistencia hoy por nivel ──
+  const asistPorNivel = {};
+  asistHoy.forEach(a => {
+    const n = cursoNivelMap[a.curso_id];
+    if (!n) return;
+    if (!asistPorNivel[n]) asistPorNivel[n] = { presente:0, ausente:0, tardanza:0, media_falta:0, justificado:0 };
+    if (asistPorNivel[n][a.estado] !== undefined) asistPorNivel[n][a.estado]++;
+  });
+
+  // ── Alertas de inasistencia por nivel (tabla ya precomputada) ──
+  const alertasAsistPorNivel = {};
+  alertasAsist.forEach(a => {
+    const n = a.alumnos?.cursos?.nivel;
+    if (!n) return;
+    if (!alertasAsistPorNivel[n]) alertasAsistPorNivel[n] = [];
+    alertasAsistPorNivel[n].push(a);
+  });
+
+  // ── Cuatrimestre institucional (mismo calendario para primario/secundario) ──
+  const cuatriInfo     = _cuatrimestreInfo(hoy, cierresRes.data || [], anio);
+  const cierreProximo  = cuatriInfo.restantes <= 15 && !cuatriInfo.cerrado;
+
+  // ── WAVE 2: instancias evaluativas + asignaciones (primario/secundario) + intervenciones 7d + informes iniciales ──
+  const nonInicialCursoIds = cursosData.filter(c => c.nivel !== 'inicial').map(c => c.id);
+  const probsIds           = probs.map(p => p.id);
+  const alumnosInicialIds  = (alumnosPorNivel.inicial || []).map(a => a.id);
+
+  const [instanciasRes, asignRes, interv7dRes, obsInicialesRes] = await Promise.all([
+    nonInicialCursoIds.length
+      ? sb.from('instancias_evaluativas').select('id,curso_id,materia_id,es_recuperatorio,materias(nombre)').in('curso_id', nonInicialCursoIds)
+      : Promise.resolve({ data: [] }),
+    nonInicialCursoIds.length
+      ? sb.from('asignaciones').select('materia_id,curso_id').in('curso_id', nonInicialCursoIds).eq('anio_lectivo', anio)
+      : Promise.resolve({ data: [] }),
+    probsIds.length
+      ? sb.from('intervenciones').select('problematica_id').in('problematica_id', probsIds).gte('created_at', hace7ISO + 'T00:00:00')
+      : Promise.resolve({ data: [] }),
+    alumnosInicialIds.length
+      ? sb.from('observaciones_iniciales').select('alumno_id').eq('anio_lectivo', anio).eq('semestre', semestreActual).in('alumno_id', alumnosInicialIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const instanciasData = instanciasRes.data || [];
+  const instanciaIds   = instanciasData.filter(i => !i.es_recuperatorio).map(i => i.id);
+
+  // ── WAVE 3: calificaciones (depende de instanciaIds) ──
+  const califRes = instanciaIds.length
+    ? await sb.from('calificaciones').select('nota,instancia_id,ausente,alumno_id').in('instancia_id', instanciaIds).not('nota', 'is', null)
+    : { data: [] };
+  const califs = (califRes.data || []).filter(c => !c.ausente);
+
+  // ── Cobertura de notas por nivel (primario / secundario) ──
+  const instNivelMap = {};
+  instanciasData.forEach(i => { instNivelMap[i.id] = cursoNivelMap[i.curso_id]; });
+
+  function _cobertura(nivel) {
+    const instanciasN = instanciasData.filter(i => cursoNivelMap[i.curso_id] === nivel);
+    const asignN      = (asignRes.data || []).filter(a => cursoNivelMap[a.curso_id] === nivel);
+    const cursosN     = cursosData.filter(c => c.nivel === nivel);
+    const califsN     = califs.filter(c => instNivelMap[c.instancia_id] === nivel);
+    const stats = _califEstadoNivel(califsN, instanciasN, asignN, cursosN);
+    return stats.totalCombos > 0 ? Math.round(stats.conNotas / stats.totalCombos * 100) : null;
+  }
+  const cobPctPrimario   = nivelesActivos.includes('primario')   ? _cobertura('primario')   : null;
+  const cobPctSecundario = nivelesActivos.includes('secundario') ? _cobertura('secundario') : null;
+
+  // ── Situaciones sin intervención reciente (7 días) por nivel ──
+  const probsConInterv = new Set((interv7dRes.data || []).map(i => i.problematica_id));
+  const sinIntervPorNivel = {};
+  Object.keys(probsPorNivel).forEach(n => {
+    sinIntervPorNivel[n] = probsPorNivel[n].filter(p => !probsConInterv.has(p.id)).length;
+  });
+
+  // ── Informes narrativos (nivel inicial) ──
+  const alumnosInicialCount = (alumnosPorNivel.inicial || []).length;
+  const conInformeSet = new Set((obsInicialesRes.data || []).map(o => o.alumno_id));
+  const informesAlDia = alumnosInicialCount > 0 && conInformeSet.size >= alumnosInicialCount;
+
+  // ── Cards de estado por nivel ──
+  const NIVELES = ['inicial','primario','secundario'];
+  const nivelCardsHTML = NIVELES.filter(n => nivelesActivos.includes(n)).map(n => {
+    const alumnosN  = (alumnosPorNivel[n] || []).length;
+    const docentesN = docentesPorNivel[n] || 0;
+    const asistN    = asistPorNivel[n];
+    const totalRegN = asistN ? Object.values(asistN).reduce((a, b) => a + b, 0) : 0;
+    const asistPctN = totalRegN > 0
+      ? Math.min(100, Math.round((asistN.presente + asistN.tardanza + asistN.media_falta) / alumnosN * 100))
+      : null;
+    let notas = null;
+    if (n === 'primario')   notas = cobPctPrimario   !== null ? { pct: cobPctPrimario,   cuatri: cuatriInfo.cuatri } : null;
+    if (n === 'secundario') notas = cobPctSecundario !== null ? { pct: cobPctSecundario, cuatri: cuatriInfo.cuatri } : null;
+
+    return renderNivelCardDirector(n, {
+      alumnos: alumnosN, docentes: docentesN, situaciones: (probsPorNivel[n] || []).length,
+      asistPct: asistPctN, notas, cierreProximo,
+      alertaAsistencia: (alertasAsistPorNivel[n] || []).length > 0,
+      informesAlDia: n === 'inicial' ? informesAlDia : null,
+    });
+  }).join('');
+
+  // ── Alertas institucionales cruzadas (máx. 4, por severidad) ──
+  const alertasInst = [];
+
+  // Alerta 1 — cobertura crítica de notas
+  [['primario', cobPctPrimario], ['secundario', cobPctSecundario]].forEach(([n, pct]) => {
+    if (pct !== null && pct < 30 && cierreProximo) {
+      alertasInst.push({
+        sev: 3, clr: 'var(--rojo)',
+        titulo: `${NIVEL_CONFIG[n].label} — cobertura crítica de notas`,
+        subtexto: `${pct}% de materias evaluadas · cierre en ${cuatriInfo.restantes} días`,
+        goPage: 'notas',
+      });
+    }
+  });
+
+  // Alerta 2 — alumnos con inasistencias sobre el umbral (por nivel)
+  NIVELES.forEach(n => {
+    const lista = alertasAsistPorNivel[n];
+    if (lista?.length) {
+      const nombres = lista.slice(0, 2).map(a => `${a.alumnos?.apellido}, ${a.alumnos?.nombre} (${a.total_faltas} faltas)`);
+      alertasInst.push({
+        sev: 2, clr: 'var(--ambar)',
+        titulo: `${lista.length} alerta${lista.length > 1 ? 's' : ''} de inasistencia — ${NIVEL_CONFIG[n].label}`,
+        subtexto: nombres.join(' · ') + (lista.length > 2 ? ` y ${lista.length - 2} más` : ''),
+        goPage: 'asist',
+      });
+    }
+  });
+
+  // Alerta 3 — situaciones sin intervención reciente (por nivel)
+  NIVELES.forEach(n => {
+    const cnt = sinIntervPorNivel[n] || 0;
+    if (cnt > 0) {
+      alertasInst.push({
+        sev: 2, clr: 'var(--ambar)',
+        titulo: `${NIVEL_CONFIG[n].label} — ${cnt} situaci${cnt > 1 ? 'ones' : 'ón'} sin seguimiento reciente`,
+        subtexto: 'Sin intervención en los últimos 7 días',
+        goPage: 'prob',
+      });
+    }
+  });
+
+  // Alerta 4 — alumno que requiere atención institucional (≥2 de 3 condiciones)
+  const alumnosConProbSet   = new Set(probs.map(p => p.alumno_id).filter(Boolean));
+  const alertaAsistAlumnoSet = new Set(alertasAsist.map(a => a.alumno_id));
+  const nMap = {};
+  califs.forEach(c => {
+    if (!c.alumno_id || !c.nota) return;
+    if (!nMap[c.alumno_id]) nMap[c.alumno_id] = [];
+    nMap[c.alumno_id].push(c.nota);
+  });
+  let candidato = null, candidatoConds = 0, candidatoDetalle = [];
+  alumnosData.forEach(al => {
+    const notaMin = configPorNivel[al.cursos?.nivel]?.nota_minima;
+    const notas   = nMap[al.id];
+    let conds = 0, detalle = [];
+    if (alumnosConProbSet.has(al.id))    { conds++; detalle.push('problemática activa'); }
+    if (alertaAsistAlumnoSet.has(al.id)) { conds++; detalle.push('inasistencias sobre el umbral'); }
+    if (notas?.length && notaMin) {
+      const avg = notas.reduce((a, b) => a + b, 0) / notas.length;
+      if (avg < notaMin) { conds++; detalle.push('promedio por debajo de la nota mínima'); }
+    }
+    if (conds >= 2 && conds > candidatoConds) {
+      candidato = al; candidatoConds = conds; candidatoDetalle = detalle;
+    }
+  });
+  if (candidato) {
+    const cu = candidato.cursos;
+    const nc = NIVEL_CONFIG[cu?.nivel];
+    alertasInst.push({
+      sev: 3, clr: 'var(--rojo)',
+      titulo: `Alumno requiere atención — ${candidato.apellido}, ${candidato.nombre} (${cu?.nombre || ''}${cu?.division || ''}, ${nc?.label || cu?.nivel || ''})`,
+      subtexto: candidatoDetalle.join(' · '),
+      goPage: 'leg',
+    });
+  }
+
+  alertasInst.sort((a, b) => b.sev - a.sev);
+
+  const { saludo, apellido } = _saludo(USUARIO_ACTUAL.nombre_completo);
 
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
@@ -409,21 +597,28 @@ async function rDashDirector() {
 
     ${asistCardHTML}
 
-    <div class="metrics m4" style="margin-bottom:14px">
-      <div class="mc" style="cursor:pointer" onclick="goPage('leg')"><div class="mc-v">${totalAlumnos}</div><div class="mc-l">ALUMNOS ACTIVOS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="_adminTab='docentes';goPage('admin')"><div class="mc-v">${totalDocentes}</div><div class="mc-l">DOCENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--rojo)">${probs.length}</div><div class="mc-l">SITUACIONES</div>${sinActividad > 0 ? `<div style="font-size:9px;color:var(--rojo);font-weight:600;margin-top:2px">${sinActividad} inactivas</div>` : ''}<div style="font-size:9px;color:var(--verde);margin-top:${sinActividad > 0 ? '2' : '6'}px;font-weight:600">Ir →</div></div>
-      <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:var(--ambar)">${alertas.length + alertasAsist.length}</div><div class="mc-l">ALERTAS</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
+    <div class="niveles-grid" style="margin-bottom:14px">
+      ${nivelCardsHTML}
     </div>
+
+    ${renderAlertasInstitucionales(alertasInst.slice(0, 4))}
 
     ${renderProximasActividades(eventosSem, sem.hoy, null)}
     ${renderAlertasProb(alertas)}
-    ${renderAlertasAsistDir(alertasAsist)}
     ${renderPendientesRespuesta(pendientes)}
-    ${renderObjetivosStrip(objetivos)}
+    ${renderObjetivosDirectivo(objetivos)}
 
     <div class="dash-cols">
-      <div class="dash-col-l" id="tareas-col"></div>
+      <div class="dash-col-l">
+        <div id="tareas-col"></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:.5px solid var(--brd)">
+          <div style="display:flex;gap:10px">
+            <div class="ns" style="flex:1"><div class="ns-v">${totalAlumnos}</div><div class="ns-l">Alumnos activos</div></div>
+            <div class="ns" style="flex:1"><div class="ns-v">${totalDocentes}</div><div class="ns-l">Docentes</div></div>
+            <div class="ns" style="flex:1"><div class="ns-v" style="color:${probs.length ? 'var(--rojo)' : 'var(--txt)'}">${probs.length}</div><div class="ns-l">Situaciones</div></div>
+          </div>
+        </div>
+      </div>
       <div class="dash-col-r">
         ${renderAgendaSemana(eventosSem, sem, null)}
       </div>
@@ -1736,6 +1931,10 @@ function inyectarEstilosDash() {
     .dash-cols{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start;margin-top:4px}
     @media(max-width:860px){.dash-cols{grid-template-columns:1fr}}
     @media(max-width:860px){.dash-col-r{order:-1}}
+
+    /* Cards de estado por nivel (director general) */
+    .niveles-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    @media(max-width:768px){.niveles-grid{grid-template-columns:1fr}}
 
     /* Paneles de nivel */
     .nivel-panel{background:var(--surf);border:1px solid var(--brd);border-radius:var(--rad-lg);padding:14px;margin-bottom:10px}

@@ -90,6 +90,19 @@ Cada módulo sigue este patrón:
 3. Cache local en `window._xxxCache` para evitar re-fetches en toggles
 4. El HTML se construye con template literals y se asigna a `innerHTML`
 
+### Dashboard — director_general (dashboard.js → `rDashDirector()`)
+El dashboard de `director_general` muestra estado comparativo institucional en vez de un solo nivel:
+1. Saludo + barra de asistencia institucional (sin cambios respecto a otros roles)
+2. `.niveles-grid` — 3 cards (`renderNivelCardDirector()`), una por nivel activo (inicial/primario/secundario), con borde superior del color de `NIVEL_CONFIG` (agenda.js): alumnos/docentes/situaciones del nivel, badge de estado (`ok`/`atención`/`alerta`), % asistencia hoy, y cobertura de notas cuatrimestre (primario/secundario) o estado de informes narrativos (inicial)
+3. `renderAlertasInstitucionales()` — panel cruzado (máx. 4, ordenadas por severidad): cobertura crítica de notas con cierre próximo, alumnos sobre el umbral de inasistencia (reutiliza `alertas_asistencia`, ya precomputada), situaciones sin intervención en 7 días, y alumno con ≥2 de 3 indicadores de riesgo (problemática activa + inasistencias + nota bajo mínima)
+4. Próximas actividades, alertas sin leer y pendientes de respuesta (sin cambios)
+5. Objetivos institucionales vía `renderObjetivosDirectivo()` (compartida con `directivo_nivel` — dot de tendencia + badge de estado)
+6. `#tareas-col` (panel de tareas de `tareas.js`, sin tocar) + resumen institucional (alumnos/docentes/situaciones totales) al pie, separado por `border-top`
+
+Las funciones `renderObjetivosStrip`, `renderAlertasAsistDir` y `renderNivelPanelSituaciones` (antiguo panel por nivel, código muerto) fueron eliminadas al migrar a este diseño — no reintroducirlas.
+
+**Nota de convención de color**: los niveles usan siempre los colores de `NIVEL_CONFIG` (agenda.js: inicial verde, primario azul, secundario violeta) para ser consistentes con la agenda y las próximas actividades en la misma pantalla — no inventar una paleta de color distinta por nivel en nuevas secciones del dashboard.
+
 ### Roles y permisos
 Los roles son: `director_general`, `directivo_nivel`, `eoe`, `docente`, `preceptor`.
 

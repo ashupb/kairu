@@ -29,7 +29,7 @@ kairu_demo/
     ├── nav.js              ← 101 líneas  — sidebar renderNav() por rol
     ├── ui.js               ← 155 líneas  — showLoading, notificaciones, abrirNotif
     ├── setup.js            ←  80 líneas  — flujo de setup inicial de institución
-    ├── dashboard.js        ← 945 líneas  — módulo Inicio (rDash)
+    ├── dashboard.js        ← 1984 líneas — módulo Inicio (rDash)
     ├── agenda.js           ← 1080 líneas — módulo Agenda (rAgenda)
     ├── asistencia.js       ← 1173 líneas — módulo Asistencia (rAsist)
     ├── calificaciones.js   ← 1444 líneas — módulo Calificaciones (rNotas)
@@ -46,7 +46,7 @@ kairu_demo/
 
 | Página | Renderer | Archivo | Líneas | Estado |
 |--------|----------|---------|--------|--------|
-| `dash` | `rDash()` | dashboard.js | 945 | ✅ Completo |
+| `dash` | `rDash()` | dashboard.js | 1984 | ✅ Completo (dashboard comparativo por nivel para director_general) |
 | `agenda` | `rAgenda()` | agenda.js | 1080 | ✅ Completo |
 | `prob` | `rProb()` | problematicas.js | 994 | ✅ Completo (v3 grupal/curso) |
 | `obj` | `rObj()` | modulos.js | 860 | ✅ Completo |
