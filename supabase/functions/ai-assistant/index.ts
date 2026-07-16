@@ -7,7 +7,9 @@ const corsHeaders = {
 
 function construirPromptLegajo(p: any): string {
   const asistenciaTexto = (p.asistencia_pct !== null && p.asistencia_pct !== undefined)
-    ? `${p.asistencia_pct}% de asistencia${p.dias_total ? ` (${p.dias_ausentes ?? 0} inasistencias en ${p.dias_total} días hábiles)` : ''}`
+    ? `${p.asistencia_pct}% de asistencia${p.dias_total ? ` (${p.dias_ausentes ?? 0} inasistencias en ${p.dias_total} días)` : ''}. `
+      + `Faltas computables para regularidad: ${p.faltas_computables ?? 0}${p.umbral_regularidad ? ` de ${p.umbral_regularidad}` : ''}.`
+      + (p.alerta_asistencia ? ` El sistema tiene activa la alerta de asistencia: "${p.alerta_asistencia}".` : '')
     : 'Sin registros de asistencia cargados.';
 
   const calificacionesTexto = Array.isArray(p.calificaciones) && p.calificaciones.length
@@ -53,7 +55,7 @@ OBSERVACIONES:
 ${obsTexto}
 
 Redactá el informe en 3 o 4 párrafos cubriendo: rendimiento académico, asistencia y regularidad, situaciones problemáticas e intervenciones (si existen), y una síntesis con recomendación.
-Tono formal y objetivo, español rioplatense. Usá los datos provistos — no inventes información. Si un dato no está disponible, mencionalo brevemente. No uses asteriscos ni markdown. Máximo 300 palabras.`;
+Tono formal y objetivo, español rioplatense. Usá los datos provistos — no inventes información. Si un dato no está disponible, mencionalo brevemente. Si hay una alerta de asistencia activa, reflejala como tal y no la minimices ni la contradigas. No uses asteriscos ni markdown. Máximo 300 palabras.`;
 }
 
 function construirPromptObservacion(p: any): string {

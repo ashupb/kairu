@@ -633,27 +633,56 @@ async function _tabAcademico(c) {
 // ── TAB 3: ASISTENCIA ─────────────────────────────────
 async function _tabAsistencia(c) {
   try {
-    const { data, error } = await sb.from('asistencia')
-      .select('fecha,estado,hora_clase,materia_id')
-      .eq('alumno_id', _legAlumnoSel.id)
-      .order('fecha', { ascending: false });
-    if (error) throw error;
-    const lista = data || [];
+    const nivel = _legCursoSel?.nivel || 'secundario';
+    const anio  = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
+    const desde = `${anio}-01-01`;
 
-    if (!lista.length) {
+    // Mismo criterio que el módulo de Asistencia (verAlumnoAsist): acotado al
+    // ciclo lectivo, para que el número coincida con el que dispara las alertas.
+    const [asistRes, configRes, alertasRes] = await Promise.all([
+      sb.from('asistencia').select('fecha,estado,hora_clase')
+        .eq('alumno_id', _legAlumnoSel.id).gte('fecha', desde)
+        .order('fecha', { ascending: false }),
+      sb.from('config_asistencia').select('*')
+        .eq('institucion_id', USUARIO_ACTUAL.institucion_id).eq('nivel', nivel).maybeSingle(),
+      sb.from('alertas_asistencia').select('*')
+        .eq('alumno_id', _legAlumnoSel.id).order('created_at', { ascending: false }).limit(1),
+    ]);
+    if (asistRes.error) throw asistRes.error;
+
+    const diarios = (asistRes.data || []).filter(r => !r.hora_clase);
+    if (!diarios.length) {
       c.innerHTML = `<div class="card" style="margin-top:12px"><div class="empty-state">✓<br>Sin registros de asistencia.</div></div>`;
       return;
     }
 
-    // Solo registros diarios para métricas (los por hora no computan para regularidad)
-    const diarios    = lista.filter(r => !r.hora_clase);
-    const ausentes   = diarios.filter(r => r.estado === 'ausente').length;
-    const mediaFalta = diarios.filter(r => r.estado === 'media_falta').length;
-    const tardanzas  = diarios.filter(r => r.estado === 'tardanza').length;
-    const diasUnicos = [...new Set(diarios.map(r => r.fecha))];
-    const diasPresentes = [...new Set(diarios.filter(r => ['presente','tardanza','media_falta','retiro_anticipado'].includes(r.estado)).map(r => r.fecha))].length;
-    const pct = diasUnicos.length ? Math.round((diasPresentes / diasUnicos.length) * 100) : 100;
+    const config = configRes.data || {};
+
+    // Deduplicar por fecha (mismo criterio que asistencia.js, por duplicados históricos de upsert)
+    const porFecha = new Map();
+    diarios.forEach(r => { if (!porFecha.has(r.fecha)) porFecha.set(r.fecha, r); });
+
+    const conteo = {};
+    let totalFaltas = 0;
+    porFecha.forEach(r => {
+      conteo[r.estado] = (conteo[r.estado] || 0) + 1;
+      if (r.estado !== 'justificado' || config.justificadas_cuentan) {
+        totalFaltas += ESTADOS_ASIST[r.estado]?.valor || 0;
+      }
+    });
+
+    const diasUnicos    = porFecha.size;
+    const diasPresentes = ['presente','tardanza','media_falta','retiro_anticipado']
+      .reduce((s, k) => s + (conteo[k] || 0), 0);
+    const pct   = diasUnicos ? Math.round((diasPresentes / diasUnicos) * 100) : 100;
     const pcClr = pct >= 85 ? 'var(--verde)' : pct >= 75 ? 'var(--ambar)' : 'var(--rojo)';
+
+    const umbral    = config.umbral_regularidad ?? 25;
+    const faltasClr = totalFaltas >= (config.umbral_alerta_2 ?? 20) ? 'var(--rojo)'
+      : totalFaltas >= (config.umbral_alerta_1 ?? 10) ? 'var(--ambar)' : 'var(--verde)';
+
+    const alertaLabels = ['', '⚠️ Primer aviso', '⚠️ Segundo aviso', '🔴 Tercer aviso', '🚨 Riesgo de regularidad'];
+    const alerta = alertasRes.data?.[0];
 
     const ESTADO_LABEL = {
       presente:'Presente', ausente:'Ausente', media_falta:'Media falta',
@@ -672,10 +701,15 @@ async function _tabAsistencia(c) {
 
     c.innerHTML = `
       <div class="card" style="margin-top:12px">
+        ${alerta ? `
+        <div class="alr" style="margin-bottom:12px">
+          <div class="alr-t">${alertaLabels[alerta.tipo_alerta] || 'Alerta de asistencia'}</div>
+          <div class="alr-d">Faltas computables: ${totalFaltas} / ${umbral}</div>
+        </div>` : ''}
         <div class="metrics m3" style="margin-bottom:14px">
           <div class="mc"><div class="mc-v" style="color:${pcClr}">${pct}%</div><div class="mc-l">Asistencia</div></div>
-          <div class="mc"><div class="mc-v" style="color:var(--rojo)">${ausentes}</div><div class="mc-l">Inasistencias</div></div>
-          <div class="mc"><div class="mc-v" style="color:var(--ambar)">${tardanzas + mediaFalta}</div><div class="mc-l">Tardanzas/medias</div></div>
+          <div class="mc"><div class="mc-v" style="color:${faltasClr}">${totalFaltas}</div><div class="mc-l">Faltas computables / ${umbral}</div></div>
+          <div class="mc"><div class="mc-v" style="color:var(--rojo)">${conteo.ausente || 0}</div><div class="mc-l">Inasistencias</div></div>
         </div>
         <div class="sec-lb" style="margin-bottom:8px">Últimos registros</div>
         ${rows}
@@ -1018,13 +1052,26 @@ async function _generarResumenIA(alumnoId) {
     </div>`;
 
   try {
-    // Queries secuenciales para loguear cada error por separado
+    // Queries secuenciales para loguear cada error por separado.
+    // Acotado al ciclo lectivo (igual que verAlumnoAsist en asistencia.js) para
+    // que el % y las faltas computables coincidan con el módulo de Asistencia.
+    const anioLect  = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
+    const desdeLect = `${anioLect}-01-01`;
     const asistRes = await sb.from('asistencia')
       .select('estado,fecha,hora_clase')
       .eq('alumno_id', alumnoId)
-      .order('fecha', { ascending: false })
-      .limit(90);
+      .gte('fecha', desdeLect)
+      .order('fecha', { ascending: false });
     if (asistRes.error) console.error('[IA] asistencia:', asistRes.error);
+
+    const configAsistRes = await sb.from('config_asistencia').select('*')
+      .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+      .eq('nivel', _legCursoSel?.nivel || '')
+      .maybeSingle();
+
+    const alertaAsistRes = await sb.from('alertas_asistencia')
+      .select('*').eq('alumno_id', alumnoId)
+      .order('created_at', { ascending: false }).limit(1);
 
     const notasRes = await sb.from('calificaciones')
       .select('nota,materias(nombre)')
@@ -1068,15 +1115,32 @@ async function _generarResumenIA(alumnoId) {
       .limit(5);
     if (obsRes.error) console.error('[IA] observaciones:', obsRes.error);
 
-    // Calcular % asistencia — solo registros diarios (hora_clase null), lunes a viernes
-    const asistencia   = asistRes.data || [];
-    const esDiaHabil   = (f) => { const d = new Date(f + 'T12:00:00').getDay(); return d !== 0 && d !== 6; };
-    const diariosIA    = asistencia.filter(r => !r.hora_clase && esDiaHabil(r.fecha));
-    const diasUnicos   = [...new Set(diariosIA.map(r => r.fecha))];
-    const diasTotal    = diasUnicos.length;
-    const diasAusentes = [...new Set(diariosIA.filter(r => r.estado === 'ausente').map(r => r.fecha))].length;
-    const diasPresentesIA = [...new Set(diariosIA.filter(r => ['presente','tardanza','media_falta','retiro_anticipado'].includes(r.estado)).map(r => r.fecha))].length;
-    const pctAsist     = diasTotal ? Math.round((diasPresentesIA / diasTotal) * 100) : null;
+    // Calcular % asistencia y faltas computables — mismo criterio que verAlumnoAsist
+    // (asistencia.js): solo registros diarios (hora_clase null), deduplicados por
+    // fecha, ponderados con ESTADOS_ASIST. Así la IA no contradice al módulo de Asistencia.
+    const asistencia = asistRes.data || [];
+    const diariosIA  = asistencia.filter(r => !r.hora_clase);
+    const porFechaIA = new Map();
+    diariosIA.forEach(r => { if (!porFechaIA.has(r.fecha)) porFechaIA.set(r.fecha, r); });
+
+    const configIA = configAsistRes.data || {};
+    const conteoIA = {};
+    let faltasComputables = 0;
+    porFechaIA.forEach(r => {
+      conteoIA[r.estado] = (conteoIA[r.estado] || 0) + 1;
+      if (r.estado !== 'justificado' || configIA.justificadas_cuentan) {
+        faltasComputables += ESTADOS_ASIST[r.estado]?.valor || 0;
+      }
+    });
+
+    const diasTotal       = porFechaIA.size;
+    const diasAusentes    = conteoIA.ausente || 0;
+    const diasPresentesIA = ['presente','tardanza','media_falta','retiro_anticipado']
+      .reduce((s, k) => s + (conteoIA[k] || 0), 0);
+    const pctAsist = diasTotal ? Math.round((diasPresentesIA / diasTotal) * 100) : null;
+
+    const alertaLabelsIA = ['', 'Primer aviso', 'Segundo aviso', 'Tercer aviso', 'Riesgo de regularidad'];
+    const alertaIA = alertaAsistRes.data?.[0];
 
     // Agrupar notas por materia
     const porMateria = {};
@@ -1110,6 +1174,9 @@ async function _generarResumenIA(alumnoId) {
       asistencia_pct:      pctAsist,
       dias_total:          diasTotal || null,
       dias_ausentes:       diasAusentes || null,
+      faltas_computables:  diasTotal ? faltasComputables : null,
+      umbral_regularidad:  configIA.umbral_regularidad ?? null,
+      alerta_asistencia:   alertaIA ? alertaLabelsIA[alertaIA.tipo_alerta] : null,
       calificaciones:      resumenNotas,
       situaciones_activas: todasSituaciones,
       intervenciones_eoe:  (eoeRes.data || []).map(e => `${e.tipo || 'Intervención'}: ${e.descripcion} (${e.fecha})`),
