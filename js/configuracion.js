@@ -22,7 +22,10 @@ async function _llamarAdminUsers(action, payload) {
 }
 
 // ─── ESTADO LOCAL ────────────────────────────────────
-let _adminTab       = null;
+let _admGrupo          = null;  // grupo activo del menú lateral (ej: 'institucion')
+let _admItem           = null;  // subsección activa dentro del grupo (ej: 'cursos')
+let _admItemTab        = null;  // tab interno activo, si el item tiene 'tabs' (ej: 'asignaciones')
+let _admGruposAbiertos = new Set(); // grupos expandidos en el menú lateral
 let _adminCursos    = [];
 let _adminUsuarios  = [];
 let _adminMaterias  = [];
@@ -70,44 +73,69 @@ const ROL_BADGE_ADM = {
   eoe:              'tr',
 };
 
-// ─── TABS POR ROL ─────────────────────────────────────
-// Tab IDs disponibles para asignación manual por director_general
-const CONFIG_TABS_TODOS = [
-  { id: 'institucion',  label: 'Institución' },
-  { id: 'usuarios',     label: 'Usuarios' },
-  { id: 'cursos',       label: 'Cursos' },
-  { id: 'alumnos',      label: 'Alumnos' },
-  { id: 'materias',     label: 'Materias' },
-  { id: 'asignaciones', label: 'Asignaciones' },
-  { id: 'parametros',   label: 'Parámetros' },
-  { id: 'familias',     label: 'Familias' },
+// ─── MENÚ DE CONFIGURACIÓN — grupos desplegables + tabs internos ──
+// Ids de item estables: se usan también para permisos por rol y para
+// "config_extra.tabs" (accesos adicionales otorgados a un usuario puntual).
+const CONFIG_GRUPOS = [
+  { id: 'institucion', label: 'Institución', items: [
+      { id: 'institucion',   label: 'General',        roles: ['director_general'], renderer: _renderInstitucion },
+      { id: 'ciclo_lectivo', label: 'Ciclo Lectivo',   roles: ['director_general', 'directivo_nivel'], renderer: _renderCicloLectivo },
+      { id: 'cursos',        label: 'Cursos',          roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderCursos },
+      { id: 'materias',      label: 'Materias',        roles: ['director_general', 'directivo_nivel'], tabs: [
+          { id: 'materias',     label: 'Materias',     renderer: _renderMaterias },
+          { id: 'asignaciones', label: 'Asignaciones', renderer: _renderAsignaciones },
+        ] },
+      { id: 'alumnos',  label: 'Alumnos',  roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderAlumnos },
+      { id: 'docentes', label: 'Docentes', roles: ['director_general', 'directivo_nivel'], tabs: [
+          { id: 'docentes',   label: 'Docentes',   renderer: _renderDocentes },
+          { id: 'suplencias', label: 'Suplencias', renderer: _renderSuplencias },
+        ] },
+    ] },
+  { id: 'usuarios', label: 'Usuarios', items: [
+      { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel'], renderer: _renderUsuarios },
+    ] },
+  { id: 'portal', label: 'Portal Familiar', items: [
+      { id: 'familias', label: 'Usuarios', roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderFamilias },
+    ] },
+  { id: 'parametros', label: 'Parámetros académicos', items: [
+      { id: 'param_asistencia',     label: 'Asistencia',              roles: ['director_general', 'directivo_nivel'], renderer: _renderParamAsistencia },
+      { id: 'param_calificaciones', label: 'Calificaciones y escalas', roles: ['director_general', 'directivo_nivel'], tabs: [
+          { id: 'notas', label: 'Escalas y notas',       renderer: _renderParamNotas },
+          { id: 'dims',  label: 'Dimensiones (Inicial)', renderer: _renderParamDimensiones, soloInicial: true },
+        ] },
+    ] },
 ];
 
-function _adminTabs() {
-  const r      = USUARIO_ACTUAL?.rol;
-  const extras = USUARIO_ACTUAL?.config_extra?.tabs || [];
+// Ids viejos (pre-reorganización) que un usuario puede tener guardados en
+// config_extra.tabs — se traducen a los ids nuevos para no perder accesos.
+const _LEGACY_TAB_ALIAS = {
+  asignaciones: ['materias'],
+  suplencias:   ['docentes'],
+  parametros:   ['param_asistencia', 'param_calificaciones'],
+};
 
-  const rolBase = [
-    { id: 'institucion',  label: 'Institución',     roles: ['director_general'] },
-    { id: 'usuarios',     label: 'Usuarios',         roles: ['director_general', 'directivo_nivel'] },
-    { id: 'cursos',       label: 'Cursos',           roles: ['director_general', 'directivo_nivel', 'preceptor'] },
-    { id: 'alumnos',      label: 'Alumnos',          roles: ['director_general', 'directivo_nivel', 'preceptor'] },
-    { id: 'materias',     label: 'Materias',         roles: ['director_general', 'directivo_nivel'] },
-    { id: 'asignaciones', label: 'Asignaciones',     roles: ['director_general', 'directivo_nivel'] },
-    { id: 'parametros',   label: 'Parámetros',       roles: ['director_general', 'directivo_nivel'] },
-    { id: 'suplencias',    label: 'Suplencias',    roles: ['director_general', 'directivo_nivel'] },
-    { id: 'ciclo_lectivo', label: 'Ciclo Lectivo', roles: ['director_general', 'directivo_nivel'] },
-    { id: 'docentes',      label: 'Docentes',      roles: ['director_general', 'directivo_nivel'] },
-    { id: 'familias',      label: 'Familias',      roles: ['director_general', 'directivo_nivel', 'preceptor'] },
-  ];
-
-  const resultado = rolBase.filter(t => t.roles.includes(r));
-  // Agregar tabs extra (asignados por director_general) que no estén ya incluidos
-  extras.forEach(tabId => {
-    const def = CONFIG_TABS_TODOS.find(t => t.id === tabId);
-    if (def && !resultado.find(t => t.id === tabId)) resultado.push(def);
+function _normalizarExtras(tabsArr) {
+  const out = new Set();
+  (tabsArr || []).forEach(id => {
+    (_LEGACY_TAB_ALIAS[id] || [id]).forEach(x => out.add(x));
   });
-  return resultado;
+  return out;
+}
+
+function _configTodosLosItems() {
+  return CONFIG_GRUPOS.flatMap(g => g.items.map(it => ({ ...it, label: `${g.label} · ${it.label}` })));
+}
+
+function _configGruposVisibles() {
+  const r      = USUARIO_ACTUAL?.rol;
+  const extras = _normalizarExtras(USUARIO_ACTUAL?.config_extra?.tabs);
+
+  return CONFIG_GRUPOS
+    .map(g => {
+      const items = g.items.filter(it => it.roles.includes(r) || extras.has(it.id));
+      return items.length ? { ...g, items } : null;
+    })
+    .filter(Boolean);
 }
 
 // ─── RENDER PRINCIPAL ─────────────────────────────────
@@ -116,68 +144,117 @@ async function rAdmin() {
   inyectarEstilosAdmin();
   await _detectarConfigExtra();
 
-  const tabs = _adminTabs();
-  if (!tabs.length) {
+  const grupos = _configGruposVisibles();
+  if (!grupos.length) {
     document.getElementById('page-admin').innerHTML =
       `<div class="pg-t">Configuración</div><div class="empty-state">Sin permisos para esta sección</div>`;
     return;
   }
 
-  if (!_adminTab || !tabs.find(t => t.id === _adminTab)) {
-    _adminTab = tabs[0].id;
-  }
+  if (!_admGrupo || !grupos.find(g => g.id === _admGrupo)) _admGrupo = grupos[0].id;
+  const grupoActivo = grupos.find(g => g.id === _admGrupo);
+  if (!_admItem || !grupoActivo.items.find(it => it.id === _admItem)) _admItem = grupoActivo.items[0].id;
+  _admGruposAbiertos.add(_admGrupo);
 
-  _renderAdminShell(tabs);
-  await _renderAdminSection(_adminTab);
+  _renderAdminShell(grupos);
+  await _dispatchAdminItem();
 }
 
-function _renderAdminShell(tabs) {
+function _renderAdminShell(grupos) {
   const c = document.getElementById('page-admin');
   const isMobile = window.innerWidth < 700;
 
-  const tabsHtml = isMobile
-    ? `<select class="adm-tab-sel" onchange="_switchAdminTab(this.value)">
-        ${tabs.map(t => `<option value="${t.id}" ${t.id === _adminTab ? 'selected' : ''}>${t.label}</option>`).join('')}
-       </select>`
-    : `<div class="adm-tabs-bar">
-        ${tabs.map(t => `<button class="adm-tab${t.id === _adminTab ? ' on' : ''}" onclick="_switchAdminTab('${t.id}')">${t.label}</button>`).join('')}
-       </div>`;
+  const sideHtml = grupos.map(g => {
+    const abierto = _admGruposAbiertos.has(g.id);
+    return `
+      <div class="adm-side-group">
+        <button class="adm-side-head" onclick="_togGrupoAdmin('${g.id}')">
+          <span>${_esc(g.label)}</span>
+          <span class="adm-side-chev">${abierto ? '▾' : '▸'}</span>
+        </button>
+        <div class="adm-side-items" style="display:${abierto ? '' : 'none'}">
+          ${g.items.map(it => `
+            <button class="adm-side-item${it.id === _admItem ? ' on' : ''}" onclick="_irAItemAdmin('${g.id}','${it.id}')">${_esc(it.label)}</button>
+          `).join('')}
+        </div>
+      </div>`;
+  }).join('');
+
+  const selHtml = `<select class="adm-tab-sel" onchange="_irAItemAdminSel(this.value)">
+      ${grupos.map(g => `<optgroup label="${_esc(g.label)}">
+        ${g.items.map(it => `<option value="${g.id}::${it.id}" ${it.id === _admItem ? 'selected' : ''}>${_esc(it.label)}</option>`).join('')}
+      </optgroup>`).join('')}
+    </select>`;
 
   c.innerHTML = `
     <div class="pg-t">Configuración</div>
     <div class="pg-s">${INSTITUCION_ACTUAL?.nombre || ''}</div>
-    ${tabsHtml}
-    <div id="adm-section-content"></div>`;
+    ${isMobile ? selHtml : ''}
+    <div class="adm-layout">
+      ${isMobile ? '' : `<div class="adm-side">${sideHtml}</div>`}
+      <div class="adm-content">
+        <div id="adm-item-tabs"></div>
+        <div id="adm-section-content"></div>
+      </div>
+    </div>`;
 }
 
-async function _switchAdminTab(tabId) {
-  _adminTab = tabId;
-  document.querySelectorAll('.adm-tab').forEach(b => {
-    const tab = _adminTabs().find(t => t.label === b.textContent);
-    if (tab) b.classList.toggle('on', tab.id === tabId);
-  });
-  const sel = document.querySelector('.adm-tab-sel');
-  if (sel) sel.value = tabId;
-  const content = document.getElementById('adm-section-content');
-  if (content) content.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
-  await _renderAdminSection(tabId);
+function _togGrupoAdmin(id) {
+  if (_admGruposAbiertos.has(id)) _admGruposAbiertos.delete(id); else _admGruposAbiertos.add(id);
+  _renderAdminShell(_configGruposVisibles());
 }
 
-async function _renderAdminSection(tabId) {
-  const fns = {
-    institucion:   _renderInstitucion,
-    usuarios:      _renderUsuarios,
-    cursos:        _renderCursos,
-    alumnos:       _renderAlumnos,
-    materias:      _renderMaterias,
-    asignaciones:  _renderAsignaciones,
-    parametros:    _renderParametros,
-    suplencias:    _renderSuplencias,
-    ciclo_lectivo: _renderCicloLectivo,
-    docentes:      _renderDocentes,
-    familias:      _renderFamilias,
-  };
-  if (fns[tabId]) await fns[tabId]();
+async function _irAItemAdmin(grupoId, itemId) {
+  _admGrupo = grupoId;
+  _admItem  = itemId;
+  _admItemTab = null;
+  _admGruposAbiertos.add(grupoId);
+  _renderAdminShell(_configGruposVisibles());
+  await _dispatchAdminItem();
+}
+
+async function _irAItemAdminSel(value) {
+  const [grupoId, itemId] = value.split('::');
+  await _irAItemAdmin(grupoId, itemId);
+}
+
+async function _irATabAdmin(tabId) {
+  _admItemTab = tabId;
+  await _dispatchAdminItem();
+}
+
+function _paramTieneInicial() {
+  const inst = INSTITUCION_ACTUAL || {};
+  return USUARIO_ACTUAL.rol === 'directivo_nivel'
+    ? USUARIO_ACTUAL.nivel === 'inicial'
+    : !!inst.nivel_inicial;
+}
+
+async function _dispatchAdminItem() {
+  const grupos = _configGruposVisibles();
+  const grupo  = grupos.find(g => g.id === _admGrupo);
+  const item   = grupo?.items.find(it => it.id === _admItem);
+  if (!item) return;
+
+  const tabsWrap = document.getElementById('adm-item-tabs');
+  const content  = document.getElementById('adm-section-content');
+
+  if (item.tabs) {
+    const tabsVisibles = item.tabs.filter(t => !t.soloInicial || _paramTieneInicial());
+    if (!_admItemTab || !tabsVisibles.find(t => t.id === _admItemTab)) _admItemTab = tabsVisibles[0].id;
+    if (tabsWrap) {
+      tabsWrap.innerHTML = `<div class="adm-tabs-bar">
+        ${tabsVisibles.map(t => `<button class="adm-tab${t.id === _admItemTab ? ' on' : ''}" onclick="_irATabAdmin('${t.id}')">${_esc(t.label)}</button>`).join('')}
+      </div>`;
+    }
+    if (content) content.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    const tab = tabsVisibles.find(t => t.id === _admItemTab);
+    await tab.renderer();
+  } else {
+    if (tabsWrap) tabsWrap.innerHTML = '';
+    if (content) content.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+    await item.renderer();
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -550,14 +627,17 @@ async function _abrirModalUsuario(userId) {
       <label class="adm-label">Accesos a Configuración</label>
       <div style="display:flex;flex-direction:column;gap:6px;padding:10px;background:var(--surf2);border:1px solid var(--brd);border-radius:var(--rad)">
         <div style="font-size:10px;color:var(--txt2);margin-bottom:2px">Secciones adicionales habilitadas para este usuario:</div>
-        ${CONFIG_TABS_TODOS.map(t => {
-          const yaRol = { institucion:['director_general'], usuarios:['director_general','directivo_nivel'], cursos:['director_general','directivo_nivel','preceptor'], alumnos:['director_general','directivo_nivel','preceptor'], materias:['director_general','directivo_nivel'], asignaciones:['director_general','directivo_nivel'], parametros:['director_general','directivo_nivel'] }[t.id]?.includes(rolSel);
-          const checked = (user?.config_extra?.tabs || []).includes(t.id);
-          return `<label style="display:flex;align-items:center;gap:7px;cursor:${yaRol?'default':'pointer'};font-size:12px;${yaRol?'color:var(--txt3)':''}">
-            <input type="checkbox" name="mu-cfg-tab" value="${t.id}" ${checked||yaRol?'checked':''} ${yaRol?'disabled':''}>
-            ${t.label}${yaRol?' <span style="font-size:10px;color:var(--verde)">(por rol)</span>':''}
-          </label>`;
-        }).join('')}
+        ${(() => {
+          const extrasActuales = _normalizarExtras(user?.config_extra?.tabs);
+          return _configTodosLosItems().map(it => {
+            const yaRol = it.roles.includes(rolSel);
+            const checked = extrasActuales.has(it.id);
+            return `<label style="display:flex;align-items:center;gap:7px;cursor:${yaRol?'default':'pointer'};font-size:12px;${yaRol?'color:var(--txt3)':''}">
+              <input type="checkbox" name="mu-cfg-tab" value="${it.id}" ${checked||yaRol?'checked':''} ${yaRol?'disabled':''}>
+              ${it.label}${yaRol?' <span style="font-size:10px;color:var(--verde)">(por rol)</span>':''}
+            </label>`;
+          }).join('');
+        })()}
       </div>
     </div>` : ''}
     `,
@@ -889,7 +969,7 @@ async function _renderCursos() {
 
 function _irAAlumnosDeCurso(cursoId) {
   _admAlumnosCursoSel = cursoId;
-  _switchAdminTab('alumnos');
+  _irAItemAdmin('institucion', 'alumnos');
 }
 
 async function _abrirModalCurso(cursoId) {
@@ -1822,13 +1902,9 @@ async function _guardarAsignaciones() {
 }
 
 // ══════════════════════════════════════════════════════
-// SECCIÓN: PARÁMETROS
+// SECCIÓN: PARÁMETROS ACADÉMICOS — Asistencia / Calificaciones y escalas
 // ══════════════════════════════════════════════════════
-let _paramSubTab = 'inicial';
-
-async function _renderParametros() {
-  const sec  = document.getElementById('adm-section-content');
-
+async function _ensureInstNiveles() {
   // Garantizar que INSTITUCION_ACTUAL tenga los campos de niveles (pueden faltar si el
   // SELECT de auth.js fue actualizado en una versión anterior sin estos campos)
   if (INSTITUCION_ACTUAL && INSTITUCION_ACTUAL.nivel_inicial === undefined) {
@@ -1843,61 +1919,242 @@ async function _renderParametros() {
       INSTITUCION_ACTUAL.nivel_secundario = fresh.nivel_secundario;
     }
   }
+}
 
+function _paramNivelesDisponibles() {
   const inst = INSTITUCION_ACTUAL || {};
-
-  // Solo niveles que la institución tiene activos
   const nivelesActivos = ['inicial', 'primario', 'secundario'].filter(n => inst['nivel_' + n]);
-  const nivelesBase = nivelesActivos;
+  return USUARIO_ACTUAL.rol === 'directivo_nivel'
+    ? [USUARIO_ACTUAL.nivel].filter(n => nivelesActivos.includes(n))
+    : nivelesActivos;
+}
 
-  const niveles = USUARIO_ACTUAL.rol === 'directivo_nivel'
-    ? [USUARIO_ACTUAL.nivel].filter(n => nivelesBase.includes(n))
-    : nivelesBase;
+// ── ASISTENCIA ─────────────────────────────────────────
+let _paramAsistNivel = null;
+
+async function _renderParamAsistencia() {
+  const sec = document.getElementById('adm-section-content');
+  await _ensureInstNiveles();
+  const niveles = _paramNivelesDisponibles();
 
   if (!niveles.length) {
-    sec.innerHTML = '<div class="empty-state">No hay niveles activos. Activá al menos un nivel en la pestaña Institución.</div>';
+    sec.innerHTML = '<div class="empty-state">No hay niveles activos. Activá al menos un nivel en Institución → General.</div>';
     return;
   }
-
-  if (!niveles.includes(_paramSubTab)) _paramSubTab = niveles[0];
+  if (!niveles.includes(_paramAsistNivel)) _paramAsistNivel = niveles[0];
 
   sec.innerHTML = `
     <div class="chip-row" style="margin-bottom:14px">
       ${niveles.map(n => `
-        <div class="chip${n === _paramSubTab ? ' on' : ''}" id="param-chip-${n}"
-          onclick="_paramTab('${n}')"
-          style="${n === _paramSubTab ? `background:${NIVEL_COLORS_ADM[n]};border-color:${NIVEL_COLORS_ADM[n]};color:#fff` : ''}">
+        <div class="chip${n === _paramAsistNivel ? ' on' : ''}" id="param-asist-chip-${n}"
+          onclick="_paramAsistTab('${n}')"
+          style="${n === _paramAsistNivel ? `background:${NIVEL_COLORS_ADM[n]};border-color:${NIVEL_COLORS_ADM[n]};color:#fff` : ''}">
           ${NIVEL_LABELS_ADM[n]}
         </div>`).join('')}
     </div>
-    <div id="param-content"></div>
-    <div id="param-global"></div>`;
+    <div id="param-asist-content"></div>
+    <div id="param-asist-otros"></div>`;
 
-  await _renderParamNivel(_paramSubTab);
-  await _renderParamGlobal();
+  await _renderParamAsistNivel(_paramAsistNivel);
+  await _renderParamAsistOtros();
 }
 
-async function _paramTab(nivel) {
-  _paramSubTab = nivel;
-  const inst = INSTITUCION_ACTUAL || {};
-  const nivelesActivos = ['inicial', 'primario', 'secundario'].filter(n => inst['nivel_' + n]);
-  const nivelesBase = nivelesActivos;
-  nivelesBase.forEach(n => {
-    const chip = document.getElementById('param-chip-' + n);
+async function _paramAsistTab(nivel) {
+  _paramAsistNivel = nivel;
+  _paramNivelesDisponibles().forEach(n => {
+    const chip = document.getElementById('param-asist-chip-' + n);
     if (!chip) return;
     const activo = n === nivel;
     chip.classList.toggle('on', activo);
-    chip.style.background   = activo ? NIVEL_COLORS_ADM[n] : '';
-    chip.style.borderColor  = activo ? NIVEL_COLORS_ADM[n] : '';
-    chip.style.color        = activo ? '#fff' : '';
+    chip.style.background  = activo ? NIVEL_COLORS_ADM[n] : '';
+    chip.style.borderColor = activo ? NIVEL_COLORS_ADM[n] : '';
+    chip.style.color       = activo ? '#fff' : '';
   });
-  const cont = document.getElementById('param-content');
+  const cont = document.getElementById('param-asist-content');
   if (cont) cont.innerHTML = '<div class="loading-state small"><div class="spinner"></div></div>';
-  await _renderParamNivel(nivel);
+  await _renderParamAsistNivel(nivel);
 }
 
-async function _renderParamNivel(nivel) {
-  const cont   = document.getElementById('param-content');
+async function _renderParamAsistNivel(nivel) {
+  const cont = document.getElementById('param-asist-content');
+  if (!cont) return;
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const color  = NIVEL_COLORS_ADM[nivel];
+
+  const { data: cfg } = await sb.from('config_asistencia').select('*')
+    .eq('institucion_id', instId).eq('nivel', nivel).maybeSingle();
+  const cfgRow = cfg || {};
+  const cfgId  = cfgRow.id || '';
+
+  cont.innerHTML = `
+    <div class="card" style="border-top:3px solid ${color}">
+      <div class="card-t" style="color:${color}">Asistencia — ${NIVEL_LABELS_ADM[nivel]}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Alerta 1 (%)</label>
+          <input type="number" id="cfg-u1" value="${cfgRow.umbral_alerta_1 ?? 10}" min="0" max="100">
+        </div>
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Alerta 2 (%)</label>
+          <input type="number" id="cfg-u2" value="${cfgRow.umbral_alerta_2 ?? 20}" min="0" max="100">
+        </div>
+        <div class="adm-form-row" style="margin:0">
+          <label class="adm-label">Riesgo (%)</label>
+          <input type="number" id="cfg-u3" value="${cfgRow.umbral_alerta_3 ?? 30}" min="0" max="100">
+        </div>
+      </div>
+      <div class="adm-form-row">
+        <div class="toggle-row-ui">
+          <span style="font-size:12px">Las justificadas cuentan para regularidad</span>
+          <div class="tog${cfgRow.justificadas_cuentan ? ' on' : ''}" id="tog-justif" onclick="_togAdm('tog-justif')"><div class="tog-thumb"></div></div>
+        </div>
+      </div>
+      <div class="acc" style="margin-top:14px">
+        <button class="btn-p" id="cfg-save-btn" onclick="_guardarAsistenciaCfg('${nivel}','${cfgId}')">Guardar configuración</button>
+      </div>
+    </div>`;
+}
+
+async function _guardarAsistenciaCfg(nivel, existingId) {
+  const u1                   = parseInt(document.getElementById('cfg-u1')?.value) || 10;
+  const u2                   = parseInt(document.getElementById('cfg-u2')?.value) || 20;
+  const u3                   = parseInt(document.getElementById('cfg-u3')?.value) || 30;
+  const justificadas_cuentan = document.getElementById('tog-justif')?.classList.contains('on');
+
+  const datos = { umbral_alerta_1: u1, umbral_alerta_2: u2, umbral_alerta_3: u3, justificadas_cuentan };
+
+  try {
+    if (existingId) {
+      const { error } = await sb.from('config_asistencia').update(datos).eq('id', existingId);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('config_asistencia').insert([{
+        institucion_id: USUARIO_ACTUAL.institucion_id, nivel, ...datos,
+      }]);
+      if (error) throw error;
+    }
+    await _renderParamAsistNivel(nivel);
+    _toastOk('Configuración guardada');
+  } catch (e) {
+    alert('Error al guardar: ' + e.message);
+  }
+}
+
+async function _renderParamAsistOtros() {
+  const cont = document.getElementById('param-asist-otros');
+  if (!cont) return;
+  const instId = USUARIO_ACTUAL.institucion_id;
+
+  const [tiposJustRes, tiposEventoRes, tiposProbRes, tiposIntervRes] = await Promise.all([
+    sb.from('tipos_justificacion').select('*').eq('institucion_id', instId).order('nombre'),
+    sb.from('tipos_evento').select('*').eq('institucion_id', instId).order('nombre'),
+    sb.from('tipos_problematicas').select('*').eq('institucion_id', instId).eq('activo', true).order('orden'),
+    sb.from('tipos_intervencion').select('*').eq('institucion_id', instId).eq('activo', true).order('orden'),
+  ]);
+
+  const tiposJust   = tiposJustRes.data   || [];
+  const tiposEvento = tiposEventoRes.data || [];
+  const tiposProb   = tiposProbRes.data   || [];
+  const tiposInterv = tiposIntervRes.data || [];
+
+  cont.innerHTML = `
+    <div class="sec-lb" style="margin-top:18px">Otros parámetros institucionales</div>
+
+    <div class="card">
+      <div class="card-t">Tipos de justificación de asistencia</div>
+      <div id="lista-tipos-just">
+        ${_renderListaTipos(tiposJust, 'tipos_justificacion', 'global', 'lista-tipos-just')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-tipo-just-global" placeholder="Nuevo tipo de justificación" style="flex:1">
+        <button class="btn-s" onclick="_agregarTipo('tipos_justificacion','new-tipo-just-global','global','lista-tipos-just')">Agregar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Tipos de eventos de agenda</div>
+      <div id="lista-tipos-evento">
+        ${_renderListaTipos(tiposEvento, 'tipos_evento', 'global', 'lista-tipos-evento')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-tipo-evento-global" placeholder="Nuevo tipo de evento" style="flex:1">
+        <button class="btn-s" onclick="_agregarTipo('tipos_evento','new-tipo-evento-global','global','lista-tipos-evento')">Agregar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Tipos de problemática</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Opciones disponibles al registrar una nueva situación</div>
+      <div id="lista-tipos-prob">
+        ${_renderListaTipos(tiposProb, 'tipos_problematicas', 'global', 'lista-tipos-prob')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-tipo-prob-global" placeholder="Ej: Convivencia" style="flex:1">
+        <button class="btn-s" onclick="_agregarTipoProb()">Agregar</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-t">Tipos de intervención</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Opciones disponibles al registrar un seguimiento</div>
+      <div id="lista-tipos-interv">
+        ${_renderListaTipos(tiposInterv, 'tipos_intervencion', 'global', 'lista-tipos-interv')}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="new-tipo-interv-global" placeholder="Ej: Reunión con familia" style="flex:1">
+        <button class="btn-s" onclick="_agregarTipoInterv()">Agregar</button>
+      </div>
+    </div>`;
+}
+
+// ── CALIFICACIONES Y ESCALAS — tab "Escalas y notas" ───
+let _paramCalifNivel = null;
+
+async function _renderParamNotas() {
+  const sec = document.getElementById('adm-section-content');
+  await _ensureInstNiveles();
+  const niveles = _paramNivelesDisponibles();
+
+  if (!niveles.length) {
+    sec.innerHTML = '<div class="empty-state">No hay niveles activos. Activá al menos un nivel en Institución → General.</div>';
+    return;
+  }
+  if (!niveles.includes(_paramCalifNivel)) _paramCalifNivel = niveles[0];
+
+  sec.innerHTML = `
+    <div class="chip-row" style="margin-bottom:14px">
+      ${niveles.map(n => `
+        <div class="chip${n === _paramCalifNivel ? ' on' : ''}" id="param-calif-chip-${n}"
+          onclick="_paramCalifTab('${n}')"
+          style="${n === _paramCalifNivel ? `background:${NIVEL_COLORS_ADM[n]};border-color:${NIVEL_COLORS_ADM[n]};color:#fff` : ''}">
+          ${NIVEL_LABELS_ADM[n]}
+        </div>`).join('')}
+    </div>
+    <div id="param-calif-content"></div>
+    <div id="param-calif-tipos"></div>`;
+
+  await _renderParamCalifNivel(_paramCalifNivel);
+  await _renderParamCalifTipos();
+}
+
+async function _paramCalifTab(nivel) {
+  _paramCalifNivel = nivel;
+  _paramNivelesDisponibles().forEach(n => {
+    const chip = document.getElementById('param-calif-chip-' + n);
+    if (!chip) return;
+    const activo = n === nivel;
+    chip.classList.toggle('on', activo);
+    chip.style.background  = activo ? NIVEL_COLORS_ADM[n] : '';
+    chip.style.borderColor = activo ? NIVEL_COLORS_ADM[n] : '';
+    chip.style.color       = activo ? '#fff' : '';
+  });
+  const cont = document.getElementById('param-calif-content');
+  if (cont) cont.innerHTML = '<div class="loading-state small"><div class="spinner"></div></div>';
+  await _renderParamCalifNivel(nivel);
+}
+
+async function _renderParamCalifNivel(nivel) {
+  const cont   = document.getElementById('param-calif-content');
   if (!cont) return;
   const instId = USUARIO_ACTUAL.institucion_id;
   const color  = NIVEL_COLORS_ADM[nivel];
@@ -1915,18 +2172,11 @@ async function _renderParamNivel(nivel) {
   let htmlEvaluacion = '';
 
   if (nivel === 'inicial') {
-    const DIMS_DEFAULT = ['Lenguaje y comunicación','Desarrollo motor','Socialización','Desarrollo cognitivo','Autonomía'];
-    const dims = cfg.dimensiones_informe || DIMS_DEFAULT;
     htmlEvaluacion = `
-      <div style="font-size:12px;color:var(--txt2);margin:14px 0 10px;padding:10px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${color}">
+      <div style="font-size:12px;color:var(--txt2);margin:0 0 10px;padding:10px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${color}">
         El nivel inicial trabaja con <strong>informes narrativos</strong> por dimensiones de desarrollo.
-        No se aplican calificaciones numéricas ni conceptuales.
-      </div>
-      <div class="card-t" style="color:${color};margin:0 0 8px">Dimensiones de desarrollo evaluadas</div>
-      <div id="lista-dims-inicial">${_renderListaDims(dims)}</div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <input type="text" id="new-dim-inicial" placeholder="Ej: Exploración del entorno" style="flex:1;font-size:12px">
-        <button class="btn-s" onclick="_agregarDim()">Agregar</button>
+        No se aplican calificaciones numéricas ni conceptuales. Las dimensiones evaluadas se configuran
+        en la pestaña <strong>Dimensiones (Inicial)</strong>.
       </div>`;
 
   } else if (nivel === 'primario') {
@@ -2006,34 +2256,15 @@ async function _renderParamNivel(nivel) {
   };
 
   cont.innerHTML = `
-    <!-- ASISTENCIA Y EVALUACIÓN -->
+    <!-- CALIFICACIONES -->
+    ${nivel === 'inicial' ? htmlEvaluacion : `
     <div class="card" style="border-top:3px solid ${color}">
-      <div class="card-t" style="color:${color}">Asistencia</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
-        <div class="adm-form-row" style="margin:0">
-          <label class="adm-label">Alerta 1 (%)</label>
-          <input type="number" id="cfg-u1" value="${cfg.umbral_alerta_1 ?? 10}" min="0" max="100">
-        </div>
-        <div class="adm-form-row" style="margin:0">
-          <label class="adm-label">Alerta 2 (%)</label>
-          <input type="number" id="cfg-u2" value="${cfg.umbral_alerta_2 ?? 20}" min="0" max="100">
-        </div>
-        <div class="adm-form-row" style="margin:0">
-          <label class="adm-label">Riesgo (%)</label>
-          <input type="number" id="cfg-u3" value="${cfg.umbral_alerta_3 ?? 30}" min="0" max="100">
-        </div>
-      </div>
-      <div class="adm-form-row">
-        <div class="toggle-row-ui">
-          <span style="font-size:12px">Las justificadas cuentan para regularidad</span>
-          <div class="tog${cfg.justificadas_cuentan ? ' on' : ''}" id="tog-justif" onclick="_togAdm('tog-justif')"><div class="tog-thumb"></div></div>
-        </div>
-      </div>
+      <div class="card-t" style="color:${color}">Calificaciones — ${NIVEL_LABELS_ADM[nivel]}</div>
       ${htmlEvaluacion}
       <div class="acc" style="margin-top:14px">
-        <button class="btn-p" id="cfg-save-btn" onclick="_guardarConfigAsistencia('${nivel}','${cfgId}')">Guardar configuración</button>
+        <button class="btn-p" id="cfg-save-btn" onclick="_guardarCalifCfg('${nivel}','${cfgId}')">Guardar configuración</button>
       </div>
-    </div>
+    </div>`}
 
     <!-- PERÍODOS EVALUATIVOS -->
     <div class="card">
@@ -2075,30 +2306,54 @@ async function _renderParamNivel(nivel) {
     </div>`;
 }
 
-async function _renderParamGlobal() {
-  const cont  = document.getElementById('param-global');
+async function _guardarCalifCfg(nivel, existingId) {
+  const datos = {};
+  if (nivel === 'primario') {
+    datos.escala_ciclo1     = 'conceptual';
+    datos.aprobacion_ciclo1 = document.getElementById('cfg-aprobacion-ciclo1')?.value || 'B';
+    datos.escala            = document.getElementById('cfg-escala-ciclo2')?.value || 'numerica';
+    datos.nota_minima       = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
+    datos.nota_recuperacion = parseInt(document.getElementById('cfg-nota-rec')?.value) || 4;
+  } else if (nivel === 'secundario') {
+    datos.nota_minima = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
+    datos.escala      = document.getElementById('cfg-escala')?.value || 'numerica';
+  } else {
+    return; // nivel inicial: sin campos editables en esta pestaña
+  }
+
+  try {
+    if (existingId) {
+      const { error } = await sb.from('config_asistencia').update(datos).eq('id', existingId);
+      if (error) throw error;
+    } else {
+      const { error } = await sb.from('config_asistencia').insert([{
+        institucion_id: USUARIO_ACTUAL.institucion_id, nivel,
+        umbral_alerta_1: 10, umbral_alerta_2: 20, umbral_alerta_3: 30, justificadas_cuentan: false,
+        ...datos,
+      }]);
+      if (error) throw error;
+    }
+    await _renderParamCalifNivel(nivel);
+    _toastOk('Configuración guardada');
+  } catch (e) {
+    alert('Error al guardar: ' + e.message);
+  }
+}
+
+async function _renderParamCalifTipos() {
+  const cont  = document.getElementById('param-calif-tipos');
   if (!cont) return;
   const instId = USUARIO_ACTUAL.institucion_id;
 
   // Invalidar cache de tipos de instancia usado en calificaciones.js
   window._tiposInstanciaCache = null;
 
-  const [tiposJustRes, tiposEventoRes, tiposInstRes, tiposProbRes, tiposIntervRes] = await Promise.all([
-    sb.from('tipos_justificacion').select('*').eq('institucion_id', instId).order('nombre'),
-    sb.from('tipos_evento').select('*').eq('institucion_id', instId).order('nombre'),
-    sb.from('tipos_instancia_evaluativa').select('*').eq('institucion_id', instId).eq('activo', true).order('created_at'),
-    sb.from('tipos_problematicas').select('*').eq('institucion_id', instId).eq('activo', true).order('orden'),
-    sb.from('tipos_intervencion').select('*').eq('institucion_id', instId).eq('activo', true).order('orden'),
-  ]);
-
-  const tiposJust   = tiposJustRes.data   || [];
-  const tiposEvento = tiposEventoRes.data || [];
-  let   tiposInst   = tiposInstRes.data   || [];
-  const tiposProb   = tiposProbRes.data   || [];
-  const tiposInterv = tiposIntervRes.data || [];
+  let { data: tiposInst, error: tiposInstErr } = await sb.from('tipos_instancia_evaluativa')
+    .select('*').eq('institucion_id', instId).eq('activo', true).order('created_at');
+  tiposInst = tiposInst || [];
 
   // Sembrar valores por defecto si la institución no tiene tipos configurados aún
-  if (!tiposInst.length && !tiposInstRes.error) {
+  if (!tiposInst.length && !tiposInstErr) {
     const defaults = ['Evaluación escrita','Trabajo práctico','Exposición oral','Evaluación integradora','Trabajo en clase'];
     const rows = defaults.map(nombre => ({ nombre, institucion_id: instId, activo: true, orden: 0 }));
     const { data: seeded } = await sb.from('tipos_instancia_evaluativa').insert(rows).select('*');
@@ -2106,7 +2361,7 @@ async function _renderParamGlobal() {
   }
 
   cont.innerHTML = `
-    <div class="sec-lb" style="margin-top:18px">Configuración general (todos los niveles)</div>
+    <div class="sec-lb" style="margin-top:18px">Instancias evaluativas</div>
 
     <!-- TIPOS INSTANCIA EVALUATIVA -->
     <div class="card">
@@ -2119,57 +2374,33 @@ async function _renderParamGlobal() {
         <input type="text" id="new-tipo-inst-global" placeholder="Ej: Exposición oral" style="flex:1">
         <button class="btn-s" onclick="_agregarTipoInst()">Agregar</button>
       </div>
-    </div>
+    </div>`;
+}
 
-    <!-- TIPOS JUSTIFICACIÓN -->
-    <div class="card">
-      <div class="card-t">Tipos de justificación de asistencia</div>
-      <div id="lista-tipos-just">
-        ${_renderListaTipos(tiposJust, 'tipos_justificacion', 'global', 'lista-tipos-just')}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <input type="text" id="new-tipo-just-global" placeholder="Nuevo tipo de justificación" style="flex:1">
-        <button class="btn-s" onclick="_agregarTipo('tipos_justificacion','new-tipo-just-global','global','lista-tipos-just')">Agregar</button>
-      </div>
-    </div>
+async function _renderParamDimensiones() {
+  const sec = document.getElementById('adm-section-content');
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const color  = NIVEL_COLORS_ADM.inicial;
 
-    <!-- TIPOS EVENTO -->
-    <div class="card">
-      <div class="card-t">Tipos de eventos de agenda</div>
-      <div id="lista-tipos-evento">
-        ${_renderListaTipos(tiposEvento, 'tipos_evento', 'global', 'lista-tipos-evento')}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <input type="text" id="new-tipo-evento-global" placeholder="Nuevo tipo de evento" style="flex:1">
-        <button class="btn-s" onclick="_agregarTipo('tipos_evento','new-tipo-evento-global','global','lista-tipos-evento')">Agregar</button>
-      </div>
-    </div>
+  const { data: cfg } = await sb.from('config_asistencia').select('*')
+    .eq('institucion_id', instId).eq('nivel', 'inicial').maybeSingle();
+  const dims = cfg?.dimensiones_informe || _DIMS_INICIAL_DEFAULT;
 
-    <!-- TIPOS PROBLEMÁTICA -->
-    <div class="card">
-      <div class="card-t">Tipos de problemática</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Opciones disponibles al registrar una nueva situación</div>
-      <div id="lista-tipos-prob">
-        ${_renderListaTipos(tiposProb, 'tipos_problematicas', 'global', 'lista-tipos-prob')}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <input type="text" id="new-tipo-prob-global" placeholder="Ej: Convivencia" style="flex:1">
-        <button class="btn-s" onclick="_agregarTipoProb()">Agregar</button>
-      </div>
-    </div>
-
-    <!-- TIPOS DE INTERVENCIÓN -->
-    <div class="card">
-      <div class="card-t">Tipos de intervención</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Opciones disponibles al registrar un seguimiento</div>
-      <div id="lista-tipos-interv">
-        ${_renderListaTipos(tiposInterv, 'tipos_intervencion', 'global', 'lista-tipos-interv')}
-      </div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <input type="text" id="new-tipo-interv-global" placeholder="Ej: Reunión con familia" style="flex:1">
-        <button class="btn-s" onclick="_agregarTipoInterv()">Agregar</button>
+  sec.innerHTML = `
+    <div class="card" style="border-top:3px solid ${color}">
+      <div class="card-t" style="color:${color}">Dimensiones de desarrollo evaluadas</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Se usan en los informes narrativos semestrales de Nivel Inicial.</div>
+      <div id="lista-dims-inicial">${_renderListaDims(dims)}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input type="text" id="new-dim-inicial" placeholder="Ej: Exploración del entorno" style="flex:1;font-size:12px">
+        <button class="btn-s" onclick="_agregarDim()">Agregar</button>
       </div>
     </div>`;
+}
+
+async function _refrescarTiposGlobales() {
+  await _renderParamAsistOtros();
+  await _renderParamCalifTipos();
 }
 
 async function _agregarTipoInst() {
@@ -2182,7 +2413,7 @@ async function _agregarTipoInst() {
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
   window._tiposInstanciaCache = null;
-  await _renderParamGlobal();
+  await _refrescarTiposGlobales();
 }
 
 async function _agregarTipoProb() {
@@ -2195,7 +2426,7 @@ async function _agregarTipoProb() {
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
   window._tiposProbCache = null; // invalidar cache en problematicas.js
-  await _renderParamGlobal();
+  await _refrescarTiposGlobales();
 }
 
 async function _agregarTipoInterv() {
@@ -2208,7 +2439,7 @@ async function _agregarTipoInterv() {
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
   window._tiposIntervCache = null; // invalidar cache en problematicas.js
-  await _renderParamGlobal();
+  await _refrescarTiposGlobales();
 }
 
 function _renderListaTipos(lista, tabla, nivel, listaId) {
@@ -2230,7 +2461,7 @@ async function _eliminarTipo(tabla, id) {
   if (!confirm('¿Eliminar este tipo? Esta acción no se puede deshacer.')) return;
   const { error } = await sb.from(tabla).delete().eq('id', id);
   if (error) { alert('No se puede eliminar: tiene registros vinculados.'); return; }
-  await _renderParamGlobal();
+  await _refrescarTiposGlobales();
 }
 
 function _editarTipoInline(id) {
@@ -2246,75 +2477,14 @@ async function _guardarTipoEdit(id, tabla, nivel, listaId) {
   if (!nombre) return;
   const { error } = await sb.from(tabla).update({ nombre }).eq('id', id);
   if (error) { alert('Error: ' + error.message); return; }
-  if (nivel === 'global') await _renderParamGlobal();
-  else await _renderParamNivel(nivel);
-}
-
-async function _guardarConfigAsistencia(nivel, existingId) {
-  const u1                   = parseInt(document.getElementById('cfg-u1')?.value) || 10;
-  const u2                   = parseInt(document.getElementById('cfg-u2')?.value) || 20;
-  const u3                   = parseInt(document.getElementById('cfg-u3')?.value) || 30;
-  const justificadas_cuentan = document.getElementById('tog-justif')?.classList.contains('on');
-
-  const datos = {
-    institucion_id: USUARIO_ACTUAL.institucion_id, nivel,
-    umbral_alerta_1: u1, umbral_alerta_2: u2, umbral_alerta_3: u3,
-    justificadas_cuentan,
-  };
-
-  if (nivel === 'inicial') {
-    datos.escala      = null;
-    datos.nota_minima = null;
-    // Persistir las dimensiones que se muestran actualmente (defaults o personalizadas)
-    const lista   = document.getElementById('lista-dims-inicial');
-    const dimEls  = lista ? lista.querySelectorAll('.dim-label') : [];
-    const dimsDOM = Array.from(dimEls).map(el => el.textContent.trim()).filter(Boolean);
-    datos.dimensiones_informe = dimsDOM.length ? dimsDOM : _DIMS_INICIAL_DEFAULT;
-  } else if (nivel === 'primario') {
-    datos.escala_ciclo1     = 'conceptual';
-    datos.aprobacion_ciclo1 = document.getElementById('cfg-aprobacion-ciclo1')?.value || 'B';
-    datos.escala            = document.getElementById('cfg-escala-ciclo2')?.value || 'numerica';
-    datos.nota_minima       = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
-    datos.nota_recuperacion = parseInt(document.getElementById('cfg-nota-rec')?.value) || 4;
-  } else {
-    datos.nota_minima = parseInt(document.getElementById('cfg-nota-min')?.value) || 7;
-    datos.escala      = document.getElementById('cfg-escala')?.value || 'numerica';
-  }
-
-  try {
-    if (existingId) {
-      const { error } = await sb.from('config_asistencia').update(datos).eq('id', existingId);
-      if (error) throw error;
-    } else {
-      const { error } = await sb.from('config_asistencia').insert([datos]);
-      if (error) throw error;
-    }
-    await _renderParamNivel(nivel);
-    _toastOk('Configuración guardada');
-    const saveBtn = document.getElementById('cfg-save-btn');
-    if (saveBtn) {
-      const orig = saveBtn.getAttribute('onclick');
-      saveBtn.textContent = 'Editar';
-      saveBtn.className = 'btn-s';
-      saveBtn.removeAttribute('onclick');
-      saveBtn.onclick = () => {
-        saveBtn.textContent = 'Guardar configuración';
-        saveBtn.className = 'btn-p';
-        saveBtn.setAttribute('onclick', orig);
-        saveBtn.onclick = null;
-      };
-    }
-  } catch (e) {
-    alert('Error al guardar: ' + e.message);
-  }
+  await _refrescarTiposGlobales();
 }
 
 async function _togTipoActivo(tabla, id, listaId, nivel) {
   const { data: curr } = await sb.from(tabla).select('activo').eq('id', id).single();
   const { error } = await sb.from(tabla).update({ activo: !curr?.activo }).eq('id', id);
   if (error) { alert('Error: ' + error.message); return; }
-  if (nivel === 'global') await _renderParamGlobal();
-  else await _renderParamNivel(nivel);
+  await _refrescarTiposGlobales();
 }
 
 async function _agregarTipo(tabla, inputId, nivel, listaId) {
@@ -2327,8 +2497,7 @@ async function _agregarTipo(tabla, inputId, nivel, listaId) {
   const { error } = await sb.from(tabla).insert([datos]);
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
-  if (nivel === 'global') await _renderParamGlobal();
-  else await _renderParamNivel(nivel);
+  await _refrescarTiposGlobales();
 }
 
 function _onPeriodoFecha(periodoId, campo, inputId) {
@@ -2345,7 +2514,7 @@ async function _eliminarPeriodo(id, nivel) {
   if (!confirm('¿Eliminar este período evaluativo?')) return;
   const { error } = await sb.from('periodos_evaluativos').delete().eq('id', id);
   if (error) { alert('Error: ' + error.message); return; }
-  await _renderParamNivel(nivel);
+  await _renderParamCalifNivel(nivel);
 }
 
 async function _agregarPeriodo(nivel) {
@@ -2359,7 +2528,7 @@ async function _agregarPeriodo(nivel) {
   }]);
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
-  await _renderParamNivel(nivel);
+  await _renderParamCalifNivel(nivel);
 }
 
 function _editarNombrePeriodo(id) {
@@ -2376,7 +2545,7 @@ async function _guardarNombrePeriodo(id, nivel) {
   const { error } = await sb.from('periodos_evaluativos').update({ nombre }).eq('id', id);
   if (error) { alert('Error: ' + error.message); return; }
   _toastOk('Período actualizado');
-  await _renderParamNivel(nivel);
+  await _renderParamCalifNivel(nivel);
 }
 
 // ── Dimensiones de desarrollo (Nivel Inicial) ─────────
@@ -2414,7 +2583,7 @@ async function _agregarDim() {
   }
   if (error) { alert('Error al guardar dimensión: ' + error.message); return; }
   if (inp) inp.value = '';
-  await _renderParamNivel('inicial');
+  await _renderParamDimensiones();
 }
 
 function _mmatToggleTipo() {
@@ -2453,7 +2622,7 @@ async function _agregarEscalaVal() {
   }
   if (error) { alert('Error: ' + error.message); return; }
   if (inp) inp.value = '';
-  await _renderParamNivel('primario');
+  await _renderParamCalifNivel('primario');
 }
 
 async function _quitarEscalaVal(idx) {
@@ -2464,7 +2633,7 @@ async function _quitarEscalaVal(idx) {
   const vals = (cfg.escala_conceptual_valores || ['MB','B','R','I']).filter((_, i) => i !== idx);
   const { error } = await sb.from('config_asistencia').update({ escala_conceptual_valores: vals }).eq('id', cfg.id);
   if (error) { alert('Error: ' + error.message); return; }
-  await _renderParamNivel('primario');
+  await _renderParamCalifNivel('primario');
 }
 
 async function _quitarDim(idx) {
@@ -2482,7 +2651,7 @@ async function _quitarDim(idx) {
     }]));
   }
   if (error) { alert('Error al quitar dimensión: ' + error.message); return; }
-  await _renderParamNivel('inicial');
+  await _renderParamDimensiones();
 }
 
 // ══════════════════════════════════════════════════════
@@ -2800,6 +2969,68 @@ function inyectarEstilosAdmin() {
       width: 100%;
       margin-bottom: 14px;
     }
+
+    /* ── Menú lateral de Configuración (grupos colapsables) ── */
+    .adm-layout {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+    .adm-side {
+      width: 216px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .adm-side-group {
+      border: 1px solid var(--brd);
+      border-radius: var(--rad-lg);
+      overflow: hidden;
+      background: var(--surf2);
+    }
+    .adm-side-head {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--txt2);
+      transition: color .12s;
+    }
+    .adm-side-head:hover { color: var(--txt); }
+    .adm-side-chev { font-size: 11px; color: var(--txt3); flex-shrink: 0; }
+    .adm-side-items {
+      display: flex;
+      flex-direction: column;
+      padding: 2px 6px 8px;
+      background: var(--surf);
+    }
+    .adm-side-item {
+      text-align: left;
+      padding: 8px 10px;
+      border-radius: var(--rad);
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--txt2);
+      transition: background .12s, color .12s;
+    }
+    .adm-side-item:hover { background: var(--surf2); color: var(--txt); }
+    .adm-side-item.on    { background: var(--verde); color: #fff; font-weight: 600; }
+    .adm-content { flex: 1; min-width: 0; }
 
     /* ── Formularios ── */
     .adm-form-row  { margin-bottom: 12px; }

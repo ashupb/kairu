@@ -112,6 +112,24 @@ Los usuarios `docente` y `preceptor` tienen acceso a asistencia y calificaciones
 
 El rol `eoe` tiene acceso multi-nivel (igual que `director_general`) en asistencia y calificaciones, pero en modo **solo lectura** (sin botones de guardar/gestión del ciclo lectivo). En problemáticas puede agregar intervenciones tipificadas (`_EOE_TIPOS_INTERV`) pero NO puede cerrar/reabrir casos (`probPermisos().cerrar === false` para EOE). Cuando el tipo es "Derivación", el formulario embebe campos de derivación y guarda simultáneamente en `intervenciones` y `derivaciones`. En legajos puede ver y crear derivaciones (tab "Derivaciones" visible solo para EOE y directivos).
 
+### Configuración — menú de grupos colapsables (`js/configuracion.js`)
+
+El módulo `admin` (`rAdmin()`) reemplazó su antigua barra de tabs plana por un **menú lateral de grupos desplegables** con tabs internos donde corresponde. Estructura y patrón:
+
+- **`CONFIG_GRUPOS`** — array de grupos (`Institución`, `Usuarios`, `Portal Familiar`, `Parámetros académicos`). Cada grupo tiene `items`; cada item tiene `roles` (array de roles con acceso) y, o bien un `renderer` directo, o un array `tabs` (cada tab con su propio `renderer` y, opcionalmente, `soloInicial: true` para ocultarlo si la institución/usuario no opera en nivel inicial).
+- **Estado**: `_admGrupo` (grupo activo), `_admItem` (subsección activa), `_admItemTab` (tab interno activo si el item tiene `tabs`), `_admGruposAbiertos` (Set de grupos expandidos).
+- **Dispatch**: `rAdmin()` → `_renderAdminShell(grupos)` (pinta el menú lateral en desktop o un `<select>` con `<optgroup>` por grupo en mobile, `window.innerWidth < 700`) → `_dispatchAdminItem()` (renderiza tabs internos si el item los tiene, y llama al `renderer` correspondiente sobre `#adm-section-content`).
+- **Navegación**: `_irAItemAdmin(grupoId, itemId)` / `_irAItemAdminSel(value)` (mobile) cambian de subsección; `_irATabAdmin(tabId)` cambia de tab interno; `_togGrupoAdmin(id)` colapsa/expande un grupo.
+- **Accesos extra por usuario** (`usuarios.config_extra.tabs`, feature de `director_general` para dar acceso puntual a una subsección fuera del rol): los ids guardados son los ids de **item** (`materias`, `docentes`, `param_asistencia`, `param_calificaciones`, etc.), no los de grupo. `_LEGACY_TAB_ALIAS` traduce los ids viejos pre-reorganización (`asignaciones`→`materias`, `suplencias`→`docentes`, `parametros`→ambos ids de Parámetros) para no romper accesos ya otorgados antes de este refactor.
+- **Parámetros académicos** se dividió en dos subsecciones que antes eran una sola card combinada (`_renderParamNivel` + `_guardarConfigAsistencia`, ya no existen):
+  - **Asistencia** (`_renderParamAsistencia` → `_renderParamAsistNivel` + `_guardarAsistenciaCfg`): umbrales de alerta y "justificadas cuentan", por nivel. Debajo, `_renderParamAsistOtros()` con tipos de justificación, eventos de agenda, tipos de problemática y tipos de intervención (todas listas globales, sin nivel).
+  - **Calificaciones y escalas**, con tabs internos:
+    - `Escalas y notas` (`_renderParamNotas` → `_renderParamCalifNivel` + `_guardarCalifCfg`): escala/nota mínima por nivel (inicial no tiene campos editables acá, solo texto informativo), períodos evaluativos, y `_renderParamCalifTipos()` con tipos de instancia evaluativa.
+    - `Dimensiones (Inicial)` (`_renderParamDimensiones`, `soloInicial: true`): dimensiones de desarrollo narrativo, siempre nivel inicial.
+  - Ambas subsecciones escriben en la misma fila de `config_asistencia` por nivel — los `UPDATE`/`INSERT` son parciales (solo tocan las columnas de su propia mitad) para no pisar la otra al guardar.
+  - Los 5 "tipos" institucionales que antes vivían juntos en una sola pestaña quedaron repartidos por afinidad: justificación/eventos/problemática/intervención → Asistencia; instancia evaluativa → Calificaciones y escalas. Cualquier alta/baja/edición de alguno de los 5 refresca ambos bloques vía `_refrescarTiposGlobales()`.
+- **Pendiente** (no implementado en este refactor, ver `roles_permisos` y demás en el spec de reorganización si se retoma): Apariencia institucional, ítem plano "Apps" (activación de módulos), "Roles y Permisos" (hoy sigue siendo el array `roles` hardcodeado en `CONFIG_GRUPOS`), y Organigrama. "Portal Familiar" quedó con una sola subsección ("Usuarios", = la vieja `_renderFamilias` sin cambios) — no se agregó "General" porque no hay contenido definido para esa subsección todavía.
+
 ## Base de datos — tablas clave
 
 | Tabla | Descripción |
