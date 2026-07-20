@@ -696,26 +696,49 @@ body {
   font-size: 10px;
   color: var(--sb-muted);
   flex-shrink: 0;
+  transition: color .12s;
 }
+.nav-it:hover .ni-chev,
+.nav-it.on .ni-chev { color: #fff; }
+
+/* Árbol de grupos + subsecciones, con guía vertical para marcar la jerarquía */
+.nav-subtree {
+  margin: 2px 0 4px 22px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255,255,255,0.08);
+}
+
 .nav-subsec {
-  padding: 8px 10px 3px 32px;
-  font-family: 'DM Mono', monospace;
-  font-size: 8px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 8px;
+  margin: 1px 0;
+  border-radius: var(--rad);
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
   color: var(--sb-muted);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  opacity: 0.55;
+  letter-spacing: 0.05em;
   white-space: nowrap;
   overflow: hidden;
+  transition: background .12s, color .12s;
 }
+.nav-subsec:hover      { background: var(--sb-hover); color: #fff; }
+.nav-subsec.open       { color: rgba(255,255,255,0.8); }
+.ns-chev { font-size: 9px; flex-shrink: 0; }
+
+.nav-subit-wrap { margin-bottom: 4px; }
 .nav-subit {
-  padding: 7px 10px 7px 32px;
+  padding: 7px 8px 7px 18px;
   font-size: 12px;
   font-weight: 500;
 }
-.sidebar.collapsed .nav-subsec,
-.sidebar.collapsed .nav-subit { display: none; }
+
+.sidebar.collapsed .nav-subtree { display: none; }
 
 /* ── Hub de mensajes con familias (page-msgfam) ──────────────── */
 .mfi-filtros { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }

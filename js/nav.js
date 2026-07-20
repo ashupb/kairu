@@ -87,7 +87,7 @@ const NAV_CONFIG = {
     { id:'prob',  icon:'△',   label:'Problemáticas' },
     { id:'obj',   icon:'◎',   label:'Objetivos' },
     { id:'leg',   icon:'▤',   label:'Resumen del estudiante' },
-    { id:'admin', icon:'⊙',   label:'Configuración' },
+    { id:'admin', icon:'⊙',   label:'Configuración', expandable: true },
   ],
   admin: [
     { sec: 'General' },
@@ -170,7 +170,10 @@ function renderNav() {
 
 // Ítem de nav con subsecciones anidadas dentro del mismo sidebar (hoy solo
 // "Configuración" — grupos/items definidos en CONFIG_GRUPOS, configuracion.js).
+// Dos niveles de despliegue: la entrada raíz (_navAdminOpen) y, dentro de
+// ella, cada grupo (Institución, Parámetros académicos, etc. — _navAdminGruposAbiertos).
 let _navAdminOpen = false;
+let _navAdminGruposAbiertos = new Set();
 
 function _renderNavExpandable(nav, item) {
   const activo = item.id === CUR_PAGE;
@@ -192,19 +195,38 @@ function _renderNavExpandable(nav, item) {
 
   if (!_navAdminOpen || typeof _configGruposVisibles !== 'function' || !SB_OPEN) return;
 
-  _configGruposVisibles().forEach(g => {
-    const gEl = document.createElement('div');
-    gEl.className = 'nav-subsec';
-    gEl.textContent = g.label;
-    nav.appendChild(gEl);
+  const wrap = document.createElement('div');
+  wrap.className = 'nav-subtree';
 
+  _configGruposVisibles().forEach(g => {
+    const grupoActivo = activo && _admGrupo === g.id;
+    if (grupoActivo) _navAdminGruposAbiertos.add(g.id); // el grupo con la subsección activa siempre visible
+    const abiertoG = _navAdminGruposAbiertos.has(g.id);
+
+    const gEl = document.createElement('div');
+    gEl.className = 'nav-subsec' + (abiertoG ? ' open' : '');
+    gEl.innerHTML = `<span class="ns-label">${g.label}</span><span class="ns-chev">${abiertoG ? '▾' : '▸'}</span>`;
+    gEl.onclick = ev => {
+      ev.stopPropagation();
+      if (_navAdminGruposAbiertos.has(g.id)) _navAdminGruposAbiertos.delete(g.id); else _navAdminGruposAbiertos.add(g.id);
+      renderNav();
+    };
+    wrap.appendChild(gEl);
+
+    if (!abiertoG) return;
+
+    const gItems = document.createElement('div');
+    gItems.className = 'nav-subit-wrap';
     g.items.forEach(it => {
-      const on = activo && _admGrupo === g.id && _admItem === it.id;
+      const on = grupoActivo && _admItem === it.id;
       const subEl = document.createElement('div');
       subEl.className = 'nav-it nav-subit' + (on ? ' on' : '');
       subEl.textContent = it.label;
       subEl.onclick = ev => { ev.stopPropagation(); _irAItemAdmin(g.id, it.id); };
-      nav.appendChild(subEl);
+      gItems.appendChild(subEl);
     });
+    wrap.appendChild(gItems);
   });
+
+  nav.appendChild(wrap);
 }

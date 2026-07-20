@@ -92,18 +92,18 @@ const CONFIG_GRUPOS = [
           { id: 'suplencias', label: 'Suplencias', renderer: _renderSuplencias },
         ] },
     ] },
-  { id: 'usuarios', label: 'Usuarios', items: [
-      { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel'], renderer: _renderUsuarios },
-    ] },
-  { id: 'portal', label: 'Portal Familiar', items: [
-      { id: 'familias', label: 'Usuarios', roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderFamilias },
-    ] },
   { id: 'parametros', label: 'Parámetros académicos', items: [
       { id: 'param_asistencia',     label: 'Asistencia',              roles: ['director_general', 'directivo_nivel'], renderer: _renderParamAsistencia },
       { id: 'param_calificaciones', label: 'Calificaciones y escalas', roles: ['director_general', 'directivo_nivel'], tabs: [
           { id: 'notas', label: 'Escalas y notas',       renderer: _renderParamNotas },
           { id: 'dims',  label: 'Dimensiones (Inicial)', renderer: _renderParamDimensiones, soloInicial: true },
         ] },
+    ] },
+  { id: 'usuarios', label: 'Usuarios', items: [
+      { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel'], renderer: _renderUsuarios },
+    ] },
+  { id: 'portal', label: 'Portal Familiar', items: [
+      { id: 'familias', label: 'Usuarios', roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderFamilias },
     ] },
 ];
 
@@ -165,6 +165,11 @@ async function rAdmin() {
   if (!_admGrupo || !grupos.find(g => g.id === _admGrupo)) _admGrupo = grupos[0].id;
   const grupoActivo = grupos.find(g => g.id === _admGrupo);
   if (!_admItem || !grupoActivo.items.find(it => it.id === _admItem)) _admItem = grupoActivo.items[0].id;
+
+  // goPage() ya llamó a renderNav() antes de entrar acá, cuando _admGrupo/_admItem
+  // todavía no estaban definidos — se vuelve a pintar para reflejar el grupo/item
+  // recién resuelto (grupo activo expandido, item activo resaltado).
+  renderNav();
 
   document.getElementById('page-admin').innerHTML = `
     <div class="pg-t">Configuración</div>
