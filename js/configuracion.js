@@ -24,7 +24,6 @@ async function _llamarAdminUsers(action, payload) {
 // ─── ESTADO LOCAL ────────────────────────────────────
 let _admGrupo          = null;  // grupo activo del menú lateral (ej: 'institucion')
 let _admItem           = null;  // subsección activa dentro del grupo (ej: 'cursos')
-let _admItemTab        = null;  // tab interno activo, si el item tiene 'tabs' (ej: 'asignaciones')
 let _admGruposAbiertos = new Set(); // grupos expandidos en el menú lateral
 let _adminCursos    = [];
 let _adminUsuarios  = [];
@@ -73,23 +72,21 @@ const ROL_BADGE_ADM = {
   eoe:              'tr',
 };
 
-// ─── MENÚ DE CONFIGURACIÓN — grupos desplegables + tabs internos ──
-// Ids de item estables: se usan también para permisos por rol y para
-// "config_extra.tabs" (accesos adicionales otorgados a un usuario puntual).
+// ─── MENÚ DE CONFIGURACIÓN — grupos desplegables, subsecciones como filas ──
+// Cada subsección es una fila propia dentro del grupo (no hay tabs aparte
+// del contenido). Ids de item estables: se usan también para permisos por
+// rol y para "config_extra.tabs" (accesos adicionales otorgados a un
+// usuario puntual).
 const CONFIG_GRUPOS = [
   { id: 'institucion', label: 'Institución', items: [
       { id: 'institucion',   label: 'General',        roles: ['director_general'], renderer: _renderInstitucion },
       { id: 'ciclo_lectivo', label: 'Ciclo Lectivo',   roles: ['director_general', 'directivo_nivel'], renderer: _renderCicloLectivo },
       { id: 'cursos',        label: 'Cursos',          roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderCursos },
-      { id: 'materias',      label: 'Materias',        roles: ['director_general', 'directivo_nivel'], tabs: [
-          { id: 'materias',     label: 'Materias',     renderer: _renderMaterias },
-          { id: 'asignaciones', label: 'Asignaciones', renderer: _renderAsignaciones },
-        ] },
-      { id: 'alumnos',  label: 'Alumnos',  roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderAlumnos },
-      { id: 'docentes', label: 'Docentes', roles: ['director_general', 'directivo_nivel'], tabs: [
-          { id: 'docentes',   label: 'Docentes',   renderer: _renderDocentes },
-          { id: 'suplencias', label: 'Suplencias', renderer: _renderSuplencias },
-        ] },
+      { id: 'materias',      label: 'Materias',        roles: ['director_general', 'directivo_nivel'], renderer: _renderMaterias },
+      { id: 'asignaciones',  label: 'Asignaciones',    roles: ['director_general', 'directivo_nivel'], renderer: _renderAsignaciones },
+      { id: 'alumnos',       label: 'Alumnos',         roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderAlumnos },
+      { id: 'docentes',      label: 'Docentes',        roles: ['director_general', 'directivo_nivel'], renderer: _renderDocentes },
+      { id: 'suplencias',    label: 'Suplencias',      roles: ['director_general', 'directivo_nivel'], renderer: _renderSuplencias },
     ] },
   { id: 'usuarios', label: 'Usuarios', items: [
       { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel'], renderer: _renderUsuarios },
@@ -98,20 +95,16 @@ const CONFIG_GRUPOS = [
       { id: 'familias', label: 'Usuarios', roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderFamilias },
     ] },
   { id: 'parametros', label: 'Parámetros académicos', items: [
-      { id: 'param_asistencia',     label: 'Asistencia',              roles: ['director_general', 'directivo_nivel'], renderer: _renderParamAsistencia },
-      { id: 'param_calificaciones', label: 'Calificaciones y escalas', roles: ['director_general', 'directivo_nivel'], tabs: [
-          { id: 'notas', label: 'Escalas y notas',       renderer: _renderParamNotas },
-          { id: 'dims',  label: 'Dimensiones (Inicial)', renderer: _renderParamDimensiones, soloInicial: true },
-        ] },
+      { id: 'param_asistencia', label: 'Asistencia',              roles: ['director_general', 'directivo_nivel'], renderer: _renderParamAsistencia },
+      { id: 'param_notas',      label: 'Escalas y notas',         roles: ['director_general', 'directivo_nivel'], renderer: _renderParamNotas },
+      { id: 'param_dims',       label: 'Dimensiones (Inicial)',   roles: ['director_general', 'directivo_nivel'], renderer: _renderParamDimensiones, soloInicial: true },
     ] },
 ];
 
 // Ids viejos (pre-reorganización) que un usuario puede tener guardados en
 // config_extra.tabs — se traducen a los ids nuevos para no perder accesos.
 const _LEGACY_TAB_ALIAS = {
-  asignaciones: ['materias'],
-  suplencias:   ['docentes'],
-  parametros:   ['param_asistencia', 'param_calificaciones'],
+  parametros: ['param_asistencia', 'param_notas', 'param_dims'],
 };
 
 function _normalizarExtras(tabsArr) {
@@ -132,7 +125,9 @@ function _configGruposVisibles() {
 
   return CONFIG_GRUPOS
     .map(g => {
-      const items = g.items.filter(it => it.roles.includes(r) || extras.has(it.id));
+      const items = g.items
+        .filter(it => it.roles.includes(r) || extras.has(it.id))
+        .filter(it => !it.soloInicial || _paramTieneInicial());
       return items.length ? { ...g, items } : null;
     })
     .filter(Boolean);
@@ -193,7 +188,6 @@ function _renderAdminShell(grupos) {
     <div class="adm-layout">
       ${isMobile ? '' : `<div class="adm-side">${sideHtml}</div>`}
       <div class="adm-content">
-        <div id="adm-item-tabs"></div>
         <div id="adm-section-content"></div>
       </div>
     </div>`;
@@ -207,7 +201,6 @@ function _togGrupoAdmin(id) {
 async function _irAItemAdmin(grupoId, itemId) {
   _admGrupo = grupoId;
   _admItem  = itemId;
-  _admItemTab = null;
   _admGruposAbiertos.add(grupoId);
   _renderAdminShell(_configGruposVisibles());
   await _dispatchAdminItem();
@@ -218,16 +211,11 @@ async function _irAItemAdminSel(value) {
   await _irAItemAdmin(grupoId, itemId);
 }
 
-async function _irATabAdmin(tabId) {
-  _admItemTab = tabId;
-  await _dispatchAdminItem();
-}
-
 function _paramTieneInicial() {
-  const inst = INSTITUCION_ACTUAL || {};
+  if (!USUARIO_ACTUAL) return false;
   return USUARIO_ACTUAL.rol === 'directivo_nivel'
     ? USUARIO_ACTUAL.nivel === 'inicial'
-    : !!inst.nivel_inicial;
+    : !!INSTITUCION_ACTUAL?.nivel_inicial;
 }
 
 async function _dispatchAdminItem() {
@@ -236,25 +224,9 @@ async function _dispatchAdminItem() {
   const item   = grupo?.items.find(it => it.id === _admItem);
   if (!item) return;
 
-  const tabsWrap = document.getElementById('adm-item-tabs');
-  const content  = document.getElementById('adm-section-content');
-
-  if (item.tabs) {
-    const tabsVisibles = item.tabs.filter(t => !t.soloInicial || _paramTieneInicial());
-    if (!_admItemTab || !tabsVisibles.find(t => t.id === _admItemTab)) _admItemTab = tabsVisibles[0].id;
-    if (tabsWrap) {
-      tabsWrap.innerHTML = `<div class="adm-tabs-bar">
-        ${tabsVisibles.map(t => `<button class="adm-tab${t.id === _admItemTab ? ' on' : ''}" onclick="_irATabAdmin('${t.id}')">${_esc(t.label)}</button>`).join('')}
-      </div>`;
-    }
-    if (content) content.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
-    const tab = tabsVisibles.find(t => t.id === _admItemTab);
-    await tab.renderer();
-  } else {
-    if (tabsWrap) tabsWrap.innerHTML = '';
-    if (content) content.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
-    await item.renderer();
-  }
+  const content = document.getElementById('adm-section-content');
+  if (content) content.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  await item.renderer();
 }
 
 // ══════════════════════════════════════════════════════
@@ -2935,36 +2907,7 @@ function inyectarEstilosAdmin() {
   const s = document.createElement('style');
   s.id = 'adm-styles';
   s.textContent = `
-    /* ── Tabs ── */
-    .adm-tabs-bar {
-      display: flex;
-      gap: 2px;
-      overflow-x: auto;
-      background: var(--surf2);
-      border: 1px solid var(--brd);
-      border-radius: var(--rad-lg);
-      padding: 4px;
-      margin-bottom: 14px;
-      scrollbar-width: none;
-    }
-    .adm-tabs-bar::-webkit-scrollbar { display: none; }
-
-    .adm-tab {
-      padding: 6px 14px;
-      border-radius: var(--rad);
-      border: none;
-      background: none;
-      cursor: pointer;
-      font-size: 12px;
-      font-family: 'DM Sans', sans-serif;
-      font-weight: 500;
-      color: var(--txt2);
-      white-space: nowrap;
-      transition: all .12s;
-    }
-    .adm-tab:hover { background: var(--surf); color: var(--txt); }
-    .adm-tab.on    { background: var(--surf); color: var(--verde); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-
+    /* ── Selector de subsección (mobile) ── */
     .adm-tab-sel {
       width: 100%;
       margin-bottom: 14px;
