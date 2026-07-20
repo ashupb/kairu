@@ -690,6 +690,33 @@ body {
 }
 .sidebar.collapsed .ni-badge { display: none; }
 
+/* Ítem de nav expandible con subsecciones anidadas (ej. Configuración) */
+.ni-chev {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--sb-muted);
+  flex-shrink: 0;
+}
+.nav-subsec {
+  padding: 8px 10px 3px 32px;
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--sb-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.nav-subit {
+  padding: 7px 10px 7px 32px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.sidebar.collapsed .nav-subsec,
+.sidebar.collapsed .nav-subit { display: none; }
+
 /* ── Hub de mensajes con familias (page-msgfam) ──────────────── */
 .mfi-filtros { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
 .mfi-filtros .inp-base { flex:1; min-width:160px; }
