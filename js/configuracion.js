@@ -291,6 +291,35 @@ async function _renderInstitucion() {
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-t">Apariencia</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:14px">Este cambio se aplica para todos los usuarios de la institución.</div>
+
+      <div class="adm-form-row">
+        <label class="adm-label">Logo</label>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div id="adm-logo-preview" style="width:64px;height:64px;border-radius:12px;background:var(--surf2);border:1px solid var(--brd);display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0">
+            ${inst.logo_url ? `<img src="${_esc(inst.logo_url)}" alt="" style="width:100%;height:100%;object-fit:cover">` : `<span style="font-size:10px;color:var(--txt3)">Sin logo</span>`}
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <input type="file" id="adm-logo-file" accept="image/*" style="display:none" onchange="_subirLogoInstitucion(this)">
+            <button class="btn-s" onclick="document.getElementById('adm-logo-file').click()">Subir logo</button>
+            ${inst.logo_url ? `<button class="btn-d" onclick="_quitarLogoInstitucion()">Quitar logo</button>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div class="adm-form-row" style="margin-bottom:0">
+        <label class="adm-label">Color de la plataforma</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+          ${PALETA_TEMA_INSTITUCION.map(c => `
+            <div class="tema-swatch${(inst.tema_color || '#229957') === c.hex ? ' on' : ''}" data-hex="${c.hex}"
+              style="background:${c.hex}" title="${c.label}" onclick="_seleccionarColorTema('${c.hex}')"></div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+
     <div class="card" id="adm-orientaciones-card" style="display:${nivelSecOn ? '' : 'none'}">
       <div class="card-t" style="color:${NIVEL_COLORS_ADM.secundario}">Orientaciones (Secundario)</div>
       <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Configurá las orientaciones que ofrece tu institución. Se usan al crear cursos de 4°, 5° y 6°.</div>
@@ -395,6 +424,86 @@ async function _guardarInstitucion() {
       btn.onclick = null;
     };
   }
+}
+
+// ── Apariencia — color de plataforma ──────────────────
+async function _seleccionarColorTema(hex) {
+  document.querySelectorAll('.tema-swatch').forEach(el => {
+    el.classList.toggle('on', el.dataset.hex === hex);
+  });
+  const { error } = await sb.from('instituciones').update({ tema_color: hex }).eq('id', USUARIO_ACTUAL.institucion_id);
+  if (error) { alert('Error al guardar: ' + error.message); return; }
+  if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.tema_color = hex;
+  _aplicarTemaInstitucion(hex);
+  _toastOk('Color actualizado');
+}
+
+// ── Apariencia — logo institucional ───────────────────
+async function _comprimirLogo(file, maxPx = 300) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxPx || height > maxPx) {
+        const r = Math.min(maxPx / width, maxPx / height);
+        width  = Math.round(width  * r);
+        height = Math.round(height * r);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width  = width;
+      canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('No se pudo procesar la imagen')), 'image/png');
+    };
+    img.onerror = () => reject(new Error('Imagen inválida'));
+    img.src = url;
+  });
+}
+
+async function _subirLogoInstitucion(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { alert('Elegí un archivo de imagen.'); input.value = ''; return; }
+
+  const preview = document.getElementById('adm-logo-preview');
+  const original = preview?.innerHTML;
+  if (preview) preview.innerHTML = '<div class="spinner" style="width:20px;height:20px"></div>';
+
+  try {
+    const blob = await _comprimirLogo(file);
+    const path = `${USUARIO_ACTUAL.institucion_id}/logo-${Date.now()}.png`;
+    const { error: upErr } = await sb.storage.from('institucion-assets').upload(path, blob, { contentType: 'image/png' });
+    if (upErr) throw upErr;
+    const { data: urlData } = sb.storage.from('institucion-assets').getPublicUrl(path);
+
+    const { error } = await sb.from('instituciones').update({ logo_url: urlData.publicUrl }).eq('id', USUARIO_ACTUAL.institucion_id);
+    if (error) throw error;
+
+    if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.logo_url = urlData.publicUrl;
+    const sbLogoEl = document.getElementById('sb-inst-logo');
+    if (sbLogoEl) sbLogoEl.innerHTML = `<img src="${urlData.publicUrl}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+
+    await _renderInstitucion();
+    _toastOk('Logo actualizado');
+  } catch (e) {
+    if (preview) preview.innerHTML = original;
+    alert('No se pudo subir el logo. Probá con otra imagen (el bucket "institucion-assets" tiene que existir en Supabase Storage).');
+  }
+  input.value = '';
+}
+
+async function _quitarLogoInstitucion() {
+  if (!confirm('¿Quitar el logo de la institución?')) return;
+  const { error } = await sb.from('instituciones').update({ logo_url: null }).eq('id', USUARIO_ACTUAL.institucion_id);
+  if (error) { alert('Error: ' + error.message); return; }
+  if (INSTITUCION_ACTUAL) INSTITUCION_ACTUAL.logo_url = null;
+  const sbLogoEl   = document.getElementById('sb-inst-logo');
+  const instNombre = INSTITUCION_ACTUAL?.nombre || 'Kairú';
+  if (sbLogoEl) sbLogoEl.textContent = instNombre[0]?.toUpperCase() || 'K';
+  await _renderInstitucion();
+  _toastOk('Logo eliminado');
 }
 
 // ══════════════════════════════════════════════════════
@@ -2938,7 +3047,28 @@ function inyectarEstilosAdmin() {
       transition: all .12s;
     }
     .adm-tab:hover { background: var(--surf); color: var(--txt); }
-    .adm-tab.on    { background: var(--surf); color: var(--verde); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .adm-tab.on    { background: var(--surf); color: var(--acento); font-weight: 600; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+    /* ── Apariencia institucional (logo + color) ── */
+    .tema-swatch {
+      position: relative;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      flex-shrink: 0;
+      box-shadow: 0 0 0 1px var(--brd);
+      transition: transform .1s, box-shadow .12s;
+    }
+    .tema-swatch:hover { transform: scale(1.08); }
+    .tema-swatch.on { box-shadow: 0 0 0 2px var(--surf), 0 0 0 4px var(--txt2); }
+    .tema-swatch.on::after {
+      content: '✓';
+      position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 14px; font-weight: 700;
+      text-shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
 
     /* ── Formularios ── */
     .adm-form-row  { margin-bottom: 12px; }

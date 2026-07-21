@@ -8,6 +8,36 @@ let SB_OPEN       = true;
 let EX            = null;
 let MSG_FAM_UNREAD = 0;
 
+// ── APARIENCIA INSTITUCIONAL — color de marca ─────────
+// Paleta curada: solo pisa acentos de marca (botones primarios, sidebar,
+// tabs, chips, foco de inputs) — nunca los colores de estado (verde=éxito,
+// rojo=error, ámbar=alerta, azul=info), que quedan siempre iguales.
+const PALETA_TEMA_INSTITUCION = [
+  { id: 'verde',   label: 'Verde',   hex: '#229957' },
+  { id: 'azul',    label: 'Azul',    hex: '#1D6FA6' },
+  { id: 'violeta', label: 'Violeta', hex: '#7C3AED' },
+  { id: 'teal',    label: 'Teal',    hex: '#0F9B8E' },
+  { id: 'naranja', label: 'Naranja', hex: '#D9720C' },
+  { id: 'rosa',    label: 'Rosa',    hex: '#C2447A' },
+];
+
+function _shadeColor(hex, percent) {
+  const f = parseInt(hex.slice(1), 16);
+  const t = percent < 0 ? 0 : 255;
+  const p = Math.abs(percent);
+  const R = f >> 16, G = (f >> 8) & 0xff, B = f & 0xff;
+  const newR = Math.round((t - R) * p) + R;
+  const newG = Math.round((t - G) * p) + G;
+  const newB = Math.round((t - B) * p) + B;
+  return '#' + (0x1000000 + newR * 0x10000 + newG * 0x100 + newB).toString(16).slice(1);
+}
+
+function _aplicarTemaInstitucion(hex) {
+  const color = hex || '#229957';
+  document.documentElement.style.setProperty('--acento',   color);
+  document.documentElement.style.setProperty('--acento-m', _shadeColor(color, -0.15));
+}
+
 const PAGE_LABELS = {
   dash:      'Mi Día',
   prob:      'Problemáticas',
@@ -43,8 +73,15 @@ async function iniciarApp() {
   const instNombre = INSTITUCION_ACTUAL?.nombre || 'Kairú';
   const instLetra  = instNombre[0]?.toUpperCase() || 'K';
   const sbLogoEl   = document.getElementById('sb-inst-logo');
-  if (sbLogoEl) sbLogoEl.textContent = instLetra;
+  if (sbLogoEl) {
+    sbLogoEl.innerHTML = INSTITUCION_ACTUAL?.logo_url
+      ? `<img src="${INSTITUCION_ACTUAL.logo_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`
+      : instLetra;
+  }
   document.getElementById('sb-inst-nombre').textContent = instNombre;
+
+  // Color de marca de la institución (acentos — no toca estados semánticos)
+  _aplicarTemaInstitucion(INSTITUCION_ACTUAL?.tema_color);
 
   // Título de la pestaña del navegador
   document.title = instNombre + ' · Kairú';
@@ -123,14 +160,79 @@ function toggleSidebar() {
     if (icon) icon.textContent = SB_OPEN ? '‹' : '›';
   }
 }
-function toggleDark() {
-  DARK = !DARK;
+// ── PREFERENCIAS PERSONALES (tema + tamaño de letra) ──
+// Se guardan en localStorage — son por navegador/dispositivo, no por usuario.
+const FONT_SCALES = { chico: 0.9, normal: 1, grande: 1.15 };
+let FONT_SCALE = 'normal';
+
+function _aplicarModoOscuro(oscuro) {
+  DARK = oscuro;
   document.body.classList.toggle('dark', DARK);
-  const icon = DARK ? '☀️' : '🌙';
-  document.getElementById('theme-icon').textContent    = icon;
-  document.getElementById('tb-theme-icon').textContent = icon;
-  document.getElementById('dark-label').textContent    = DARK ? 'Modo claro' : 'Modo oscuro';
 }
+
+function _aplicarFontScale(escala) {
+  if (!FONT_SCALES[escala]) escala = 'normal';
+  FONT_SCALE = escala;
+  document.body.style.zoom = FONT_SCALES[escala];
+}
+
+function _cargarPreferencias() {
+  const temaGuardado  = localStorage.getItem('kairu_tema');
+  const escalaGuardada = localStorage.getItem('kairu_font_scale');
+  _aplicarModoOscuro(temaGuardado === 'oscuro');
+  _aplicarFontScale(escalaGuardada || 'normal');
+}
+
+function _setTema(oscuro) {
+  _aplicarModoOscuro(oscuro);
+  localStorage.setItem('kairu_tema', oscuro ? 'oscuro' : 'claro');
+  _renderPrefPanel();
+}
+
+function _setFontScale(escala) {
+  _aplicarFontScale(escala);
+  localStorage.setItem('kairu_font_scale', escala);
+  _renderPrefPanel();
+}
+
+function _renderPrefPanel() {
+  const body = document.getElementById('pref-panel-body');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="pref-group">
+      <div class="pref-group-label">Tema</div>
+      <div class="pref-opts">
+        <button class="pref-opt${!DARK ? ' on' : ''}" onclick="_setTema(false)">☀️ Claro</button>
+        <button class="pref-opt${DARK ? ' on' : ''}" onclick="_setTema(true)">🌙 Oscuro</button>
+      </div>
+    </div>
+    <div class="pref-group">
+      <div class="pref-group-label">Tamaño de letra</div>
+      <div class="pref-opts">
+        <button class="pref-opt${FONT_SCALE === 'chico' ? ' on' : ''}" onclick="_setFontScale('chico')">Chico</button>
+        <button class="pref-opt${FONT_SCALE === 'normal' ? ' on' : ''}" onclick="_setFontScale('normal')">Normal</button>
+        <button class="pref-opt${FONT_SCALE === 'grande' ? ' on' : ''}" onclick="_setFontScale('grande')">Grande</button>
+      </div>
+    </div>`;
+}
+
+function togglePrefPanel() {
+  const panel = document.getElementById('pref-panel');
+  if (!panel) return;
+  const abriendo = panel.style.display === 'none';
+  panel.style.display = abriendo ? 'block' : 'none';
+  if (abriendo) _renderPrefPanel();
+}
+
+document.addEventListener('click', e => {
+  const panel = document.getElementById('pref-panel');
+  const btn   = document.querySelector('.pref-btn');
+  if (panel && panel.style.display !== 'none' && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
+    panel.style.display = 'none';
+  }
+});
+
+_cargarPreferencias();
 
 function togEx(id, fn) {
   EX = EX === id ? null : id;

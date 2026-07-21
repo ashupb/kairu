@@ -13,6 +13,13 @@
   --verde-l: #E6F5EE;
   --verde-p: #F0F7F4;
 
+  /* ── Acento de marca institucional (pisado en runtime según el color
+     elegido por la institución — ver _aplicarTemaInstitucion en main.js).
+     Solo lo usan componentes de "marca" (botones primarios, sidebar, tabs,
+     chips, foco). Los colores de estado siguen usando --verde/--rojo/etc. */
+  --acento:   var(--verde);
+  --acento-m: var(--verde-m);
+
   /* ── Estados */
   --rojo:    #D63B2F;   --rojo-l:  #FEF0EF;
   --ambar:   #C4860A;   --amb-l:   #FEF7E8;
@@ -569,7 +576,8 @@ body {
   border: 1px dashed rgba(255,255,255,0.2);
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; font-weight: 700;
-  color: var(--verde);
+  color: var(--acento);
+  overflow: hidden;
   flex-shrink: 0;
 }
 .sb-inst-nombre-text {
@@ -598,7 +606,7 @@ body {
 .sb-av {
   width: 30px; height: 30px;
   border-radius: 50%;
-  background: var(--verde);
+  background: var(--acento);
   color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 10px; font-weight: 700;
@@ -775,23 +783,6 @@ body {
   flex-direction: column;
   gap: 3px;
 }
-.dark-toggle {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px;
-  border-radius: var(--rad);
-  cursor: pointer;
-  color: var(--sb-muted);
-  background: rgba(255,255,255,0.04);
-  border: none;
-  width: 100%;
-  font-family: 'DM Sans', sans-serif;
-  font-size: 11px;
-  transition: background .12s, color .12s;
-}
-.dark-toggle:hover { background: rgba(255,255,255,0.10); color: #fff; }
-.dt-label { white-space: nowrap; overflow: hidden; transition: opacity .2s; }
-.sidebar.collapsed .dt-label { opacity: 0; width: 0; }
-
 .btn-salir {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 10px;
@@ -889,16 +880,56 @@ body {
   color: var(--txt3);
   letter-spacing: 0.04em;
 }
-.tb-theme {
+.pref-btn {
   background: none;
   border: none;
   cursor: pointer;
   font-size: 16px;
-  padding: 5px;
+  padding: 5px 7px;
   border-radius: 7px;
+  color: var(--txt2);
   transition: background .12s;
 }
-.tb-theme:hover { background: var(--gris-l); }
+.pref-btn:hover { background: var(--gris-l); }
+
+.pref-panel {
+  position: absolute;
+  top: 52px; right: 20px;
+  width: 260px;
+  background: var(--surf);
+  border: 1px solid var(--brd);
+  border-radius: var(--rad-lg);
+  z-index: 100;
+  box-shadow: var(--shadow-lg);
+}
+.pref-group { margin-bottom: 16px; }
+.pref-group:last-child { margin-bottom: 0; }
+.pref-group-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--txt3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+.pref-opts { display: flex; gap: 6px; }
+.pref-opt {
+  flex: 1;
+  padding: 8px 6px;
+  border-radius: var(--rad);
+  border: 1px solid var(--brd);
+  background: var(--surf2);
+  color: var(--txt2);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  transition: all .12s;
+}
+.pref-opt:hover  { background: var(--gris-l); color: var(--txt); }
+.pref-opt.on     { background: var(--acento); color: #fff; border-color: var(--acento); font-weight: 600; }
 
 /* Notificaciones */
 .notif-btn {
@@ -1112,14 +1143,14 @@ body {
   display: block;
   height: 3px;
   border-radius: 2px;
-  background: var(--verde);
+  background: var(--acento);
   opacity: 0.3;
   margin-top: 10px;
 }
 
 /* Botones */
 .btn-p {
-  background: var(--verde);
+  background: var(--acento);
   color: #fff;
   border: none;
   border-radius: var(--rad);
@@ -1131,7 +1162,7 @@ body {
   transition: background .12s, box-shadow .12s;
   box-shadow: 0 2px 8px rgba(34,153,87,0.28);
 }
-.btn-p:hover { background: var(--verde-m); box-shadow: 0 4px 12px rgba(34,153,87,0.35); }
+.btn-p:hover { background: var(--acento-m); box-shadow: 0 4px 12px rgba(34,153,87,0.35); }
 
 .btn-s {
   background: var(--gris-l);
@@ -1285,7 +1316,7 @@ input[type=number], input[type=date] {
 input[type=text]:focus, input[type=email]:focus,
 input[type=password]:focus, input[type=date]:focus {
   outline: none;
-  border-color: var(--verde);
+  border-color: var(--acento);
   box-shadow: 0 0 0 3px rgba(34,153,87,0.10);
 }
 
@@ -1302,7 +1333,7 @@ textarea {
   line-height: 1.55;
   transition: border-color .15s;
 }
-textarea:focus { outline: none; border-color: var(--verde); background: var(--surf); }
+textarea:focus { outline: none; border-color: var(--acento); background: var(--surf); }
 
 select {
   width: 100%;
@@ -1322,7 +1353,7 @@ select {
   background-size: 12px;
   transition: border-color .15s;
 }
-select:focus { outline: none; border-color: var(--verde); }
+select:focus { outline: none; border-color: var(--acento); }
 
 /* Chips */
 .chip-row { display: flex; gap: 5px; flex-wrap: wrap; }
@@ -1337,8 +1368,8 @@ select:focus { outline: none; border-color: var(--verde); }
   font-family: 'DM Sans', sans-serif;
   transition: all .1s;
 }
-.chip.on { background: var(--verde); color: #fff; border-color: var(--verde); }
-.chip:hover:not(.on) { border-color: var(--verde); color: var(--verde); }
+.chip.on { background: var(--acento); color: #fff; border-color: var(--acento); }
+.chip:hover:not(.on) { border-color: var(--acento); color: var(--acento); }
 
 /* Urgencia */
 .urg-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
@@ -1370,7 +1401,7 @@ select:focus { outline: none; border-color: var(--verde); }
   border: 1px solid var(--brd);
 }
 .tog { width: 34px; height: 19px; border-radius: 10px; cursor: pointer; position: relative; flex-shrink: 0; background: #ccc; transition: background .2s; }
-.tog.on { background: var(--verde); }
+.tog.on { background: var(--acento); }
 .tog-thumb { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; background: #fff; border-radius: 50%; transition: left .2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
 .tog.on .tog-thumb { left: 17px; }
 
@@ -1602,7 +1633,7 @@ select:focus { outline: none; border-color: var(--verde); }
   .metrics.m3 { grid-template-columns: repeat(2,1fr); }
   .metrics.m2 { grid-template-columns: 1fr; }
 
-  .notif-panel { right: 8px; left: 8px; width: auto; }
+  .notif-panel, .pref-panel { right: 8px; left: 8px; width: auto; }
   .card { padding: 13px; }
   .pg-t { font-size: 17px; }
   .btn-p, .btn-s, .btn-d { padding: 10px 16px; font-size: 12px; }

@@ -253,10 +253,6 @@
     </div>
     <div class="sb-nav" id="sb-nav"></div>
     <div class="sb-bottom">
-      <button class="dark-toggle" onclick="toggleDark()">
-        <span id="theme-icon">🌙</span>
-        <span class="dt-label" id="dark-label">Modo oscuro</span>
-      </button>
       <button class="btn-salir" id="btn-instalar-pwa" onclick="instalarPWA()" hidden>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
@@ -282,7 +278,7 @@
           🔔<span class="notif-count" id="notif-count" style="display:none">0</span>
         </div>
         <span class="tb-clock" id="tb-clock">--:--</span>
-        <button class="tb-theme" onclick="toggleDark()"><span id="tb-theme-icon">🌙</span></button>
+        <button class="pref-btn" onclick="togglePrefPanel()" title="Preferencias">⚙</button>
       </div>
     </div>
 
@@ -295,6 +291,14 @@
         </button>
       </div>
       <div id="notif-lista"><div class="loading-state small"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- Panel preferencias -->
+    <div id="pref-panel" class="pref-panel" style="display:none">
+      <div class="notif-panel-header">
+        <span style="font-size:13px;font-weight:600">Preferencias</span>
+      </div>
+      <div id="pref-panel-body" style="padding:16px"></div>
     </div>
 
     <div class="content">
