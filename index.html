@@ -244,28 +244,7 @@
         <div class="sb-inst-sub">Institución</div>
       </div>
     </div>
-    <div class="sb-user">
-      <div class="sb-av" id="sb-av">—</div>
-      <div class="sb-u-info">
-        <div class="sb-u-nombre" id="sb-nombre">—</div>
-        <div class="sb-u-rol"    id="sb-rol">—</div>
-      </div>
-    </div>
     <div class="sb-nav" id="sb-nav"></div>
-    <div class="sb-bottom">
-      <button class="btn-salir" id="btn-instalar-pwa" onclick="instalarPWA()" hidden>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-        <span class="sal-label">Instalar app</span>
-      </button>
-      <button class="btn-salir" onclick="cerrarSesion()">
-        <span>⏻</span>
-        <span class="sal-label">Cerrar sesión</span>
-      </button>
-    </div>
   </div>
 
   <!-- MAIN -->
@@ -274,11 +253,20 @@
       <button class="btn-hamburger" onclick="toggleMobileSidebar()" title="Menú">☰</button>
       <div class="tb-title" id="tb-title">Inicio</div>
       <div class="tb-right">
-        <div class="notif-btn" onclick="toggleNotifPanel()" title="Notificaciones">
+        <span class="tb-clock" id="tb-clock">--:--</span>
+        <div class="tb-icon-btn notif-btn" onclick="toggleNotifPanel()" title="Notificaciones">
           🔔<span class="notif-count" id="notif-count" style="display:none">0</span>
         </div>
-        <span class="tb-clock" id="tb-clock">--:--</span>
-        <button class="pref-btn" onclick="togglePrefPanel()" title="Preferencias">⚙</button>
+        <button class="tb-icon-btn pref-btn" onclick="togglePrefPanel()" title="Preferencias">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/>
+            <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>
+            <line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+        <button class="tb-perfil-btn" onclick="togglePerfilPanel()" title="Perfil">
+          <span class="tb-av" id="tb-av">—</span>
+        </button>
       </div>
     </div>
 
@@ -299,6 +287,20 @@
         <span style="font-size:13px;font-weight:600">Preferencias</span>
       </div>
       <div id="pref-panel-body" style="padding:16px"></div>
+    </div>
+
+    <!-- Panel perfil -->
+    <div id="perfil-panel" class="perfil-panel" style="display:none">
+      <div class="perfil-panel-head">
+        <span class="tb-av" id="perfil-av">—</span>
+        <div>
+          <div class="perfil-nombre" id="perfil-nombre">—</div>
+          <div class="perfil-rol" id="perfil-rol">—</div>
+        </div>
+      </div>
+      <button class="perfil-cerrar-btn" onclick="cerrarSesion()">
+        <span>⏻</span> Cerrar sesión
+      </button>
     </div>
 
     <div class="content">
@@ -360,31 +362,40 @@
   </nav>
 
 <script>
-  // PWA — instalación
+  // PWA — instalación. El botón vive dentro del panel de Preferencias
+  // (ver _renderPrefPanel en main.js), no en el DOM del sidebar — por eso
+  // el estado se guarda en _pwaDisponible en vez de tocar un elemento fijo.
   let _pwaPrompt = null;
+  let _pwaDisponible = false;
   const _yaInstalada = window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
 
   if (!_yaInstalada) {
     window.addEventListener('beforeinstallprompt', e => {
       e.preventDefault();
       _pwaPrompt = e;
-      document.getElementById('btn-instalar-pwa').removeAttribute('hidden');
+      _pwaDisponible = true;
+      if (typeof _renderPrefPanel === 'function') _renderPrefPanel();
     });
-    // iOS no dispara beforeinstallprompt — mostrar el botón siempre si no está instalada
+    // iOS no dispara beforeinstallprompt — mostrar la opción siempre si no está instalada
     if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-      document.getElementById('btn-instalar-pwa').removeAttribute('hidden');
+      _pwaDisponible = true;
     }
   }
 
   window.addEventListener('appinstalled', () => {
-    document.getElementById('btn-instalar-pwa').setAttribute('hidden', '');
     _pwaPrompt = null;
+    _pwaDisponible = false;
+    if (typeof _renderPrefPanel === 'function') _renderPrefPanel();
   });
 
   function instalarPWA() {
     if (_pwaPrompt) {
       _pwaPrompt.prompt();
-      _pwaPrompt.userChoice.then(() => { _pwaPrompt = null; });
+      _pwaPrompt.userChoice.then(() => {
+        _pwaPrompt = null;
+        _pwaDisponible = false;
+        if (typeof _renderPrefPanel === 'function') _renderPrefPanel();
+      });
     } else if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
       alert('Para instalar en iPhone/iPad:\n\n1. Tocá el botón Compartir (⬆) en Safari\n2. Elegí "Agregar a pantalla de inicio"');
     }

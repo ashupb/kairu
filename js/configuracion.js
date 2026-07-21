@@ -489,7 +489,7 @@ async function _subirLogoInstitucion(input) {
     _toastOk('Logo actualizado');
   } catch (e) {
     if (preview) preview.innerHTML = original;
-    alert('No se pudo subir el logo. Probá con otra imagen (el bucket "institucion-assets" tiene que existir en Supabase Storage).');
+    alert('No se pudo subir el logo: ' + (e?.message || 'error desconocido') + '\n\nSi el bucket "institucion-assets" ya existe, revisá que tenga políticas de Storage que permitan subir archivos (ver migrations/apariencia_institucional.sql).');
   }
   input.value = '';
 }

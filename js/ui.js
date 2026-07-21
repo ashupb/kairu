@@ -6,6 +6,10 @@
 function toggleNotifPanel() {
   const panel = document.getElementById('notif-panel');
   const abriendo = panel.style.display === 'none';
+  const prefPanel   = document.getElementById('pref-panel');
+  const perfilPanel = document.getElementById('perfil-panel');
+  if (prefPanel)   prefPanel.style.display   = 'none';
+  if (perfilPanel) perfilPanel.style.display = 'none';
   panel.style.display = abriendo ? 'block' : 'none';
   if (abriendo) {
     cargarNotificaciones();

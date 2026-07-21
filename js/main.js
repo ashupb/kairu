@@ -62,12 +62,14 @@ async function iniciarApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('shell').style.display        = 'flex';
 
-  // Nombre e iniciales del usuario en sidebar
+  // Nombre e iniciales del usuario — botón de perfil en la topbar
   const u       = USUARIO_ACTUAL;
-  const iniciales = u.avatar_iniciales || generarIniciales(u.nombre_completo);
-  document.getElementById('sb-av').textContent    = iniciales.toUpperCase();
-  document.getElementById('sb-nombre').textContent = u.nombre_completo;
-  document.getElementById('sb-rol').textContent    = labelRol(u.rol_display || u.rol);
+  const iniciales = (u.avatar_iniciales || generarIniciales(u.nombre_completo)).toUpperCase();
+  const rolLabel   = labelRol(u.rol_display || u.rol);
+  document.getElementById('tb-av').textContent       = iniciales;
+  document.getElementById('perfil-av').textContent    = iniciales;
+  document.getElementById('perfil-nombre').textContent = u.nombre_completo;
+  document.getElementById('perfil-rol').textContent    = rolLabel;
 
   // Nombre de la institución en sidebar — genérico, se carga de la BD
   const instNombre = INSTITUCION_ACTUAL?.nombre || 'Kairú';
@@ -173,7 +175,12 @@ function _aplicarModoOscuro(oscuro) {
 function _aplicarFontScale(escala) {
   if (!FONT_SCALES[escala]) escala = 'normal';
   FONT_SCALE = escala;
-  document.body.style.zoom = FONT_SCALES[escala];
+  // zoom se aplica en <html>, no en <body>: en Chromium, zoom en el root
+  // element se trata como el zoom nativo del navegador y recalcula vh/vw
+  // en base al viewport ya escalado. Aplicado en body (como estaba antes),
+  // el sidebar (height:100vh) queda con un tamaño desalineado del viewport
+  // real y el layout se rompe (menú cortado/superpuesto al achicar letra).
+  document.documentElement.style.zoom = FONT_SCALES[escala];
 }
 
 function _cargarPreferencias() {
@@ -198,6 +205,7 @@ function _setFontScale(escala) {
 function _renderPrefPanel() {
   const body = document.getElementById('pref-panel-body');
   if (!body) return;
+  const pwaOk = typeof _pwaDisponible !== 'undefined' && _pwaDisponible;
   body.innerHTML = `
     <div class="pref-group">
       <div class="pref-group-label">Tema</div>
@@ -213,22 +221,43 @@ function _renderPrefPanel() {
         <button class="pref-opt${FONT_SCALE === 'normal' ? ' on' : ''}" onclick="_setFontScale('normal')">Normal</button>
         <button class="pref-opt${FONT_SCALE === 'grande' ? ' on' : ''}" onclick="_setFontScale('grande')">Grande</button>
       </div>
-    </div>`;
+    </div>
+    ${pwaOk ? `
+    <div class="pref-group">
+      <div class="pref-group-label">Otras opciones</div>
+      <button class="pref-opt-full" onclick="instalarPWA()">⬇️ Instalar app</button>
+    </div>` : ''}`;
 }
 
 function togglePrefPanel() {
   const panel = document.getElementById('pref-panel');
   if (!panel) return;
   const abriendo = panel.style.display === 'none';
+  document.getElementById('perfil-panel').style.display = 'none';
+  document.getElementById('notif-panel').style.display   = 'none';
   panel.style.display = abriendo ? 'block' : 'none';
   if (abriendo) _renderPrefPanel();
 }
 
+function togglePerfilPanel() {
+  const panel = document.getElementById('perfil-panel');
+  if (!panel) return;
+  const abriendo = panel.style.display === 'none';
+  document.getElementById('pref-panel').style.display  = 'none';
+  document.getElementById('notif-panel').style.display = 'none';
+  panel.style.display = abriendo ? 'block' : 'none';
+}
+
 document.addEventListener('click', e => {
-  const panel = document.getElementById('pref-panel');
-  const btn   = document.querySelector('.pref-btn');
-  if (panel && panel.style.display !== 'none' && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
-    panel.style.display = 'none';
+  const prefPanel = document.getElementById('pref-panel');
+  const prefBtn   = document.querySelector('.pref-btn');
+  if (prefPanel && prefPanel.style.display !== 'none' && prefBtn && !prefPanel.contains(e.target) && !prefBtn.contains(e.target)) {
+    prefPanel.style.display = 'none';
+  }
+  const perfilPanel = document.getElementById('perfil-panel');
+  const perfilBtn    = document.querySelector('.tb-perfil-btn');
+  if (perfilPanel && perfilPanel.style.display !== 'none' && perfilBtn && !perfilPanel.contains(e.target) && !perfilBtn.contains(e.target)) {
+    perfilPanel.style.display = 'none';
   }
 });
 

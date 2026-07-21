@@ -17,8 +17,22 @@ alter table instituciones add column if not exists tema_color text;
 --      - Public bucket: SÍ (los logos se muestran en el sidebar de todos
 --        los usuarios de la institución, no hace falta URL firmada)
 --
--- No hace falta configurar políticas RLS especiales: el mismo criterio que
--- ya se usa en el bucket "comunicados" (creado del mismo modo, sin RLS
--- propia) — el botón de subir logo solo se muestra a director_general en
--- el cliente, igual que el resto de las acciones administrativas de esta app.
+-- IMPORTANTE — corrección respecto a la primera versión de este archivo:
+-- "Public bucket" solo habilita la LECTURA anónima (la URL pública de
+-- getPublicUrl funciona sin políticas). La SUBIDA sigue pasando por RLS de
+-- storage.objects, así que sin políticas de INSERT el upload falla con un
+-- error de "row-level security policy". Correr esto después de crear el
+-- bucket (reemplaza el supuesto anterior de que no hacían falta políticas):
 -- =====================================================
+
+create policy "institucion_assets_insert"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'institucion-assets');
+
+create policy "institucion_assets_update"
+  on storage.objects for update to authenticated
+  using (bucket_id = 'institucion-assets');
+
+create policy "institucion_assets_delete"
+  on storage.objects for delete to authenticated
+  using (bucket_id = 'institucion-assets');
