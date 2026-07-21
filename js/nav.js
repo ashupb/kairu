@@ -177,7 +177,9 @@ let _navAdminGruposAbiertos = new Set();
 
 function _renderNavExpandable(nav, item) {
   const activo = item.id === CUR_PAGE;
-  if (activo) _navAdminOpen = true; // la sección activa siempre se ve expandida
+  // _navAdminOpen se fuerza a true solo en el momento de navegar hacia acá
+  // (ver rAdmin()/_irAItemAdmin en configuracion.js) — nunca acá en el render,
+  // porque si no el toggle de plegar/desplegar deja de funcionar.
 
   const head = document.createElement('div');
   head.className = 'nav-it' + (activo ? ' on' : '');
@@ -200,7 +202,7 @@ function _renderNavExpandable(nav, item) {
 
   _configGruposVisibles().forEach(g => {
     const grupoActivo = activo && _admGrupo === g.id;
-    if (grupoActivo) _navAdminGruposAbiertos.add(g.id); // el grupo con la subsección activa siempre visible
+    // (mismo motivo que arriba: no forzar el estado abierto acá, solo leerlo)
     const abiertoG = _navAdminGruposAbiertos.has(g.id);
 
     const gEl = document.createElement('div');

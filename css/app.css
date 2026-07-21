@@ -703,8 +703,8 @@ body {
 
 /* Árbol de grupos + subsecciones, con guía vertical para marcar la jerarquía */
 .nav-subtree {
-  margin: 2px 0 4px 22px;
-  padding-left: 8px;
+  margin: 2px 0 4px 14px;
+  padding-left: 6px;
   border-left: 1px solid rgba(255,255,255,0.08);
 }
 
@@ -712,23 +712,28 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 8px;
+  gap: 6px;
+  padding: 7px 6px;
   margin: 1px 0;
   border-radius: var(--rad);
   cursor: pointer;
   font-family: 'DM Sans', sans-serif;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: var(--sb-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-  overflow: hidden;
+  letter-spacing: 0.02em;
   transition: background .12s, color .12s;
 }
 .nav-subsec:hover      { background: var(--sb-hover); color: #fff; }
 .nav-subsec.open       { color: rgba(255,255,255,0.8); }
+.ns-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ns-chev { font-size: 9px; flex-shrink: 0; }
 
 .nav-subit-wrap { margin-bottom: 4px; }

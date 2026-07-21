@@ -166,6 +166,11 @@ async function rAdmin() {
   const grupoActivo = grupos.find(g => g.id === _admGrupo);
   if (!_admItem || !grupoActivo.items.find(it => it.id === _admItem)) _admItem = grupoActivo.items[0].id;
 
+  // Al entrar a la página se abre el árbol y el grupo activo — una sola vez acá,
+  // no en el render del nav, para no pisar si el usuario los pliega manualmente después.
+  _navAdminOpen = true;
+  _navAdminGruposAbiertos.add(_admGrupo);
+
   // goPage() ya llamó a renderNav() antes de entrar acá, cuando _admGrupo/_admItem
   // todavía no estaban definidos — se vuelve a pintar para reflejar el grupo/item
   // recién resuelto (grupo activo expandido, item activo resaltado).
@@ -186,6 +191,7 @@ async function _irAItemAdmin(grupoId, itemId) {
   _admItem    = itemId;
   _admItemTab = null;
   _navAdminOpen = true;
+  _navAdminGruposAbiertos.add(grupoId);
   if (CUR_PAGE === 'admin') {
     renderNav();
     await _dispatchAdminItem();
