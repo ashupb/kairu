@@ -392,7 +392,7 @@ async function olvideContrasena() {
       redirectTo: window.location.origin + window.location.pathname,
     });
     if (error) throw error;
-    alert('Si el email está registrado, vas a recibir un enlace para restablecer tu contraseña.\n\n(Requiere el SMTP configurado en Supabase.)');
+    alert('Si el email está registrado, vas a recibir un enlace para restablecer tu contraseña.\n\nSi no te llega, pedile a la institución que te asigne una nueva.');
   } catch (e) {
     alert('No se pudo enviar el email: ' + (e.message || 'error desconocido'));
   }

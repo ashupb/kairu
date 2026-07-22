@@ -497,7 +497,9 @@ async function _subirLogoInstitucion(input) {
     _toastOk('Logo actualizado');
   } catch (e) {
     if (preview) preview.innerHTML = original;
-    alert('No se pudo subir el logo: ' + (e?.message || 'error desconocido') + '\n\nSi el bucket "institucion-assets" ya existe, revisá que tenga políticas de Storage que permitan subir archivos (ver migrations/apariencia_institucional.sql).');
+    // El detalle técnico va a la consola, no al alert del usuario.
+    console.error('[Kairú] Error al subir el logo institucional:', e);
+    alert('No se pudo subir el logo. Probá de nuevo en unos minutos; si sigue fallando, avisanos.');
   }
   input.value = '';
 }
@@ -533,7 +535,7 @@ function _puedeAdministrarInstitucion() {
   return ['super_admin', 'director_general'].includes(USUARIO_ACTUAL?.rol);
 }
 let _muAvatarUrl    = null;          // foto elegida en el modal (subida al storage, aún no ligada al usuario hasta guardar)
-let _muModo         = 'invitacion';  // alta nueva: 'invitacion' (email) | 'temporal' (contraseña temporal)
+let _muModo         = 'temporal';    // alta nueva: 'temporal' (contraseña temporal, default) | 'invitacion' (email)
 
 async function _renderUsuarios() {
   const sec = document.getElementById('adm-section-content');
@@ -660,7 +662,7 @@ async function _abrirModalUsuario(userId) {
   const nivelesJSON     = JSON.stringify(nivelesDisp).replace(/"/g, '&quot;');
 
   _muAvatarUrl = user?.avatar_url || null;
-  _muModo      = 'invitacion';
+  _muModo      = 'temporal';
   const iniAv   = generarIniciales(user?.nombre_completo || '').toUpperCase();
   const avInner = _muAvatarUrl
     ? `<img src="${_muAvatarUrl}" alt="" style="width:100%;height:100%;object-fit:cover">`
@@ -671,10 +673,10 @@ async function _abrirModalUsuario(userId) {
     `
     ${esNuevo ? `
     <div class="adm-tabs-bar" style="margin-bottom:14px">
-      <button type="button" class="adm-tab on" id="mu-modo-inv" onclick="_muOnModoChange('invitacion')">✉️ Invitar por email</button>
-      <button type="button" class="adm-tab" id="mu-modo-tmp" onclick="_muOnModoChange('temporal')">🔑 Contraseña temporal</button>
+      <button type="button" class="adm-tab on" id="mu-modo-tmp" onclick="_muOnModoChange('temporal')">🔑 Contraseña temporal</button>
+      <button type="button" class="adm-tab" id="mu-modo-inv" onclick="_muOnModoChange('invitacion')">✉️ Invitar por email</button>
     </div>
-    <div id="mu-modo-hint" style="font-size:10px;color:var(--txt2);margin:-6px 0 14px">Se enviará un email de invitación para que defina su contraseña. (Requiere SMTP configurado en Supabase.)</div>` : ''}
+    <div id="mu-modo-hint" style="font-size:10px;color:var(--txt2);margin:-6px 0 14px">Se crea con una contraseña temporal, que vos le comunicás. En su primer ingreso se le pide cambiarla.</div>` : ''}
     <div class="adm-form-row">
       <label class="adm-label">Nombre completo</label>
       <input type="text" id="mu-nombre" value="${_esc(user?.nombre_completo)}" placeholder="Nombre y apellido"
@@ -708,7 +710,7 @@ async function _abrirModalUsuario(userId) {
       <input type="text" id="mu-dni" value="${_esc(user?.dni)}" placeholder="Ej: 12345678">
     </div>
     ${esNuevo ? `
-    <div class="adm-form-row" id="mu-pass-row" style="display:none">
+    <div class="adm-form-row" id="mu-pass-row">
       <label class="adm-label">Contraseña temporal</label>
       <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para usar el DNI">
       <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si no se completa, se usa el DNI como contraseña temporal. Se le pedirá cambiarla al primer ingreso.</div>
@@ -827,8 +829,8 @@ function _muOnModoChange(modo) {
   if (passRow) passRow.style.display = modo === 'temporal' ? '' : 'none';
   const hint = document.getElementById('mu-modo-hint');
   if (hint) hint.textContent = modo === 'invitacion'
-    ? 'Se enviará un email de invitación para que defina su contraseña. (Requiere SMTP configurado en Supabase.)'
-    : 'Se crea con una contraseña temporal, sin enviar email. Se le pedirá cambiarla al primer ingreso.';
+    ? 'Le llega un email para que defina su propia contraseña. El envío de emails todavía no está habilitado.'
+    : 'Se crea con una contraseña temporal, que vos le comunicás. En su primer ingreso se le pide cambiarla.';
 }
 
 // ── Modal de usuario: foto de perfil ──
@@ -1047,8 +1049,8 @@ async function _renderRolesPermisos() {
     .eq('institucion_id', instId);
 
   if (error) {
-    _admError(sec, 'No se pudieron cargar las plantillas de permisos. ' +
-      'Si todavía no corriste la migración v38, la tabla roles_permisos no existe. Detalle: ' + error.message);
+    console.error('[Kairú] roles_permisos:', error);   // detalle técnico a la consola
+    _admError(sec, 'No se pudieron cargar los permisos. Probá de nuevo en unos minutos.');
     return;
   }
 
