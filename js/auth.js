@@ -159,6 +159,7 @@ async function login() {
     }
 
     if (typeof cargarPermisos === 'function') await cargarPermisos();
+    _registrarUltimoAcceso(perfil.id);
     iniciarApp();
 
   } catch (e) {
@@ -269,6 +270,15 @@ function resetBtn() {
   const btn = document.getElementById('btn-login');
   btn.disabled = false;
   document.getElementById('btn-login-text').textContent = 'Ingresar';
+}
+
+// Marca de último ingreso — alimenta el panel de adopción del portal y
+// distingue "acceso creado" de "ya ingresó". Best-effort: si RLS no permite
+// el update, no pasa nada (se usa debe_cambiar_password como respaldo).
+function _registrarUltimoAcceso(usuarioId) {
+  if (!usuarioId) return;
+  sb.from('usuarios').update({ ultimo_acceso: new Date().toISOString() })
+    .eq('id', usuarioId).then(() => {}, () => {});
 }
 
 // ── SET-PASSWORD ─────────────────────────────────────

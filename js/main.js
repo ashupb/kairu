@@ -313,6 +313,34 @@ function labelRol(rol) {
   }[rol] || rol;
 }
 
+// ── CONTRASEÑAS TEMPORALES ───────────────────────────
+// Generador único para staff y familias (no duplicar). Evita caracteres
+// ambiguos (0/O, 1/l/I) porque estas claves se dictan por teléfono o se copian
+// a mano. Garantiza al menos una mayúscula, una minúscula y un número.
+function generarPasswordTemporal(largo = 10) {
+  const MAY = 'ABCDEFGHJKLMNPQRSTUVWXYZ';   // sin I ni O
+  const MIN = 'abcdefghijkmnpqrstuvwxyz';   // sin l ni o
+  const NUM = '23456789';                   // sin 0 ni 1
+  const TODOS = MAY + MIN + NUM;
+
+  const azar = max => {
+    const a = new Uint32Array(1);
+    crypto.getRandomValues(a);
+    return a[0] % max;
+  };
+  const uno = set => set[azar(set.length)];
+
+  const chars = [uno(MAY), uno(MIN), uno(NUM)];
+  while (chars.length < largo) chars.push(uno(TODOS));
+
+  // Fisher-Yates, para que los obligatorios no queden siempre al principio
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = azar(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
+
 function generarIniciales(nombre) {
   if (!nombre) return '?';
   const partes = nombre.trim().split(/\s+/);

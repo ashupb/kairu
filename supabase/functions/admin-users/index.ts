@@ -53,7 +53,7 @@ serve(async (req) => {
 
     const ADMIN_ROLES   = ["super_admin", "director_general", "directivo_nivel", "secretario", "vicedirector"];
     const FAMILIA_ROLES = [...ADMIN_ROLES, "preceptor"];
-    const FAMILIA_ACTIONS = ["crear_usuario_familia", "actualizar_usuario_familia"];
+    const FAMILIA_ACTIONS = ["crear_usuario_familia", "actualizar_usuario_familia", "dar_acceso_portal"];
 
     const rolesPermitidos = FAMILIA_ACTIONS.includes(action) ? FAMILIA_ROLES : ADMIN_ROLES;
     if (!perfil || !rolesPermitidos.includes(perfil.rol)) {
@@ -265,6 +265,10 @@ serve(async (req) => {
         });
       }
 
+      // Al regenerar una contraseña se marca debe_cambiar_password TAMBIÉN en
+      // user_metadata: el gate de la app lee el metadata primero y, si quedó en
+      // false por un cambio anterior, la columna sola no volvería a forzarlo.
+      const forzarCambio = payload.debe_cambiar_password === true;
       const updateRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${payload.usuario_id}`, {
         method: "PUT",
         headers: {
@@ -272,15 +276,127 @@ serve(async (req) => {
           "Authorization": `Bearer ${SERVICE_KEY}`,
           "apikey": SERVICE_KEY,
         },
-        body: JSON.stringify({ password: payload.password }),
+        body: JSON.stringify(
+          forzarCambio
+            ? { password: payload.password, user_metadata: { debe_cambiar_password: true } }
+            : { password: payload.password }
+        ),
       });
       const updateData = await updateRes.json();
       if (!updateRes.ok || updateData.error || !updateData.id) {
         throw new Error(updateData.error?.message || updateData.msg || "Error al actualizar contraseña");
       }
 
+      if (forzarCambio) {
+        await fetch(`${SUPABASE_URL}/rest/v1/usuarios?id=eq.${payload.usuario_id}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+          },
+          body: JSON.stringify({ debe_cambiar_password: true }),
+        });
+      }
+
       return new Response(
         JSON.stringify({ ok: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Acción: dar acceso al portal a un contacto del legajo ─────────
+    // Busca por EMAIL antes de crear: un tutor con varios hijos debe tener UNA
+    // sola cuenta vinculada a todos, no una por alumno. Devuelve `creado` para
+    // que la app sepa si mostrar la contraseña o sólo avisar del vínculo.
+    if (action === "dar_acceso_portal") {
+      const email = String(payload.email || "").trim().toLowerCase();
+      if (!email || !payload.alumno_id) {
+        return new Response(JSON.stringify({ error: "Faltan datos (email o alumno)" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const instDestino = esSuper ? (payload.institucion_id ?? null) : perfil.institucion_id;
+
+      // ¿Ya existe un usuario con ese email?
+      const buscRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/usuarios?email=eq.${encodeURIComponent(email)}&select=id,rol`,
+        { headers: { "Authorization": `Bearer ${SERVICE_KEY}`, "apikey": SERVICE_KEY } }
+      );
+      const buscArr = await buscRes.json();
+      const existente = Array.isArray(buscArr) ? buscArr[0] : null;
+
+      let usuarioId: string;
+      let creado = false;
+
+      if (existente) {
+        usuarioId = existente.id;
+      } else {
+        const createRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+          },
+          body: JSON.stringify({
+            email,
+            password: payload.password,
+            email_confirm: true,
+            user_metadata: { debe_cambiar_password: true },
+          }),
+        });
+        const authData = await createRes.json();
+        if (!createRes.ok || !authData.id) {
+          throw new Error(authData.error?.message || authData.msg || "Error al crear el usuario");
+        }
+        usuarioId = authData.id;
+        creado    = true;
+
+        const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/usuarios`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+            "apikey": SERVICE_KEY,
+            "Prefer": "resolution=merge-duplicates",
+          },
+          body: JSON.stringify({
+            id:              usuarioId,
+            email,
+            nombre_completo: payload.nombre_completo || email,
+            rol:             "familia",
+            activo:          true,
+            institucion_id:  instDestino,
+            debe_cambiar_password: true,
+          }),
+        });
+        if (!upsertRes.ok) {
+          const err = await upsertRes.json().catch(() => ({}));
+          throw new Error("Error al crear el perfil: " + (err.message || err.details || upsertRes.status));
+        }
+      }
+
+      // Vínculo con el alumno (idempotente: si ya estaba, no duplica)
+      const linkRes = await fetch(`${SUPABASE_URL}/rest/v1/familia_alumno`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "apikey": SERVICE_KEY,
+          "Prefer": "resolution=ignore-duplicates",
+        },
+        body: JSON.stringify([{ usuario_id: usuarioId, alumno_id: payload.alumno_id }]),
+      });
+      if (!linkRes.ok) {
+        const err = await linkRes.json().catch(() => ({}));
+        throw new Error("Error al vincular al estudiante: " + (err.message || err.details || linkRes.status));
+      }
+
+      return new Response(
+        JSON.stringify({ id: usuarioId, creado }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -298,6 +414,8 @@ serve(async (req) => {
           email:         payload.email,
           password:      payload.password,
           email_confirm: true,
+          // Contraseña temporal generada por la escuela → debe cambiarla.
+          user_metadata: { debe_cambiar_password: true },
         }),
       });
       const authData = await createRes.json();
@@ -320,6 +438,7 @@ serve(async (req) => {
           rol:             "familia",
           activo:          true,
           institucion_id:  instOperativa,
+          debe_cambiar_password: true,
         }),
       });
       if (!upsertRes.ok) {

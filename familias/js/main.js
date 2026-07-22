@@ -62,6 +62,21 @@ const SECCION_A_MODULO = {
 
 let MODULOS_PORTAL = null;   // modulo_id → bool
 
+// Políticas del portal (tabla config_portal). Fallback = comportamiento actual:
+// notas visibles apenas se cargan y familias pueden iniciar conversaciones.
+let CONFIG_PORTAL = { notas_visibles: 'inmediato', familias_pueden_iniciar: true, mensaje_bienvenida: null };
+
+async function cargarConfigPortal() {
+  const instId = ALUMNO_ACTUAL?.institucion_id || USUARIO_FAMILIAR?.institucion_id;
+  if (!instId) return;
+  try {
+    const { data, error } = await sb.from('config_portal')
+      .select('notas_visibles, familias_pueden_iniciar, mensaje_bienvenida')
+      .eq('institucion_id', instId).maybeSingle();
+    if (!error && data) CONFIG_PORTAL = { ...CONFIG_PORTAL, ...data };
+  } catch (_) { /* defaults */ }
+}
+
 async function cargarModulosPortal() {
   MODULOS_PORTAL = null;
   const instId = ALUMNO_ACTUAL?.institucion_id || USUARIO_ACTUAL?.institucion_id;
@@ -403,6 +418,7 @@ async function iniciarApp() {
   // Qué secciones habilitó la institución (Configuración → Apps). Se carga
   // antes de pintar el nav para no mostrar y esconder.
   await cargarModulosPortal();
+  await cargarConfigPortal();
 
   // Portal Familiar apagado: las familias no acceden.
   if (MODULOS_PORTAL && MODULOS_PORTAL.portal === false) {

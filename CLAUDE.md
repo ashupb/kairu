@@ -146,6 +146,25 @@ Acceso efectivo = moduloActivo(id) AND (permiso del rol)
 - **Puntos que no pasan por `puedeVer()`** y se cablearon a mano: `renderBottomNav()` (main.js), los paneles del dashboard (el guard está **dentro** de `renderProximasActividades`, `renderObjetivosDirectivo` y `_renderTareasDash`, así cubre los 5 dashboards), y el filtro de notificaciones (`NOTIF_TABLA_A_MODULO` en ui.js). Si agregás un panel de dashboard nuevo que dependa de un módulo, guardalo ahí adentro.
 - Apagar un módulo **no borra nada**: los permisos guardados se conservan y vuelven al reactivarlo. Al apagar `eoe` se avisa cuántos usuarios tienen ese rol (no se los toca) y el rol deja de ofrecerse en el alta de usuarios.
 
+### Portal Familiar — configuración y alta de familias (migración v40)
+
+**Contraseñas: un único mecanismo para staff y familias.** `generarPasswordTemporal()` (main.js) genera una clave aleatoria sin caracteres ambiguos (`0/O`, `1/l/I`) porque se dictan por teléfono. `_mostrarPasswordGenerada()` (configuracion.js) la muestra **una sola vez** con botón de copiar. **Ya no se usa el DNI como contraseña inicial** ni se escriben claves a mano — el DNI no es secreto. Al crear o regenerar se marca `debe_cambiar_password` en la columna **y en `user_metadata`** (el gate lee el metadata primero; sin eso, un usuario que ya cambió su clave no volvería a ser forzado).
+
+**Alta de familias desde el legajo** (`_tabContactos` en legajos.js): cada contacto con email muestra su estado (Sin acceso / Tiene cuenta, sin vincular / Acceso creado, no ingresó / Activo) y botones para dar acceso y regenerar la contraseña. La acción `dar_acceso_portal` de `admin-users` **busca por email antes de crear**: un tutor con varios hijos queda con **una sola cuenta vinculada a todos** los alumnos, no una por hijo. Si ya existía, sólo agrega el vínculo en `familia_alumno` y no muestra contraseña.
+
+**Reseteo mediado por la escuela**: no hay autoservicio. No existe "ver la contraseña actual" (está hasheada): se regenera. Deliberadamente **no** se implementó recuperación por DNI/fecha de nacimiento — no son datos secretos y expondrían la cuenta de un menor. Cuando haya SMTP, `resetPasswordForEmail` se habilita sin rehacer nada.
+
+**Configuración → Portal Familiar → General** (`_renderPortalGeneral`, tabla `config_portal`, una fila por institución):
+- **Adopción**: estudiantes sin ninguna familia vinculada (el dato más accionable), cuentas creadas que nunca ingresaron, y familias activas. Se apoya en `usuarios.ultimo_acceso`, que se escribe en el login de **las dos apps**; si es NULL se usa `debe_cambiar_password` como respaldo.
+- **`notas_visibles`** (`inmediato` | `al_cierre`): con `al_cierre`, `familias/js/seguimiento.js` sólo muestra notas de períodos con fila en `cierres_periodo`. La trayectoria histórica (`materias_estado_alumno`) no se filtra: ya son estados cerrados. **La migración siembra `inmediato` en todas las instituciones** para no cambiar lo que las familias ven hoy.
+- **`familias_pueden_iniciar`**: en `false`, `familias/js/mensajes.js` oculta "Nuevo mensaje" y la familia sólo responde.
+- **`mensaje_bienvenida`**: se pinta en `familias/js/inicio.js` (`_bienvenidaCard()`); vacío = no se muestra.
+- **Las secciones del portal NO se editan acá**: se muestran de sólo lectura con link a Apps. La fuente de verdad es `modulos_institucion` — dos lugares editables para lo mismo generan inconsistencias.
+
+`familias` y `portal_general` están en `PERMISOS_MODULOS` con **caso explícito en `_permVerDefault()`** (son subsecciones de Configuración, no páginas del nav: sin eso el default sería `false`).
+
+**Pendiente conocido**: la app de familias **no fuerza** el cambio de contraseña al primer ingreso — `debe_cambiar_password` se marca y se guarda, pero la pantalla set-password sólo existe en la app interna. Al implementarla en familias, el flujo ya queda completo.
+
 ### Capacidades sensibles (`roles_capacidades`, migración v39)
 
 Permisos finos que la matriz ver/editar/eliminar no puede expresar — el caso que lo motivó es distinguir "ver el legajo" de "ver las observaciones privadas del EOE" (salud y psicología de menores), que separa a la secretaria del directivo de nivel.
@@ -268,6 +287,7 @@ El ícono de sliders en la topbar (`.pref-btn`) abre `#pref-panel`, mismo patró
 | `tipos_justificacion` | Tipos de justificación de ausencia |
 | `tipos_instancia_evaluativa` | Tipos de instancia evaluativa configurables por institución (`nombre`, `activo`, `es_recuperatorio`, `orden`). Gestionados desde configuracion.js. **Nota**: `instancias_evaluativas.tipo_id` apunta a esta tabla (FK corregida en v20). La tabla legacy `tipos_evaluacion` queda en desuso. |
 | `instancias_evaluativas` | Instancias evaluativas de un curso × materia × período. FK `tipo_id` → `tipos_instancia_evaluativa`. Tiene columna denormalizada `es_recuperatorio`. |
+| `config_portal` | Políticas del Portal Familiar, una fila por institución (`migrations/migration_v40_config_portal.sql`). `notas_visibles` (`inmediato`/`al_cierre`), `familias_pueden_iniciar`, `mensaje_bienvenida`. **Lectura también para el rol `familia`**: la app de familias la consulta. Sin fila = defaults de la tabla |
 | `modulos_institucion` | Qué módulos usa cada institución (`migrations/migration_v39_apps_capacidades.sql`). `UNIQUE(institucion_id, modulo_id)`. **Sin fila = ACTIVO.** Incluye el maestro `portal` y las secciones `portal_*` de la app de familias. Gestionada en Configuración → Apps. Lectura también para familias |
 | `roles_capacidades` | Capacidades sensibles por rol (v39). `UNIQUE(institucion_id, rol, capacidad)`. Ver "Capacidades sensibles" para cuáles están cableadas |
 | `roles_permisos` | Plantillas de permisos por institución (`migrations/migration_v38_roles_permisos.sql`). `UNIQUE(institucion_id, rol, modulo_id)`, con `ver`/`editar`/`eliminar`. `modulo_id` = id del nav (`prob`, `asist`, `admin`, …). Sembrada por `seed_roles_permisos()` + trigger en `instituciones`. Ver "Roles, permisos y administrador de plataforma" |

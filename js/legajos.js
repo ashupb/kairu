@@ -483,6 +483,54 @@ async function _guardarObsFam(alumnoId) {
 }
 
 // ── TAB 1: CONTACTOS ──────────────────────────────────
+// Escapa para meter un valor dentro de un atributo onclick con comillas simples
+function _escAttr(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// Da acceso al portal a un contacto del legajo. La edge function busca por
+// email antes de crear, así un tutor con varios hijos queda con UNA sola
+// cuenta vinculada a todos sus alumnos.
+async function _legDarAccesoPortal(email, nombre) {
+  if (!confirm(`¿Dar acceso al portal a ${nombre} (${email})?`)) return;
+  try {
+    const pass = generarPasswordTemporal();
+    const res = await _llamarAdminUsers('dar_acceso_portal', {
+      email,
+      nombre_completo: nombre,
+      alumno_id:       _legAlumnoSel.id,
+      password:        pass,
+      institucion_id:  USUARIO_ACTUAL.institucion_id,
+    });
+    if (res.creado) {
+      _mostrarPasswordGenerada(nombre, email, pass, 'Acceso al portal creado');
+    } else {
+      // Ya tenía cuenta (otro hijo en la institución): sólo se sumó el vínculo.
+      alert(`${nombre} ya tenía una cuenta en el portal.\n\nSe vinculó a este estudiante; entra con su contraseña actual.`);
+    }
+    await rLeg();
+  } catch (e) {
+    console.error('[Kairú] dar_acceso_portal:', e);
+    alert('No se pudo dar el acceso: ' + (e.message || 'error desconocido'));
+  }
+}
+
+// Regenera la contraseña de una familia: la escuela se la dicta. No existe
+// "ver la contraseña actual" — está hasheada.
+async function _legRegenerarPassFamilia(usuarioId, email, nombre) {
+  if (!confirm(`¿Generar una contraseña nueva para ${nombre}?\n\nLa anterior deja de funcionar.`)) return;
+  try {
+    const pass = generarPasswordTemporal();
+    await _llamarAdminUsers('actualizar_contrasena', {
+      usuario_id: usuarioId, password: pass, debe_cambiar_password: true,
+    });
+    _mostrarPasswordGenerada(nombre, email, pass, 'Contraseña regenerada');
+  } catch (e) {
+    console.error('[Kairú] regenerar familia:', e);
+    alert('No se pudo regenerar la contraseña: ' + (e.message || 'error desconocido'));
+  }
+}
+
 async function _tabContactos(c) {
   const p = legPermisos();
   try {
@@ -493,7 +541,47 @@ async function _tabContactos(c) {
     if (error) throw error;
     const lista = data || [];
 
-    const rows = lista.map(ct => `
+    // Estado de acceso al portal de cada contacto con email. Se resuelve por
+    // EMAIL: un tutor con varios hijos tiene UNA cuenta vinculada a todos.
+    const emails = lista.map(ct => (ct.email || '').trim().toLowerCase()).filter(Boolean);
+    let accesos = {};   // email → { vinculado, ingreso }
+    if (emails.length) {
+      const { data: usrs } = await sb.from('usuarios')
+        .select('id, email, ultimo_acceso, debe_cambiar_password')
+        .in('email', emails);
+      const ids = (usrs || []).map(u => u.id);
+      let vinculados = [];
+      if (ids.length) {
+        const { data: vin } = await sb.from('familia_alumno')
+          .select('usuario_id')
+          .eq('alumno_id', _legAlumnoSel.id)
+          .in('usuario_id', ids);
+        vinculados = (vin || []).map(v => v.usuario_id);
+      }
+      (usrs || []).forEach(u => {
+        accesos[(u.email || '').toLowerCase()] = {
+          id: u.id,
+          vinculado: vinculados.includes(u.id),
+          // Si nunca se registró un acceso, se usa debe_cambiar_password como respaldo.
+          ingreso: !!u.ultimo_acceso || u.debe_cambiar_password === false,
+        };
+      });
+    }
+
+    const rows = lista.map(ct => {
+      const mail = (ct.email || '').trim().toLowerCase();
+      const acc  = mail ? accesos[mail] : null;
+      let estado = '';
+      if (mail) {
+        if (!acc)                estado = '<span class="tag tgr" style="font-size:9px">Sin acceso</span>';
+        else if (!acc.vinculado) estado = '<span class="tag ta" style="font-size:9px">Tiene cuenta, sin vincular</span>';
+        else if (!acc.ingreso)   estado = '<span class="tag ta" style="font-size:9px">Acceso creado, no ingresó</span>';
+        else                     estado = '<span class="tag tg" style="font-size:9px">Activo</span>';
+      }
+      const puedeDar = mail && p.editarContactos && (!acc || !acc.vinculado);
+      const puedeReset = mail && acc && acc.vinculado && p.editarContactos;
+
+      return `
       <div class="leg-contacto-row">
         <div style="display:flex;align-items:center;gap:8px">
           <div class="av av32" style="background:var(--azul-l);color:var(--azul)">
@@ -503,13 +591,21 @@ async function _tabContactos(c) {
             <div style="font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px;flex-wrap:wrap">
               ${ct.nombre}
               ${ct.es_principal ? '<span class="tag tg" style="font-size:9px">Principal</span>' : ''}
+              ${estado}
             </div>
             <div style="font-size:10px;color:var(--txt2)">${ct.tipo || '—'}</div>
             ${ct.telefono ? `<div style="font-size:10px;color:var(--txt2)">☎ ${ct.telefono}</div>` : ''}
             ${ct.email    ? `<div style="font-size:10px;color:var(--txt2)">✉ ${ct.email}</div>`    : ''}
+            ${(puedeDar || puedeReset) ? `<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+              ${puedeDar ? `<button class="btn-s" style="font-size:10px;padding:3px 9px"
+                  onclick="_legDarAccesoPortal('${_escAttr(ct.email)}','${_escAttr(ct.nombre)}')">Dar acceso al portal</button>` : ''}
+              ${puedeReset ? `<button class="btn-s" style="font-size:10px;padding:3px 9px"
+                  onclick="_legRegenerarPassFamilia('${acc.id}','${_escAttr(ct.email)}','${_escAttr(ct.nombre)}')">Regenerar contraseña</button>` : ''}
+            </div>` : ''}
           </div>
         </div>
-      </div>`).join('') || '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Sin contactos registrados.</div>';
+      </div>`;
+    }).join('') || '<div style="font-size:11px;color:var(--txt2);padding:8px 0">Sin contactos registrados.</div>';
 
     c.innerHTML = `
       <div class="card" style="margin-top:12px">

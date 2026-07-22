@@ -52,8 +52,21 @@ async function rSeguimiento() {
         .order('ciclo_lectivo_origen', { ascending: false }),
     ]);
 
-    const califs = (califRes.data || []).filter(c => !c.ausente && c.nota !== null);
-    const tray   = trayRes.data || [];
+    let califs = (califRes.data || []).filter(c => !c.ausente && c.nota !== null);
+    const tray = trayRes.data || [];
+
+    // Política "al_cierre": la familia sólo ve notas de períodos ya cerrados.
+    // La trayectoria histórica (materias_estado_alumno) no se filtra: son
+    // estados ya cerrados por definición.
+    if (CONFIG_PORTAL.notas_visibles === 'al_cierre') {
+      const instId = ALUMNO_ACTUAL.institucion_id || USUARIO_FAMILIAR?.institucion_id;
+      const { data: cierres } = await sb.from('cierres_periodo')
+        .select('periodo_evaluativo_id')
+        .eq('institucion_id', instId)
+        .not('periodo_evaluativo_id', 'is', null);
+      const cerrados = new Set((cierres || []).map(c => c.periodo_evaluativo_id));
+      califs = califs.filter(c => cerrados.has(c.periodos_evaluativos?.id));
+    }
 
     if (!califs.length && !tray.length) {
       el.innerHTML = `

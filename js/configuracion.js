@@ -109,6 +109,7 @@ const CONFIG_GRUPOS = [
       { id: 'roles_permisos', label: 'Roles y Permisos', roles: ['director_general'], renderer: _renderRolesPermisos },
     ] },
   { id: 'portal', label: 'Portal Familiar', items: [
+      { id: 'portal_general', label: 'General', roles: ['director_general', 'directivo_nivel','secretario','vicedirector', 'preceptor'], renderer: _renderPortalGeneral },
       { id: 'familias', label: 'Usuarios', roles: ['director_general', 'directivo_nivel','secretario','vicedirector', 'preceptor'], renderer: _renderFamilias },
     ] },
 ];
@@ -720,13 +721,17 @@ async function _abrirModalUsuario(userId) {
     ${esNuevo ? `
     <div class="adm-form-row" id="mu-pass-row">
       <label class="adm-label">Contraseña temporal</label>
-      <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para usar el DNI">
-      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si no se completa, se usa el DNI como contraseña temporal. Se le pedirá cambiarla al primer ingreso.</div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="mu-pass" value="${generarPasswordTemporal()}" readonly
+          style="flex:1;font-family:'DM Mono',monospace;letter-spacing:.06em">
+        <button type="button" class="btn-s" onclick="_muOtraPassword()" style="white-space:nowrap">Otra</button>
+      </div>
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Generada al azar. Al guardar te la mostramos para copiar; se le va a pedir que la cambie en su primer ingreso.</div>
     </div>` : `
     <div class="adm-form-row">
       <label class="adm-label">Nueva contraseña</label>
-      <input type="text" id="mu-pass" value="" placeholder="${user?.dni ? 'Actual: ' + _esc(user.dni) + ' — Dejar vacío para no modificar' : 'Dejar vacío para no modificar'}">
-      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si completás este campo se actualizará la contraseña y el DNI registrado.</div>
+      <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para no modificar">
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Usá "Generar contraseña" para crear una al azar. Se le pedirá cambiarla al ingresar.</div>
     </div>`}
     <div class="adm-form-row" style="display:flex;gap:10px">
       <div style="flex:1">
@@ -808,19 +813,21 @@ async function _abrirModalUsuario(userId) {
     const footer = modal.querySelector('.adm-modal-footer');
     const btnReset = document.createElement('button');
     btnReset.className = 'btn-s';
-    btnReset.textContent = 'Resetear a DNI';
+    btnReset.textContent = 'Generar contraseña';
     btnReset.style.marginRight = 'auto';
-    btnReset.title = 'Copia el DNI en el campo de nueva contraseña para resetear';
+    btnReset.title = 'Crea una contraseña al azar; se muestra al guardar';
     btnReset.onclick = () => {
       const passInput = document.getElementById('mu-pass');
-      const dniInput  = document.getElementById('mu-dni');
-      if (passInput && dniInput) {
-        passInput.value = dniInput.value;
-        passInput.focus();
-      }
+      if (passInput) { passInput.value = generarPasswordTemporal(); passInput.focus(); }
     };
     footer.insertBefore(btnReset, footer.firstChild);
   }
+}
+
+// Regenera la contraseña sugerida en el alta (botón "Otra")
+function _muOtraPassword() {
+  const inp = document.getElementById('mu-pass');
+  if (inp) inp.value = generarPasswordTemporal();
 }
 
 function _togPassVis(inputId) {
@@ -941,9 +948,9 @@ async function _guardarUsuario(userId, esNuevo) {
 
   if (!nombre_completo)  { alert('El nombre es requerido.'); return; }
   if (esNuevo && !email) { alert('El email es requerido — es la identidad con la que ingresa.'); return; }
-  // La contraseña temporal usa el DNI por defecto, así que en ese modo el DNI es necesario.
-  if (esNuevo && _muModo === 'temporal' && !dni && !passField) {
-    alert('Ingresá una contraseña temporal o un DNI (se usa como contraseña por defecto).');
+  // La contraseña temporal se genera sola; el campo nunca debería venir vacío.
+  if (esNuevo && _muModo === 'temporal' && !passField) {
+    alert('Generá una contraseña temporal antes de guardar.');
     return;
   }
 
@@ -977,7 +984,7 @@ async function _guardarUsuario(userId, esNuevo) {
         // Alta con contraseña temporal (sin email): marca debe_cambiar_password.
         authData = await _llamarAdminUsers('crear_usuario', {
           email,
-          password:       passField || dni,
+          password:       passField,
           user_metadata:  { ...metaComun, debe_cambiar_password: true },
           cursos_ids:     cursos_ids.length ? cursos_ids : [],
           institucion_id: USUARIO_ACTUAL.institucion_id,
@@ -993,7 +1000,7 @@ async function _guardarUsuario(userId, esNuevo) {
       if (_muModo === 'invitacion') {
         _toastOk('Invitación enviada a ' + email);
       } else {
-        alert('Usuario creado.\n\nContraseña temporal: ' + (passField || dni) + '\n\nComunicásela al usuario; deberá cambiarla en su primer ingreso.');
+        _mostrarPasswordGenerada(nombre_completo, email, passField, 'Usuario creado');
       }
       return;
     }
@@ -1022,13 +1029,193 @@ async function _guardarUsuario(userId, esNuevo) {
       }
     }
     if (passField) {
-      await _llamarAdminUsers('actualizar_contrasena', { usuario_id: userId, password: passField });
+      await _llamarAdminUsers('actualizar_contrasena', {
+        usuario_id: userId, password: passField, debe_cambiar_password: true,
+      });
     }
 
     _cerrarModal();
     await _renderUsuarios();
+    if (passField) _mostrarPasswordGenerada(nombre_completo, email, passField, 'Contraseña actualizada');
   } catch (e) {
     alert('Error: ' + e.message);
+  }
+}
+
+
+// ══════════════════════════════════════════════════════
+// SECCIÓN: PORTAL FAMILIAR → GENERAL
+// ══════════════════════════════════════════════════════
+// Políticas del portal (tabla config_portal, una fila por institución) +
+// panel de adopción. Los interruptores de secciones NO se duplican acá: la
+// fuente de verdad es modulos_institucion (Configuración → Apps).
+let _cpCfg = null;
+
+async function _renderPortalGeneral() {
+  const sec = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+  const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
+
+  const [cfgRes, alRes] = await Promise.all([
+    sb.from('config_portal').select('*').eq('institucion_id', instId).maybeSingle(),
+    sb.from('alumnos').select('id, nombre_completo, curso_id, cursos(nombre, division, nivel)')
+      .eq('institucion_id', instId).or('activo.is.null,activo.eq.true'),
+  ]);
+
+  // Sin fila → defaults de la tabla (nada se rompe si la migración no corrió).
+  _cpCfg = cfgRes.data || { notas_visibles: 'inmediato', familias_pueden_iniciar: true, mensaje_bienvenida: '' };
+
+  const alumnos = alRes.data || [];
+  const alIds   = alumnos.map(a => a.id);
+
+  // Vínculos familia↔alumno + estado de cada cuenta familiar
+  let vinculos = [], usuarios = [];
+  if (alIds.length) {
+    const { data: v } = await sb.from('familia_alumno').select('usuario_id, alumno_id').in('alumno_id', alIds);
+    vinculos = v || [];
+    const uIds = [...new Set(vinculos.map(x => x.usuario_id))];
+    if (uIds.length) {
+      const { data: u } = await sb.from('usuarios')
+        .select('id, nombre_completo, email, ultimo_acceso, debe_cambiar_password').in('id', uIds);
+      usuarios = u || [];
+    }
+  }
+
+  const ingreso = {};
+  usuarios.forEach(u => { ingreso[u.id] = !!u.ultimo_acceso || u.debe_cambiar_password === false; });
+
+  const alumnosConFamilia = new Set(vinculos.map(v => v.alumno_id));
+  const alumnosConActiva  = new Set(vinculos.filter(v => ingreso[v.usuario_id]).map(v => v.alumno_id));
+  const sinFamilia = alumnos.filter(a => !alumnosConFamilia.has(a.id));
+  const nuncaIngreso = usuarios.filter(u => !ingreso[u.id]);
+  const activas      = usuarios.filter(u => ingreso[u.id]);
+
+  const curso = a => a.cursos ? `${a.cursos.nombre}${a.cursos.division || ''}` : '—';
+
+  sec.innerHTML = `
+    <div class="card">
+      ${_appsTitulo('Quién entró y quién no')}
+      <div class="metrics m3" style="margin-bottom:12px">
+        <div class="mc"><div class="mc-v">${alumnosConActiva.size} / ${alumnos.length}</div>
+          <div class="mc-l">Estudiantes con familia activa</div></div>
+        <div class="mc"><div class="mc-v">${nuncaIngreso.length}</div>
+          <div class="mc-l">Cuentas que nunca ingresaron</div></div>
+        <div class="mc"><div class="mc-v">${sinFamilia.length}</div>
+          <div class="mc-l">Estudiantes sin familia vinculada</div></div>
+      </div>
+
+      ${sinFamilia.length ? `
+        <div style="font-size:11px;font-weight:600;margin:12px 0 6px">Sin ninguna familia vinculada</div>
+        <div style="font-size:10px;color:var(--txt2);margin-bottom:8px">
+          A estas familias no les llega nada del portal. Dales acceso desde el legajo del estudiante, pestaña Contactos.
+        </div>
+        <div style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+          ${sinFamilia.slice(0, 60).map(a => `
+            <div class="toggle-row-ui">
+              <span style="font-size:12px">${_esc(a.nombre_completo)}</span>
+              <span class="tag tgr">${curso(a)}</span>
+            </div>`).join('')}
+        </div>
+        ${sinFamilia.length > 60 ? `<div style="font-size:10px;color:var(--txt2);margin-top:6px">y ${sinFamilia.length - 60} más…</div>` : ''}
+      ` : '<div style="font-size:11px;color:var(--verde);font-weight:500">Todos los estudiantes tienen al menos una familia vinculada.</div>'}
+
+      ${nuncaIngreso.length ? `
+        <div style="font-size:11px;font-weight:600;margin:16px 0 6px">Con acceso creado, todavía no ingresaron</div>
+        <div style="max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+          ${nuncaIngreso.slice(0, 40).map(u => `
+            <div class="toggle-row-ui">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px">${_esc(u.nombre_completo)}</div>
+                <div style="font-size:10px;color:var(--txt2)">${_esc(u.email)}</div>
+              </div>
+              <button class="btn-s" style="font-size:10px;padding:3px 9px"
+                onclick="_cpRegenerar('${u.id}','${_esc(u.email)}','${_esc(u.nombre_completo)}')">Regenerar</button>
+            </div>`).join('')}
+        </div>` : ''}
+
+      <div style="font-size:10px;color:var(--txt2);margin-top:12px">${activas.length} familia(s) ya ingresaron al portal.</div>
+    </div>
+
+    <div class="card">
+      ${_appsTitulo('Cuándo ven las notas')}
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${[['inmediato','Apenas se cargan','La familia ve cada nota en cuanto el docente la carga.'],
+           ['al_cierre','Recién al cerrar el período','Sólo se muestran las notas de períodos ya cerrados. Evita reclamos por notas provisorias.']]
+          .map(([v, t, d]) => `
+            <div class="toggle-row-ui" style="cursor:pointer" onclick="_cpSet('notas_visibles','${v}')">
+              <div style="flex:1;min-width:0;padding-right:14px">
+                <div style="font-size:12px;font-weight:${_cpCfg.notas_visibles === v ? '600' : '500'}">${t}</div>
+                <div style="font-size:10px;color:var(--txt2);margin-top:3px;line-height:1.5">${d}</div>
+              </div>
+              <div class="tog${_cpCfg.notas_visibles === v ? ' on' : ''}"><div class="tog-thumb"></div></div>
+            </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="card">
+      ${_appsTitulo('Mensajes')}
+      <div class="toggle-row-ui">
+        <div style="flex:1;min-width:0;padding-right:14px">
+          <div style="font-size:12px;font-weight:500">Las familias pueden escribir primero</div>
+          <div style="font-size:10px;color:var(--txt2);margin-top:3px;line-height:1.5">
+            Si lo apagás, sólo pueden responder los mensajes que les manda la escuela.
+          </div>
+        </div>
+        <div class="tog${_cpCfg.familias_pueden_iniciar ? ' on' : ''}"
+          onclick="_cpSet('familias_pueden_iniciar', ${!_cpCfg.familias_pueden_iniciar})"><div class="tog-thumb"></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      ${_appsTitulo('Mensaje de bienvenida')}
+      <div style="font-size:10px;color:var(--txt2);margin:-4px 0 10px;line-height:1.5">
+        Se muestra en el inicio del portal. Dejalo vacío para no mostrar nada.
+      </div>
+      <textarea id="cp-bienvenida" rows="3" placeholder="Ej: Bienvenidos al portal. Ante cualquier duda, escribinos por Mensajes."
+        style="width:100%;box-sizing:border-box">${_esc(_cpCfg.mensaje_bienvenida)}</textarea>
+      <button class="btn-p" style="margin-top:10px" onclick="_cpGuardarBienvenida()">Guardar mensaje</button>
+    </div>
+
+    <div class="card">
+      ${_appsTitulo('Secciones activas del portal')}
+      <div style="font-size:10px;color:var(--txt2);margin:-4px 0 10px;line-height:1.5">
+        Se configuran en <a href="#" onclick="_irAItemAdmin('apps','apps');return false" style="color:var(--acento);text-decoration:none">Configuración → Apps</a>.
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${PORTAL_SECCIONES.map(s => {
+          const on = typeof moduloActivo === 'function' ? moduloActivo(s.id) : true;
+          return `<span class="tag ${on ? 'tg' : 'tgr'}">${s.label}${on ? '' : ' · apagada'}</span>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+async function _cpSet(campo, valor) {
+  const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
+  const { error } = await sb.from('config_portal')
+    .upsert({ institucion_id: instId, [campo]: valor }, { onConflict: 'institucion_id' });
+  if (error) { console.error('[Kairú] config_portal:', error); alert('No se pudo guardar el cambio. Probá de nuevo.'); return; }
+  _cpCfg[campo] = valor;
+  await _renderPortalGeneral();
+  _toastOk('Configuración actualizada');
+}
+
+async function _cpGuardarBienvenida() {
+  const txt = document.getElementById('cp-bienvenida')?.value?.trim() || null;
+  await _cpSet('mensaje_bienvenida', txt);
+}
+
+async function _cpRegenerar(usuarioId, email, nombre) {
+  if (!confirm(`¿Generar una contraseña nueva para ${nombre}?\n\nLa anterior deja de funcionar.`)) return;
+  try {
+    const pass = generarPasswordTemporal();
+    await _llamarAdminUsers('actualizar_contrasena', {
+      usuario_id: usuarioId, password: pass, debe_cambiar_password: true,
+    });
+    _mostrarPasswordGenerada(nombre, email, pass, 'Contraseña regenerada');
+  } catch (e) {
+    console.error('[Kairú] regenerar familia:', e);
+    alert('No se pudo regenerar la contraseña: ' + (e.message || 'error desconocido'));
   }
 }
 
@@ -3632,6 +3819,58 @@ function _crearModal(titulo, contenidoHtml, onGuardar) {
   return overlay;
 }
 
+// ── Contraseña temporal: se muestra UNA sola vez ─────
+// No hay forma de recuperarla después (está hasheada): si se pierde, se
+// regenera. Por eso el modal insiste con copiarla antes de cerrar.
+function _mostrarPasswordGenerada(nombre, email, pass, titulo) {
+  inyectarEstilosAdmin();
+  const existente = document.getElementById('adm-modal-overlay');
+  if (existente) existente.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id        = 'adm-modal-overlay';
+  overlay.className = 'adm-modal-overlay';
+  overlay.innerHTML = `
+    <div class="adm-modal">
+      <div class="adm-modal-header">
+        <div style="font-size:14px;font-weight:600">${titulo || 'Contraseña temporal'}</div>
+      </div>
+      <div class="adm-modal-body">
+        <div style="font-size:12px;margin-bottom:4px">${_esc(nombre)}</div>
+        <div style="font-size:11px;color:var(--txt2);margin-bottom:14px">${_esc(email)}</div>
+
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="pwd-generada" value="${_esc(pass)}" readonly
+            style="flex:1;font-family:'DM Mono',monospace;font-size:15px;letter-spacing:.08em;text-align:center">
+          <button class="btn-p" onclick="_copiarPasswordGenerada()" style="white-space:nowrap">Copiar</button>
+        </div>
+
+        <div style="display:flex;gap:9px;padding:11px 13px;background:var(--amb-l);border-radius:var(--rad);
+          border-left:3px solid var(--ambar);margin-top:14px">
+          <div style="font-size:15px">⚠️</div>
+          <div style="font-size:11px;color:var(--txt2);line-height:1.5">
+            Copiala ahora: <strong>no se puede volver a ver</strong>. Comunicásela a la persona;
+            se le va a pedir que la cambie cuando ingrese. Si se pierde, generá una nueva.
+          </div>
+        </div>
+      </div>
+      <div class="adm-modal-footer">
+        <button class="btn-p" onclick="_cerrarModal()">Listo, ya la copié</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  setTimeout(() => document.getElementById('pwd-generada')?.select(), 50);
+}
+
+function _copiarPasswordGenerada() {
+  const inp = document.getElementById('pwd-generada');
+  if (!inp) return;
+  inp.select();
+  navigator.clipboard?.writeText(inp.value)
+    .then(() => _toastOk('Contraseña copiada'))
+    .catch(() => { try { document.execCommand('copy'); _toastOk('Contraseña copiada'); } catch (_) {} });
+}
+
 function _cerrarModal() {
   const m = document.getElementById('adm-modal-overlay');
   if (m) m.remove();
@@ -4204,10 +4443,16 @@ function _renderModalFamilia(u) {
             ${u ? 'readonly style="opacity:.6;cursor:default"' : ''}>
           ${u ? '<div style="font-size:10px;color:var(--txt2);margin-top:3px">El email no se puede cambiar.</div>' : ''}
         </div>
+        ${u ? '' : `
         <div class="adm-form-row">
-          <label class="adm-label">${u ? 'Nueva contraseña (opcional)' : 'Contraseña'}</label>
-          <input type="password" id="fam-pass" placeholder="${u ? 'Dejar vacío para no cambiar' : 'Mínimo 6 caracteres'}">
-        </div>
+          <label class="adm-label">Contraseña temporal</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="fam-pass" value="${generarPasswordTemporal()}" readonly
+              style="flex:1;font-family:'DM Mono',monospace;letter-spacing:.06em">
+            <button type="button" class="btn-s" onclick="document.getElementById('fam-pass').value=generarPasswordTemporal()" style="white-space:nowrap">Otra</button>
+          </div>
+          <div style="font-size:10px;color:var(--txt2);margin-top:3px">Generada al azar. Al guardar te la mostramos para copiar y dictársela a la familia.</div>
+        </div>`}
 
         <div class="adm-form-row">
           <label class="adm-label">Alumnos vinculados</label>
@@ -4343,8 +4588,7 @@ async function _guardarFamilia(userId) {
 
   if (!nombre) { alert('El nombre es requerido.'); return; }
   if (esNuevo && !email) { alert('El email es requerido.'); return; }
-  if (esNuevo && !pass)  { alert('La contraseña es requerida.'); return; }
-  if (esNuevo && pass.length < 6) { alert('La contraseña debe tener al menos 6 caracteres.'); return; }
+  if (esNuevo && !pass)  { alert('Generá una contraseña temporal antes de guardar.'); return; }
   if (!_famAlumnosSelIds.length)  { alert('Seleccioná al menos un alumno.'); return; }
 
   try {
@@ -4358,16 +4602,17 @@ async function _guardarFamilia(userId) {
         institucion_id: USUARIO_ACTUAL.institucion_id,
       });
     } else {
+      // La contraseña ya no se edita acá: se usa "Regenerar contraseña".
       await _llamarAdminUsers('actualizar_usuario_familia', {
         usuario_id:      userId,
         nombre_completo: nombre,
         alumno_ids:      _famAlumnosSelIds,
-        password:        pass || null,
       });
     }
     _cerrarModalFamilia();
     await _renderFamilias();
-    _toastOk(esNuevo ? 'Usuario familia creado correctamente' : 'Usuario familia actualizado');
+    if (esNuevo) _mostrarPasswordGenerada(nombre, email, pass, 'Acceso al portal creado');
+    else         _toastOk('Usuario familia actualizado');
   } catch (e) {
     alert('Error: ' + e.message);
   }

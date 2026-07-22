@@ -52,12 +52,16 @@ async function rMensajes() {
             ${_renderMsgThread()}
           </div>
         </div>
+        ${CONFIG_PORTAL.familias_pueden_iniciar === false ? `
+        <div class="card">
+          <p class="empty-msg">Podés responder los mensajes que te envíe la institución.</p>
+        </div>` : `
         <div class="card" id="msg-nuevo-wrap">
           ${precId
             ? `<button class="btn-visto" id="msg-nuevo-btn" onclick="_msgAbrirNuevo()">+ Nuevo mensaje</button>
                <div id="msg-nuevo-form"></div>`
             : `<p class="empty-msg">Tu curso todavía no tiene un preceptor asignado. Contactá a la institución directamente.</p>`}
-        </div>
+        </div>`}
       </div>`;
 
     const thread = document.getElementById('msg-thread');

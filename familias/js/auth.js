@@ -57,6 +57,10 @@ async function cargarPerfilFamilia(user) {
     }
 
     USUARIO_FAMILIAR   = { ...perfil, alumnos };
+    // Marca de último ingreso: alimenta el panel de adopción del portal
+    // (Configuración → Portal Familiar → General). Best-effort.
+    sb.from('usuarios').update({ ultimo_acceso: new Date().toISOString() })
+      .eq('id', perfil.id).then(() => {}, () => {});
     ALUMNO_ACTUAL      = alumnos[0] || null;
     INSTITUCION_ACTUAL = perfil.instituciones;
 

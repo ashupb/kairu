@@ -6,6 +6,18 @@ let _INICIO_NOVEDADES  = [];
 let _INICIO_COMUNICADOS = [];
 let _INICIO_FEED_TAB   = 'novedades';
 
+// Mensaje de bienvenida configurable por la institución (config_portal).
+// Vacío o sin configurar → no se muestra nada.
+function _bienvenidaCard() {
+  const txt = (CONFIG_PORTAL?.mensaje_bienvenida || '').trim();
+  if (!txt) return '';
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `
+    <div class="card" style="border-left:3px solid var(--verde,#229957)">
+      <p style="margin:0;font-size:13px;line-height:1.6;white-space:pre-wrap">${esc(txt)}</p>
+    </div>`;
+}
+
 async function rInicio() {
   showLoading('inicio');
   const el = document.getElementById('page-inicio');
@@ -136,6 +148,7 @@ async function rInicio() {
           <p class="saludo-texto">Hola, <strong>${primerNombre(USUARIO_FAMILIAR.nombre_completo)}</strong></p>
           <p class="saludo-fecha">${fmtFecha(hoyStr)}</p>
         </div>
+        ${_bienvenidaCard()}
         ${_alumnoCard()}
         ${_asistResumen(pct, ausentes, tardanzas, anio)}
         ${_feedSection(_INICIO_NOVEDADES, leidosNovIds, _INICIO_COMUNICADOS, leidosComIds)}

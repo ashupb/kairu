@@ -36,6 +36,9 @@ const PERMISOS_MODULOS = [
   { id: 'leg',         label: 'Resumen del estudiante' },
   { id: 'tareas',      label: 'Tareas' },
   { id: 'admin',       label: 'Configuración' },
+  // Subsecciones de Configuración → Portal Familiar (no son páginas del nav)
+  { id: 'familias',       label: 'Portal: usuarios familia' },
+  { id: 'portal_general', label: 'Portal: configuración' },
 ];
 
 // Roles institucionales que aparecen en la matriz. super_admin queda fuera a
@@ -74,17 +77,17 @@ const PORTAL_SECCIONES = [
 // `ver` se deriva de NAV_CONFIG (si el módulo está en el menú del rol, lo ve).
 // `editar`/`eliminar` replican los arrays de permisos históricos de cada módulo.
 const _PERM_EDITAR_DEFAULT = {
-  director_general: ['agenda','novedades','comunicados','msgfam','prob','obj','eoe','asist','notas','intensif','informes','leg','tareas','admin'],
-  directivo_nivel:  ['agenda','novedades','comunicados','msgfam','prob','obj','eoe','asist','notas','intensif','informes','leg','tareas','admin'],
+  director_general: ['agenda','novedades','comunicados','msgfam','prob','obj','eoe','asist','notas','intensif','informes','leg','tareas','admin','familias','portal_general'],
+  directivo_nivel:  ['agenda','novedades','comunicados','msgfam','prob','obj','eoe','asist','notas','intensif','informes','leg','tareas','admin','familias','portal_general'],
   eoe:              ['msgfam','prob','obj','eoe','leg','tareas'],
-  preceptor:        ['agenda','novedades','comunicados','msgfam','prob','asist','notas','intensif','leg','tareas','admin'],
+  preceptor:        ['agenda','novedades','comunicados','msgfam','prob','asist','notas','intensif','leg','tareas','admin','familias','portal_general'],
   docente:          ['msgfam','prob','asist','notas','intensif','informes','tareas'],
 };
 const _PERM_ELIMINAR_DEFAULT = {
-  director_general: ['agenda','novedades','comunicados','prob','obj','eoe','asist','notas','intensif','leg','tareas','admin'],
-  directivo_nivel:  ['agenda','novedades','comunicados','prob','obj','eoe','asist','notas','intensif','tareas','admin'],
+  director_general: ['agenda','novedades','comunicados','prob','obj','eoe','asist','notas','intensif','leg','tareas','admin','familias'],
+  directivo_nivel:  ['agenda','novedades','comunicados','prob','obj','eoe','asist','notas','intensif','tareas','admin','familias'],
   eoe:              ['eoe','tareas'],
-  preceptor:        ['agenda','tareas'],
+  preceptor:        ['agenda','tareas','familias'],
   docente:          ['tareas'],
 };
 // secretario y vicedirector arrancan idénticos a directivo_nivel.
@@ -103,6 +106,13 @@ function _permVerDefault(rol, moduloId) {
   // no desde el menú. Sin este caso el default sería false para todos los roles
   // y el módulo desaparecería al sembrar la tabla.
   if (moduloId === 'tareas') return true;
+
+  // 'familias' y 'portal_general' son subsecciones de Configuración, no páginas
+  // del nav: sin caso explícito el default sería false y desaparecerían al
+  // sembrar la tabla. El default replica los roles que hoy tienen acceso.
+  if (moduloId === 'familias' || moduloId === 'portal_general') {
+    return ['director_general','directivo_nivel','secretario','vicedirector','preceptor'].includes(rol);
+  }
 
   const nav = (typeof NAV_CONFIG !== 'undefined' && NAV_CONFIG[rol]) || null;
   if (!nav) return false;
