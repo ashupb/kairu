@@ -72,6 +72,72 @@ async function _renderAvisoCierre() {
   }).join('');
 }
 
+// ── Cumpleaños del equipo ──────────────────────────────
+// Recordatorio en el inicio: cumpleaños del staff de la institución de hoy y de
+// los próximos 7 días, usando usuarios.fecha_nacimiento (sólo importan día y
+// mes; el año se ignora). Se pinta en el placeholder #dash-cumples, que está en
+// los 5 dashboards. No-op si no hay placeholder o si no hay cumpleaños en la
+// ventana. No muestra la edad a propósito (dato sensible): sólo nombre y fecha.
+const _CUMPLES_VENTANA_DIAS = 7;
+
+async function _renderAvisoCumples() {
+  const cont = document.getElementById('dash-cumples');
+  if (!cont || !USUARIO_ACTUAL?.institucion_id) return;
+
+  const { data } = await sb.from('usuarios')
+    .select('nombre_completo, fecha_nacimiento, avatar_url, avatar_iniciales, rol')
+    .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+    .not('fecha_nacimiento', 'is', null)
+    .neq('rol', 'familia')
+    .or('activo.is.null,activo.eq.true');
+
+  if (!data || !data.length) return;
+
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+
+  const items = data.map(u => {
+    const [anio, mes, dia] = String(u.fecha_nacimiento).split('-').map(Number);
+    if (!mes || !dia) return null;
+    // Próxima ocurrencia: este año, o el que viene si ya pasó.
+    // (Un 29/02 en año no bisiesto cae en 01/03 — se acepta.)
+    let prox = new Date(hoy.getFullYear(), mes - 1, dia);
+    prox.setHours(0, 0, 0, 0);
+    if (prox < hoy) { prox = new Date(hoy.getFullYear() + 1, mes - 1, dia); prox.setHours(0, 0, 0, 0); }
+    const dias = Math.round((prox - hoy) / 86400000);
+    return { ...u, dias, dia, mes };
+  }).filter(x => x && x.dias <= _CUMPLES_VENTANA_DIAS)
+    .sort((a, b) => a.dias - b.dias)
+    .slice(0, 6);
+
+  if (!items.length) return;
+
+  cont.innerHTML = `
+    <div class="card" style="padding:12px 13px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);margin-bottom:9px">
+        🎂 Cumpleaños del equipo
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${items.map(u => {
+          const esHoy = u.dias === 0;
+          const ini   = (u.avatar_iniciales || generarIniciales(u.nombre_completo || '')).toUpperCase();
+          const av    = u.avatar_url
+            ? `<img src="${u.avatar_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`
+            : ini;
+          const cuando = esHoy ? 'Hoy' : u.dias === 1 ? 'Mañana' : `${u.dia}/${u.mes}`;
+          return `
+            <div style="display:flex;align-items:center;gap:9px">
+              <div class="av av32" style="background:${esHoy ? 'var(--verde)' : 'var(--gris)'};color:#fff;overflow:hidden">${av}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;font-weight:${esHoy ? '600' : '500'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_esc(u.nombre_completo)}</div>
+                <div style="font-size:10px;color:var(--txt2)">${labelRol(u.rol)}</div>
+              </div>
+              <span class="tag ${esHoy ? 'tg' : 'tgr'}" style="flex-shrink:0">${cuando}</span>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
 // ── SHARED: Agenda semanal ─────────────────────────────
 function renderAgendaSemana(eventosSem, sem, nivelFiltro) {
   const diasNombres = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -319,6 +385,8 @@ async function rDash() {
   _renderTareasDash().catch(() => {});
   // Aviso de cierre de período (no-op si el dashboard del rol no tiene el placeholder).
   _renderAvisoCierre().catch(() => {});
+  // Cumpleaños del equipo (placeholder #dash-cumples, presente en los 5 dashboards).
+  _renderAvisoCumples().catch(() => {});
 }
 
 // ─── DIRECTOR GENERAL ─────────────────────────────────
@@ -640,6 +708,8 @@ async function rDashDirector() {
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · ${INSTITUCION_ACTUAL?.nombre || ''}</div>
+
+    <div id="dash-cumples"></div>
 
     ${asistCardHTML}
 
@@ -1200,6 +1270,7 @@ async function rDashDirectivo() {
     <div class="pg-s" style="margin-bottom:16px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
 
     <div id="dash-aviso-cierre"></div>
+    <div id="dash-cumples"></div>
 
     <div class="metrics m4" style="margin-bottom:16px">
       ${card1}${card2}${card3}${card4}
@@ -1422,6 +1493,8 @@ async function rDashEOE() {
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · Orientación Escolar</div>
 
+    <div id="dash-cumples"></div>
+
     <div class="metrics m3" style="margin-bottom:14px">
       <div class="mc" style="cursor:pointer" onclick="goPage('prob')">
         <div class="mc-v" style="color:var(--rojo)">${casosUrgentes.length}</div>
@@ -1642,6 +1715,7 @@ async function rDashDocente() {
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()}</div>
 
     <div id="dash-aviso-cierre"></div>
+    <div id="dash-cumples"></div>
 
     <div class="metrics m3" style="margin-bottom:14px">
       <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${listaColor}">${listasPendCount}</div><div class="mc-l">LISTAS PENDIENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
@@ -1816,6 +1890,7 @@ async function rDashPreceptor() {
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
 
     <div id="dash-aviso-cierre"></div>
+    <div id="dash-cumples"></div>
 
     <div class="metrics m4" style="margin-bottom:14px">
       <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${asistColor}">${asistPct}%</div><div class="mc-l">ASISTENCIA HOY</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
