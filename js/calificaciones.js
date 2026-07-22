@@ -3548,25 +3548,44 @@ async function _cargarResumenCierrePreceptor(cursoIds) {
 // ═══════════════════════════════════════════════════════
 
 
-async function _cerrarCuatrimestreTrayectoria(cuatrimestre) {
+// opts (opcional, para el cierre por período desde Parámetros → Períodos y escalas):
+//   nivelFiltro         — restringe el cierre a los cursos de ese nivel
+//   periodoEvaluativoId — se guarda en cierres_periodo como referencia del período cerrado
+//   sinConfirm          — el llamador ya confirmó (evita doble confirm)
+//   sinReRender         — no re-renderiza la página de notas al terminar (lo hace el llamador)
+//   etiqueta            — texto para los mensajes (default "Cuatrimestre N")
+// Sin opts: comportamiento idéntico al anterior (botones C1/C2 de Calificaciones).
+async function _cerrarCuatrimestreTrayectoria(cuatrimestre, opts = {}) {
+  const { nivelFiltro = null, periodoEvaluativoId = null,
+          sinConfirm = false, sinReRender = false } = opts;
+  const etiqueta = opts.etiqueta || `Cuatrimestre ${cuatrimestre}`;
   const instId = USUARIO_ACTUAL.institucion_id;
   const anio   = new Date().getFullYear();
 
   const tipoCierre = cuatrimestre === 1 ? 'cuatrimestre_1' : 'cuatrimestre_2';
-  // Verificar si ya se cerró este cuatrimestre
-  const { data: cierreExist } = await sb.from('cierres_periodo')
+  // Verificar si ya se cerró este período (array-based: puede haber varias filas
+  // del mismo tipo, una por nivel, desde el cierre por período).
+  let qCierre = sb.from('cierres_periodo')
     .select('id').eq('institucion_id', instId)
-    .eq('ciclo_lectivo', anio).eq('tipo', tipoCierre).maybeSingle();
+    .eq('ciclo_lectivo', anio).eq('tipo', tipoCierre);
+  if (nivelFiltro) qCierre = qCierre.eq('nivel', nivelFiltro);
+  const { data: cierreRows } = await qCierre.limit(1);
+  const cierreExist = (cierreRows || [])[0] || null;
 
-  if (cierreExist) {
-    if (!confirm(`El Cuatrimestre ${cuatrimestre} ya fue cerrado. ¿Querés re-generar las alertas?`)) return;
-  } else {
-    if (!confirm(`¿Cerrar el Cuatrimestre ${cuatrimestre}? Se generarán alertas automáticas según la cantidad de materias desaprobadas.`)) return;
+  if (!sinConfirm) {
+    if (cierreExist) {
+      if (!confirm(`${etiqueta} ya fue cerrado. ¿Querés re-generar las alertas?`)) return;
+    } else {
+      if (!confirm(`¿Cerrar ${etiqueta}? Se generarán alertas automáticas según la cantidad de materias desaprobadas.`)) return;
+    }
   }
 
-  // Obtener cursos del nivel del usuario (o todos para director_general)
+  // Obtener cursos del nivel del usuario (o todos para director_general).
+  // nivelFiltro (cierre por período) tiene prioridad sobre el scope por rol.
   let qCursos = sb.from('cursos').select('id,nombre,division,nivel').eq('institucion_id', instId);
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
+  if (nivelFiltro) {
+    qCursos = qCursos.eq('nivel', nivelFiltro);
+  } else if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
     qCursos = qCursos.eq('nivel', USUARIO_ACTUAL.nivel);
   }
   const { data: cursos } = await qCursos;
@@ -3685,12 +3704,13 @@ async function _cerrarCuatrimestreTrayectoria(cuatrimestre) {
   if (!cierreExist) {
     await sb.from('cierres_periodo').insert({
       institucion_id: instId, ciclo_lectivo: anio,
-      tipo: tipoCierre, cerrado_por: USUARIO_ACTUAL.id,
+      tipo: tipoCierre, nivel: nivelFiltro, periodo_evaluativo_id: periodoEvaluativoId,
+      cerrado_por: USUARIO_ACTUAL.id,
     });
   }
 
-  alert(`✅ Cuatrimestre ${cuatrimestre} cerrado.\n${alertasGeneradas} alumno(s) con alertas generadas.`);
-  rNotas();
+  alert(`✅ ${etiqueta} cerrado.\n${alertasGeneradas} alumno(s) con alertas generadas.`);
+  if (!sinReRender) rNotas();
 }
 
 async function _mostrarCierreAnual() {

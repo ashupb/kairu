@@ -6,6 +6,17 @@ let TIPOS_JUST   = [];
 let CONFIG_ASIST = {};
 let HORA_SEL     = null;
 
+// Fecha (YYYY-MM-DD) desde la cual se cuentan asistencia y alertas de un nivel:
+// su activación (config_asistencia.fecha_activacion) o, si el nivel todavía no
+// se activó, el 1-ene del ciclo lectivo (comportamiento previo a la activación
+// por nivel). CONFIG_ASIST se puebla en rAsist() con select('*'), así que incluye
+// fecha_activacion.
+function _asistDesde(nivel) {
+  const f = CONFIG_ASIST[nivel]?.fecha_activacion;
+  if (f) return String(f).slice(0, 10);
+  return `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
+}
+
 function validarFechaHabilInput(inputEl) {
   const val = inputEl.value;
   if (!val) return;
@@ -189,7 +200,7 @@ async function verCursoDirector(cursoId, nivel) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
-  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
+  const anioInicio = _asistDesde(nivel);
   const hoy = hoyISO();
 
   const [cursoRes, alumnosRes] = await Promise.all([
@@ -375,7 +386,7 @@ async function mostrarGrillaDirector(cursoId, nivel) {
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
-  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
+  const anioInicio = _asistDesde(nivel);
 
   // Fase 1: alumnos del curso + info del curso (en paralelo)
   const [alumnosRes, cursoRes] = await Promise.all([
@@ -606,7 +617,7 @@ async function mostrarGrillaPreceptor(cursoId, nivel, nombreCurso, volverFn = nu
   const c = document.getElementById('page-asist');
   showLoading('asist');
 
-  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
+  const anioInicio = _asistDesde(nivel);
   const config    = CONFIG_ASIST[nivel] || {};
 
   // Fase 1: alumnos por curso_id actual
@@ -1309,10 +1320,13 @@ async function verAlumnoAsist(alumnoId) {
   ]);
 
   const al      = alumnoRes.data;
-  const asists  = asistRes.data   || [];
-  const alertas = alertasRes.data || [];
   const nivel   = al?.cursos?.nivel || 'secundario';
   const config  = CONFIG_ASIST[nivel] || {};
+  // El nivel se conoce recién acá (viene del curso del alumno), así que la
+  // ventana anual se recorta en memoria a la fecha de activación del nivel.
+  const _desde  = _asistDesde(nivel);
+  const asists  = (asistRes.data || []).filter(a => a.fecha >= _desde);
+  const alertas = alertasRes.data || [];
 
   // Deduplicar por fecha: si hay registros duplicados para la misma fecha
   // (causados por el bug anterior del upsert), tomar solo uno por día.
@@ -1449,9 +1463,9 @@ function _renderGrillaAlumnoHTML(asists, config, desde, hasta) {
 async function verificarAlertas(alumnoIds, instId, nivel) {
   const config = CONFIG_ASIST[nivel];
   if (!config) return;
-  // Solo contar registros del ciclo lectivo vigente para no acumular
-  // inasistencias de años anteriores.
-  const anioInicio = `${INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear()}-01-01`;
+  // Contar solo desde la activación del nivel (o el 1-ene del ciclo si no se
+  // activó), para no acumular inasistencias previas al uso del sistema.
+  const anioInicio = _asistDesde(nivel);
 
   for (const alumnoId of alumnoIds) {
     // Solo contar registros diarios (hora_clase IS NULL).

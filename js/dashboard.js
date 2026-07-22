@@ -28,6 +28,50 @@ function _fechaStr() {
   return new Date().toLocaleDateString('es-AR', { weekday:'long', day:'numeric', month:'long' });
 }
 
+// ── Aviso de cierre de período programado ──────────────
+// Cuenta regresiva en el inicio cuando faltan <= 15 días para la fecha de cierre
+// programada de un período del nivel del usuario. Para docentes, preceptores y
+// directivos de nivel. Se pinta en el placeholder #dash-aviso-cierre (cada
+// dashboard de esos roles lo incluye arriba). Filtra por USUARIO_ACTUAL.nivel.
+async function _renderAvisoCierre() {
+  const cont = document.getElementById('dash-aviso-cierre');
+  if (!cont) return;
+  const nivel = USUARIO_ACTUAL?.nivel;
+  if (!nivel) return;
+
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  const lim = new Date(hoy); lim.setDate(lim.getDate() + 15);
+  const hoyISO = hoy.toISOString().slice(0, 10);
+  const limISO = lim.toISOString().slice(0, 10);
+
+  const { data: periodos } = await sb.from('periodos_evaluativos')
+    .select('nombre,fecha_cierre_programada')
+    .eq('institucion_id', USUARIO_ACTUAL.institucion_id).eq('nivel', nivel)
+    .not('fecha_cierre_programada', 'is', null)
+    .gte('fecha_cierre_programada', hoyISO)
+    .lte('fecha_cierre_programada', limISO)
+    .order('fecha_cierre_programada');
+
+  if (!periodos || !periodos.length) return;
+
+  cont.innerHTML = periodos.map(p => {
+    const f      = new Date(p.fecha_cierre_programada + 'T12:00:00');
+    const dias   = Math.round((f - hoy) / 86400000);
+    const cuenta = dias <= 0 ? 'es hoy' : dias === 1 ? 'es mañana' : `en ${dias} días`;
+    const urgente = dias <= 5;
+    const clr = urgente ? 'var(--rojo)' : 'var(--ambar)';
+    const bg  = urgente ? 'var(--rojo-l)' : 'var(--amb-l)';
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:11px 13px;background:${bg};border-radius:var(--rad);border-left:3px solid ${clr};margin-bottom:10px">
+        <div style="font-size:18px">⏳</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;color:${clr}">Cierre de "${_esc(p.nombre)}" ${cuenta}</div>
+          <div style="font-size:11px;color:var(--txt2)">Cargá y revisá las calificaciones antes del ${f.getDate()}/${f.getMonth() + 1}.</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
 // ── SHARED: Agenda semanal ─────────────────────────────
 function renderAgendaSemana(eventosSem, sem, nivelFiltro) {
   const diasNombres = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -273,6 +317,8 @@ async function rDash() {
   else if (rol === 'preceptor')         await rDashPreceptor();
   else                                  await rDashDirector();
   _renderTareasDash().catch(() => {});
+  // Aviso de cierre de período (no-op si el dashboard del rol no tiene el placeholder).
+  _renderAvisoCierre().catch(() => {});
 }
 
 // ─── DIRECTOR GENERAL ─────────────────────────────────
@@ -925,8 +971,8 @@ async function rDashDirectivo() {
     cursoIdsNivel.length
       ? sb.from('asignaciones').select('materia_id,curso_id').in('curso_id', cursoIdsNivel).eq('anio_lectivo', anio)
       : Promise.resolve({ data: [] }),
-    // 13. Config calificaciones (umbral de alerta incluido)
-    sb.from('config_asistencia').select('nota_minima, umbral_alerta_1, umbral_alerta_2')
+    // 13. Config calificaciones (umbral de alerta + activación del nivel)
+    sb.from('config_asistencia').select('nota_minima, umbral_alerta_1, umbral_alerta_2, fecha_activacion')
       .eq('institucion_id', instId).eq('nivel', nivel).maybeSingle(),
     // 14. Docentes activos del nivel (por rol)
     sb.from('usuarios').select('id', { count:'exact', head:true })
@@ -960,7 +1006,12 @@ async function rDashDirectivo() {
 
   // ── Estado académico: califs + intervenciones recientes en paralelo ──
   const cierres    = cierresRes.data    || [];
-  const asistAnio  = asistAnioRes.data  || [];
+  // Contar inasistencias del nivel solo desde su activación (o el 1-ene del ciclo
+  // si no se activó). La query trae desde el 1-ene; acá se recorta a la activación.
+  const _asistDesdeNivel = configCalifRes?.data?.fecha_activacion
+    ? String(configCalifRes.data.fecha_activacion).slice(0, 10)
+    : `${anio}-01-01`;
+  const asistAnio  = (asistAnioRes.data || []).filter(a => a.fecha >= _asistDesdeNivel);
   const instancias = instanciasRes.data || [];
   const asignNivel = asignNivelRes.data || [];
   const notaMinima = configCalifRes?.data?.nota_minima    ?? null;
@@ -1147,6 +1198,8 @@ async function rDashDirectivo() {
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:16px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
+
+    <div id="dash-aviso-cierre"></div>
 
     <div class="metrics m4" style="margin-bottom:16px">
       ${card1}${card2}${card3}${card4}
@@ -1588,6 +1641,8 @@ async function rDashDocente() {
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()}</div>
 
+    <div id="dash-aviso-cierre"></div>
+
     <div class="metrics m3" style="margin-bottom:14px">
       <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${listaColor}">${listasPendCount}</div><div class="mc-l">LISTAS PENDIENTES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
       <div class="mc" style="cursor:pointer" onclick="goPage('prob')"><div class="mc-v" style="color:var(--ambar)">${totalSituaciones}</div><div class="mc-l">SITUACIONES</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>
@@ -1759,6 +1814,8 @@ async function rDashPreceptor() {
   document.getElementById('page-dash').innerHTML = `
     <div class="pg-t">${saludo}, ${apellido} 👋</div>
     <div class="pg-s" style="margin-bottom:14px">${_fechaStr()} · <span style="color:${nc.color};font-weight:600">${nc.label}</span></div>
+
+    <div id="dash-aviso-cierre"></div>
 
     <div class="metrics m4" style="margin-bottom:14px">
       <div class="mc" style="cursor:pointer" onclick="goPage('asist')"><div class="mc-v" style="color:${asistColor}">${asistPct}%</div><div class="mc-l">ASISTENCIA HOY</div><div style="font-size:9px;color:var(--verde);margin-top:6px;font-weight:600">Ir →</div></div>

@@ -93,11 +93,9 @@ const CONFIG_GRUPOS = [
         ] },
     ] },
   { id: 'parametros', label: 'Parámetros académicos', items: [
-      { id: 'param_asistencia',     label: 'Asistencia',              roles: ['director_general', 'directivo_nivel'], renderer: _renderParamAsistencia },
-      { id: 'param_calificaciones', label: 'Calificaciones y escalas', roles: ['director_general', 'directivo_nivel'], tabs: [
-          { id: 'notas', label: 'Escalas y notas',       renderer: _renderParamNotas },
-          { id: 'dims',  label: 'Dimensiones (Inicial)', renderer: _renderParamDimensiones, soloInicial: true },
-        ] },
+      { id: 'param_asistencia', label: 'Asistencia',        roles: ['director_general', 'directivo_nivel'], renderer: _renderParamAsistencia },
+      { id: 'param_periodos',   label: 'Períodos y escalas', roles: ['director_general', 'directivo_nivel'], renderer: _renderParamPeriodos },
+      { id: 'param_otros',      label: 'Otros Parámetros',  roles: ['director_general', 'directivo_nivel'], renderer: _renderParamOtros },
     ] },
   { id: 'usuarios', label: 'Usuarios', items: [
       { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel'], renderer: _renderUsuarios },
@@ -112,7 +110,9 @@ const CONFIG_GRUPOS = [
 const _LEGACY_TAB_ALIAS = {
   asignaciones: ['materias'],
   suplencias:   ['docentes'],
-  parametros:   ['param_asistencia', 'param_calificaciones'],
+  // Ids pre-reorganización de Parámetros → nuevos 3 ids.
+  parametros:            ['param_asistencia', 'param_periodos', 'param_otros'],
+  param_calificaciones:  ['param_periodos', 'param_otros'],
 };
 
 function _normalizarExtras(tabsArr) {
@@ -2036,11 +2036,9 @@ async function _renderParamAsistencia() {
           ${NIVEL_LABELS_ADM[n]}
         </div>`).join('')}
     </div>
-    <div id="param-asist-content"></div>
-    <div id="param-asist-otros"></div>`;
+    <div id="param-asist-content"></div>`;
 
   await _renderParamAsistNivel(_paramAsistNivel);
-  await _renderParamAsistOtros();
 }
 
 async function _paramAsistTab(nivel) {
@@ -2194,7 +2192,7 @@ async function _renderParamAsistOtros() {
 // ── CALIFICACIONES Y ESCALAS — tab "Escalas y notas" ───
 let _paramCalifNivel = null;
 
-async function _renderParamNotas() {
+async function _renderParamPeriodos() {
   const sec = document.getElementById('adm-section-content');
   await _ensureInstNiveles();
   const niveles = _paramNivelesDisponibles();
@@ -2214,11 +2212,9 @@ async function _renderParamNotas() {
           ${NIVEL_LABELS_ADM[n]}
         </div>`).join('')}
     </div>
-    <div id="param-calif-content"></div>
-    <div id="param-calif-tipos"></div>`;
+    <div id="param-calif-content"></div>`;
 
   await _renderParamCalifNivel(_paramCalifNivel);
-  await _renderParamCalifTipos();
 }
 
 async function _paramCalifTab(nivel) {
@@ -2241,16 +2237,32 @@ async function _renderParamCalifNivel(nivel) {
   const cont   = document.getElementById('param-calif-content');
   if (!cont) return;
   const instId = USUARIO_ACTUAL.institucion_id;
+  const anio   = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
   const color  = NIVEL_COLORS_ADM[nivel];
+  // Cierres de período e intensificación aplican a niveles con calificaciones
+  // (primario 2º ciclo y secundario); inicial usa informes narrativos.
+  const usaCierres = nivel === 'primario' || nivel === 'secundario';
 
-  const [cfgRes, periodosRes] = await Promise.all([
+  const [cfgRes, periodosRes, cierresRes, intensifRes] = await Promise.all([
     sb.from('config_asistencia').select('*').eq('institucion_id', instId).eq('nivel', nivel).maybeSingle(),
     sb.from('periodos_evaluativos').select('*').eq('institucion_id', instId).eq('nivel', nivel).order('fecha_inicio'),
+    usaCierres
+      ? sb.from('cierres_periodo').select('*').eq('institucion_id', instId).eq('ciclo_lectivo', anio)
+      : Promise.resolve({ data: [] }),
+    usaCierres
+      ? sb.from('periodos_intensificacion').select('*').eq('institucion_id', instId).eq('ciclo_lectivo', anio).order('fecha_inicio')
+      : Promise.resolve({ data: [] }),
   ]);
 
-  const cfg     = cfgRes.data     || {};
+  const cfg      = cfgRes.data      || {};
   const periodos = periodosRes.data || [];
-  const cfgId   = cfg.id || '';
+  const cierres  = cierresRes.data  || [];
+  const intensif = intensifRes.data || [];
+  const cfgId    = cfg.id || '';
+  const dims     = cfg.dimensiones_informe || _DIMS_INICIAL_DEFAULT;
+  const N        = periodos.length;
+
+  const _INTENSIF_LBL = { inicio_c1:'Inicio C1', fin_c1:'Fin C1', diciembre:'Diciembre', febrero:'Febrero' };
 
   // ── Sección evaluación diferenciada por nivel ───────
   let htmlEvaluacion = '';
@@ -2260,7 +2272,7 @@ async function _renderParamCalifNivel(nivel) {
       <div style="font-size:12px;color:var(--txt2);margin:0 0 10px;padding:10px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${color}">
         El nivel inicial trabaja con <strong>informes narrativos</strong> por dimensiones de desarrollo.
         No se aplican calificaciones numéricas ni conceptuales. Las dimensiones evaluadas se configuran
-        en la pestaña <strong>Dimensiones (Inicial)</strong>.
+        <strong>más abajo</strong>, en esta misma sección.
       </div>`;
 
   } else if (nivel === 'primario') {
@@ -2339,8 +2351,84 @@ async function _renderParamCalifNivel(nivel) {
     return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(2)}`;
   };
 
+  // ── Cierre de período (por nivel, ligado al período real) ───
+  const htmlCierrePeriodo = !usaCierres ? '' : `
+    <div class="card">
+      <div class="card-t">Cierre de período</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
+        Al cerrar un período se calculan las materias desaprobadas de ${NIVEL_LABELS_ADM[nivel]} y se generan las alertas académicas del nivel.
+      </div>
+      ${N ? periodos.map((p, i) => {
+        const mitad   = i < Math.ceil(N / 2) ? 1 : 2;
+        const cerrado = cierres.find(c => c.periodo_evaluativo_id === p.id);
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${cerrado ? 'var(--verde)' : 'var(--brd)'};margin-bottom:6px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600">${_esc(p.nombre)}</div>
+              <div style="font-size:10px;color:var(--txt2)">${cerrado ? `✅ Cerrado el ${_fmtP(cerrado.created_at?.slice(0,10))}` : 'Sin cerrar'} · corresponde a Cuatrimestre ${mitad}</div>
+            </div>
+            <button class="btn-s" style="font-size:10px;white-space:nowrap" onclick="_cerrarPeriodoEvaluativo('${nivel}','${p.id}',${mitad})">
+              🔒 ${cerrado ? 'Re-generar alertas' : 'Cerrar período'}
+            </button>
+          </div>`;
+      }).join('') : '<div style="font-size:11px;color:var(--txt3);padding:6px 0">Definí períodos evaluativos arriba para poder cerrarlos.</div>'}
+    </div>`;
+
+  // ── Intensificación (Res. 1650/2024) — institucional ───
+  const htmlIntensif = !usaCierres ? '' : `
+    <div class="card">
+      <div class="card-t">Períodos de intensificación — ${anio}</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
+        Períodos institucionales (Res. 1650/2024): aplican a secundario y 2º ciclo de primario. Activá el período
+        correcto para que preceptores y docentes puedan registrar asistencia en intensificación.
+      </div>
+      ${intensif.length ? `
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+        ${intensif.map(p => `
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${p.activo ? 'var(--verde)' : 'var(--brd)'}">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600">${_esc(p.nombre)}</div>
+              <div style="font-size:10px;color:var(--txt2)">${_INTENSIF_LBL[p.tipo] || p.tipo} · ${_fmtFecha(p.fecha_inicio)} — ${_fmtFecha(p.fecha_fin)}</div>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <div class="tog${p.activo ? ' on' : ''}" id="tog-periodo-${p.id}" onclick="_toggleActivoPeriodo('${p.id}',${!p.activo})" title="${p.activo ? 'Desactivar' : 'Activar'}">
+                <div class="tog-thumb"></div>
+              </div>
+              <button onclick="_eliminarPeriodoIntensif('${p.id}')"
+                style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--txt3);padding:0 2px;line-height:1" title="Eliminar">×</button>
+            </div>
+          </div>`).join('')}
+      </div>` : `
+      <div style="font-size:11px;color:var(--txt3);text-align:center;padding:16px 0;margin-bottom:12px">
+        Sin períodos de intensificación definidos para ${anio}.
+      </div>`}
+      <button class="btn-s" onclick="_nuevoPeriodoIntensif()" style="font-size:11px">+ Agregar período</button>
+    </div>`;
+
+  // ── Cierre anual / Promoción (secundario) ───
+  const htmlAnual = nivel !== 'secundario' ? '' : `
+    <div class="card">
+      <div class="card-t">Cierre anual / Promoción</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
+        Calcula el estado de promoción de cada alumno según las alertas generadas en el ciclo lectivo. Se aplica al nivel secundario.
+      </div>
+      <button class="btn-p" onclick="_verCierreAnualConf()" style="font-size:12px">🎓 Ver estado de promoción</button>
+    </div>`;
+
+  // ── Dimensiones de desarrollo (Inicial) ───
+  const htmlDims = nivel !== 'inicial' ? '' : `
+    <div class="card" style="border-top:3px solid ${color}">
+      <div class="card-t" style="color:${color}">Dimensiones de desarrollo evaluadas</div>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Se usan en los informes narrativos semestrales de Nivel Inicial.</div>
+      <div id="lista-dims-inicial">${_renderListaDims(dims)}</div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input type="text" id="new-dim-inicial" placeholder="Ej: Exploración del entorno" style="flex:1;font-size:12px">
+        <button class="btn-s" onclick="_agregarDim()">Agregar</button>
+      </div>
+    </div>`;
+
   cont.innerHTML = `
-    <!-- CALIFICACIONES -->
+    <!-- ESCALAS Y NOTAS -->
     ${nivel === 'inicial' ? htmlEvaluacion : `
     <div class="card" style="border-top:3px solid ${color}">
       <div class="card-t" style="color:${color}">Calificaciones — ${NIVEL_LABELS_ADM[nivel]}</div>
@@ -2381,13 +2469,23 @@ async function _renderParamCalifNivel(nivel) {
                 ${p.fecha_fin ? `<div style="font-size:10px;color:var(--verde);margin-top:3px">${_fmtP(p.fecha_fin)}</div>` : ''}
               </div>
             </div>
+            <div style="margin-top:10px">
+              <div class="adm-label">Cierre programado <span style="color:var(--txt3);font-weight:400">· aviso 15 días antes en el inicio</span></div>
+              ${renderFechaInput(`percierre-${p.id}`, p.fecha_cierre_programada || '', {onchange:`_onPeriodoFecha('${p.id}','fecha_cierre_programada','percierre-${p.id}')`})}
+              ${p.fecha_cierre_programada ? `<div style="font-size:10px;color:var(--verde);margin-top:3px">${_fmtP(p.fecha_cierre_programada)}</div>` : ''}
+            </div>
           </div>`).join('') : '<div style="color:var(--txt2);font-size:11px;padding:6px 0">Sin períodos definidos</div>'}
       </div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <input type="text" id="new-periodo-${nivel}" placeholder="Ej: 1° Cuatrimestre" style="flex:1">
         <button class="btn-s" onclick="_agregarPeriodo('${nivel}')">Agregar período</button>
       </div>
-    </div>`;
+    </div>
+
+    ${htmlCierrePeriodo}
+    ${htmlIntensif}
+    ${htmlAnual}
+    ${htmlDims}`;
 }
 
 async function _guardarCalifCfg(nivel, existingId) {
@@ -2461,25 +2559,18 @@ async function _renderParamCalifTipos() {
     </div>`;
 }
 
-async function _renderParamDimensiones() {
+// Otros Parámetros (generales, NO por nivel): consolida las listas globales de
+// Asistencia (_renderParamAsistOtros: justificación, eventos, problemática,
+// intervención) + las instancias evaluativas (_renderParamCalifTipos) en una
+// sola subsección. Ambos helpers pintan en su propio div y se auto-refrescan
+// vía _refrescarTiposGlobales tras cualquier alta/baja/edición.
+async function _renderParamOtros() {
   const sec = document.getElementById('adm-section-content');
-  const instId = USUARIO_ACTUAL.institucion_id;
-  const color  = NIVEL_COLORS_ADM.inicial;
-
-  const { data: cfg } = await sb.from('config_asistencia').select('*')
-    .eq('institucion_id', instId).eq('nivel', 'inicial').maybeSingle();
-  const dims = cfg?.dimensiones_informe || _DIMS_INICIAL_DEFAULT;
-
   sec.innerHTML = `
-    <div class="card" style="border-top:3px solid ${color}">
-      <div class="card-t" style="color:${color}">Dimensiones de desarrollo evaluadas</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Se usan en los informes narrativos semestrales de Nivel Inicial.</div>
-      <div id="lista-dims-inicial">${_renderListaDims(dims)}</div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <input type="text" id="new-dim-inicial" placeholder="Ej: Exploración del entorno" style="flex:1;font-size:12px">
-        <button class="btn-s" onclick="_agregarDim()">Agregar</button>
-      </div>
-    </div>`;
+    <div id="param-asist-otros"></div>
+    <div id="param-calif-tipos"></div>`;
+  await _renderParamAsistOtros();
+  await _renderParamCalifTipos();
 }
 
 async function _refrescarTiposGlobales() {
@@ -2667,7 +2758,7 @@ async function _agregarDim() {
   }
   if (error) { alert('Error al guardar dimensión: ' + error.message); return; }
   if (inp) inp.value = '';
-  await _renderParamDimensiones();
+  await _renderParamCalifNivel('inicial');
 }
 
 function _mmatToggleTipo() {
@@ -2735,7 +2826,7 @@ async function _quitarDim(idx) {
     }]));
   }
   if (error) { alert('Error al quitar dimensión: ' + error.message); return; }
-  await _renderParamDimensiones();
+  await _renderParamCalifNivel('inicial');
 }
 
 // ══════════════════════════════════════════════════════
@@ -3183,37 +3274,29 @@ async function _renderCicloLectivo() {
   sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
 
   const instId = USUARIO_ACTUAL.institucion_id;
-  const anio   = new Date().getFullYear();
+  await _ensureInstNiveles();
+  const anio    = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
+  const niveles = _paramNivelesDisponibles();
 
-  const [periodosRes, cierresRes, instRes] = await Promise.all([
-    sb.from('periodos_intensificacion')
-      .select('*').eq('institucion_id', instId)
-      .eq('ciclo_lectivo', anio).order('fecha_inicio'),
-    sb.from('cierres_periodo')
-      .select('*').eq('institucion_id', instId)
-      .eq('ciclo_lectivo', anio).order('tipo'),
+  const [instRes, cfgRes] = await Promise.all([
     sb.from('instituciones')
-      .select('fecha_inicio_ciclo,fecha_fin_ciclo,fecha_activacion')
+      .select('fecha_inicio_ciclo,fecha_fin_ciclo')
       .eq('id', instId).single(),
+    sb.from('config_asistencia')
+      .select('nivel,fecha_activacion').eq('institucion_id', instId),
   ]);
 
-  const periodos    = periodosRes.data || [];
-  const cierres     = cierresRes.data  || [];
-  const cierreC1    = cierres.find(c => c.tipo === 'cuatrimestre_1');
-  const cierreC2    = cierres.find(c => c.tipo === 'cuatrimestre_2');
   const instCiclo   = instRes.data || {};
-  const fechaActiv  = instCiclo.fecha_activacion;
-
-  const TIPO_LABELS = {
-    inicio_c1: 'Inicio C1', fin_c1: 'Fin C1',
-    diciembre: 'Diciembre', febrero: 'Febrero',
-  };
+  const cfgPorNivel = {};
+  (cfgRes.data || []).forEach(c => { cfgPorNivel[c.nivel] = c; });
 
   sec.innerHTML = `
     <div class="card" style="margin-bottom:14px">
       <div class="card-t">Fechas del ciclo lectivo ${anio}</div>
       <div style="font-size:11px;color:var(--txt2);margin-bottom:14px">
-        Establecé el rango del año lectivo. La fecha de inicio es el primer día de clases y la de cierre el último.
+        Establecé el rango del año lectivo ${anio}: la fecha de inicio es el primer día de clases y la de cierre el último.
+        El año lectivo vigente se configura en Institución → General; la intensificación, los cierres de período y las escalas
+        están en Parámetros académicos → Períodos y escalas.
       </div>
       <div style="display:flex;gap:12px;flex-wrap:wrap">
         <div class="adm-form-row" style="flex:1;min-width:160px;margin-bottom:0">
@@ -3230,97 +3313,31 @@ async function _renderCicloLectivo() {
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-t">Activación del sistema</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
-        Al activar el sistema empiezan a correr los días sin lista, las alertas por inasistencia y todos los contadores automáticos.
-      </div>
-      ${fechaActiv ? `
-        <div style="display:flex;align-items:center;gap:10px;padding:12px;background:#e8f5e9;border-radius:var(--rad);border-left:3px solid var(--verde);margin-bottom:12px">
-          <div style="font-size:18px">✅</div>
-          <div>
-            <div style="font-size:12px;font-weight:600;color:var(--verde)">Sistema activo</div>
-            <div style="font-size:11px;color:var(--txt2)">Activado el ${_fmtFechaHora(fechaActiv)}</div>
-          </div>
-        </div>
-        <button class="btn-s" style="font-size:11px;color:var(--txt3)" onclick="_reactivarSistema()">Reactivar (reinicia la fecha de activación)</button>
-      ` : `
-        <div style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid var(--brd);margin-bottom:12px">
-          <div style="font-size:18px">⏸</div>
-          <div>
-            <div style="font-size:12px;font-weight:600;color:var(--txt2)">Sistema no activado</div>
-            <div style="font-size:11px;color:var(--txt3)">Los contadores de asistencia y alertas no están corriendo.</div>
-          </div>
-        </div>
-        <button class="btn-p" id="btn-activar-sistema" onclick="_activarSistema()">Iniciar uso de la app</button>
-      `}
-    </div>
-
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-t">Períodos de intensificación — ${anio}</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
-        Cuatro períodos por año según Res. 1650/2024. Activar el período correcto para que preceptores y docentes puedan registrar asistencia en intensificación.
-      </div>
-
-      ${periodos.length ? `
-      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
-        ${periodos.map(p => `
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${p.activo ? 'var(--verde)' : 'var(--brd)'}">
-            <div style="flex:1">
-              <div style="font-size:12px;font-weight:600">${_esc(p.nombre)}</div>
-              <div style="font-size:10px;color:var(--txt2)">${TIPO_LABELS[p.tipo] || p.tipo} · ${_fmtFecha(p.fecha_inicio)} — ${_fmtFecha(p.fecha_fin)}</div>
-            </div>
-            <div style="display:flex;gap:6px;align-items:center">
-              <div class="tog${p.activo ? ' on' : ''}" id="tog-periodo-${p.id}" onclick="_toggleActivoPeriodo('${p.id}',${!p.activo})" title="${p.activo ? 'Desactivar' : 'Activar'}">
-                <div class="tog-thumb"></div>
-              </div>
-              <button onclick="_eliminarPeriodoIntensif('${p.id}')"
-                style="background:none;border:none;cursor:pointer;font-size:16px;color:var(--txt3);padding:0 2px;line-height:1" title="Eliminar">×</button>
-            </div>
-          </div>`).join('')}
-      </div>` : `
-      <div style="font-size:11px;color:var(--txt3);text-align:center;padding:16px 0;margin-bottom:12px">
-        Sin períodos definidos para ${anio}.
-      </div>`}
-
-      <button class="btn-s" onclick="_nuevoPeriodoIntensif()" style="font-size:11px">+ Agregar período</button>
-    </div>
-
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-t">Cierre de cuatrimestre</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
-        Al cerrar un cuatrimestre se generan alertas académicas automáticas según la cantidad de materias desaprobadas.
-      </div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <div style="flex:1;min-width:200px;padding:12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${cierreC1 ? 'var(--verde)' : 'var(--brd)'}">
-          <div style="font-size:12px;font-weight:600;margin-bottom:4px">Cuatrimestre 1</div>
-          ${cierreC1
-            ? `<div style="font-size:10px;color:var(--verde)">✅ Cerrado el ${_fmtFecha(cierreC1.created_at?.slice(0,10))}</div>`
-            : `<div style="font-size:10px;color:var(--txt2)">Sin cerrar</div>`}
-          <button class="btn-s" onclick="_cerrarCuatrimestreConf(1)" style="font-size:10px;margin-top:8px">
-            🔒 ${cierreC1 ? 'Re-generar alertas' : 'Cerrar C1'}
-          </button>
-        </div>
-        <div style="flex:1;min-width:200px;padding:12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${cierreC2 ? 'var(--verde)' : 'var(--brd)'}">
-          <div style="font-size:12px;font-weight:600;margin-bottom:4px">Cuatrimestre 2</div>
-          ${cierreC2
-            ? `<div style="font-size:10px;color:var(--verde)">✅ Cerrado el ${_fmtFecha(cierreC2.created_at?.slice(0,10))}</div>`
-            : `<div style="font-size:10px;color:var(--txt2)">Sin cerrar</div>`}
-          <button class="btn-s" onclick="_cerrarCuatrimestreConf(2)" style="font-size:10px;margin-top:8px">
-            🔒 ${cierreC2 ? 'Re-generar alertas' : 'Cerrar C2'}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <div class="card">
-      <div class="card-t">Cierre anual / Promoción</div>
+      <div class="card-t">Activación del sistema — por nivel</div>
       <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">
-        Calcula el estado de promoción de cada alumno según las alertas generadas en el ciclo lectivo. Se aplica al nivel secundario.
+        Cada nivel se activa por separado. Al activar un nivel empiezan a correr sus contadores de asistencia y las
+        alertas por inasistencia <strong>desde esa fecha</strong> (los registros anteriores a la activación no se cuentan).
       </div>
-      <button class="btn-p" onclick="_verCierreAnualConf()" style="font-size:12px">
-        🎓 Ver estado de promoción
-      </button>
+      ${niveles.length
+        ? niveles.map(n => _renderActivacionNivelRow(n, cfgPorNivel[n]?.fecha_activacion)).join('')
+        : '<div style="font-size:11px;color:var(--txt3);text-align:center;padding:16px 0">No hay niveles activos. Activá al menos un nivel en Institución → General.</div>'}
+    </div>`;
+}
+
+function _renderActivacionNivelRow(nivel, fechaActiv) {
+  const color = NIVEL_COLORS_ADM[nivel];
+  return `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surf2);border-radius:var(--rad);border-left:3px solid ${fechaActiv ? 'var(--verde)' : color};margin-bottom:10px">
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600;color:${color}">${NIVEL_LABELS_ADM[nivel]}</div>
+        ${fechaActiv
+          ? `<div style="font-size:11px;color:var(--verde)">✅ Activo desde el ${_fmtFechaHora(fechaActiv)}</div>`
+          : `<div style="font-size:11px;color:var(--txt3)">⏸ Sin activar — contadores detenidos</div>`}
+      </div>
+      ${fechaActiv
+        ? `<button class="btn-s" style="font-size:11px;color:var(--txt3)" onclick="_reactivarSistemaNivel('${nivel}')">Reactivar</button>`
+        : `<button class="btn-p" style="font-size:11px" onclick="_activarSistemaNivel('${nivel}')">Activar nivel</button>`}
     </div>`;
 }
 
@@ -3349,25 +3366,32 @@ async function _guardarFechasCiclo() {
   _toastOk('Fechas del ciclo lectivo guardadas.');
 }
 
-async function _activarSistema() {
-  if (!confirm('¿Activar el sistema ahora? Los contadores de asistencia y alertas empezarán a correr desde este momento.')) return;
-  const btn = document.getElementById('btn-activar-sistema');
-  if (btn) { btn.disabled = true; btn.textContent = 'Activando...'; }
-  const { error } = await sb.from('instituciones')
-    .update({ fecha_activacion: new Date().toISOString() })
-    .eq('id', USUARIO_ACTUAL.institucion_id);
-  if (error) { alert('Error al activar: ' + error.message); if (btn) { btn.disabled = false; btn.textContent = 'Iniciar uso de la app'; } return; }
-  _toastOk('¡Sistema activado! Los contadores están corriendo.');
-  await _renderCicloLectivo();
+async function _activarSistemaNivel(nivel) {
+  if (!confirm(`¿Activar ${NIVEL_LABELS_ADM[nivel]} ahora? Los contadores de asistencia y las alertas por inasistencia de ese nivel empezarán a correr desde este momento.`)) return;
+  await _setActivacionNivel(nivel, new Date().toISOString());
 }
 
-async function _reactivarSistema() {
-  if (!confirm('¿Reiniciar la fecha de activación? Esto reemplazará la fecha actual. Los contadores se calcularán desde ahora.')) return;
-  const { error } = await sb.from('instituciones')
-    .update({ fecha_activacion: new Date().toISOString() })
-    .eq('id', USUARIO_ACTUAL.institucion_id);
-  if (error) { alert('Error: ' + error.message); return; }
-  _toastOk('Fecha de activación actualizada.');
+async function _reactivarSistemaNivel(nivel) {
+  if (!confirm(`¿Reiniciar la fecha de activación de ${NIVEL_LABELS_ADM[nivel]}? Reemplaza la fecha actual; los contadores de ese nivel se recalcularán desde ahora.`)) return;
+  await _setActivacionNivel(nivel, new Date().toISOString());
+}
+
+// Escribe fecha_activacion en config_asistencia (upsert por institución+nivel).
+async function _setActivacionNivel(nivel, ts) {
+  const instId = USUARIO_ACTUAL.institucion_id;
+  const { data: existe } = await sb.from('config_asistencia')
+    .select('id').eq('institucion_id', instId).eq('nivel', nivel).maybeSingle();
+  let error;
+  if (existe?.id) {
+    ({ error } = await sb.from('config_asistencia').update({ fecha_activacion: ts }).eq('id', existe.id));
+  } else {
+    ({ error } = await sb.from('config_asistencia').insert([{
+      institucion_id: instId, nivel, fecha_activacion: ts,
+      umbral_alerta_1: 10, umbral_alerta_2: 20, umbral_alerta_3: 30, justificadas_cuentan: false,
+    }]));
+  }
+  if (error) { alert('Error al activar: ' + error.message); return; }
+  _toastOk(`${NIVEL_LABELS_ADM[nivel]}: activación actualizada.`);
   await _renderCicloLectivo();
 }
 
@@ -3422,7 +3446,7 @@ async function _guardarPeriodoIntensif(anio) {
   if (error) { alert('Error: ' + error.message); return; }
   _cerrarModal();
   _toastOk('Período creado correctamente.');
-  await _renderCicloLectivo();
+  await _renderParamCalifNivel(_paramCalifNivel);
 }
 
 async function _eliminarPeriodoIntensif(id) {
@@ -3430,7 +3454,7 @@ async function _eliminarPeriodoIntensif(id) {
   const { error } = await sb.from('periodos_intensificacion').delete().eq('id', id);
   if (error) { alert('Error: ' + error.message); return; }
   _toastOk('Período eliminado.');
-  await _renderCicloLectivo();
+  await _renderParamCalifNivel(_paramCalifNivel);
 }
 
 async function _toggleActivoPeriodo(id, activo) {
@@ -3441,29 +3465,32 @@ async function _toggleActivoPeriodo(id, activo) {
   _toastOk(activo ? 'Período activado.' : 'Período desactivado.');
 }
 
-async function _cerrarCuatrimestreConf(cuatrimestre) {
-  const instId = USUARIO_ACTUAL.institucion_id;
-  const anio   = new Date().getFullYear();
-
-  const tipoCierre = cuatrimestre === 1 ? 'cuatrimestre_1' : 'cuatrimestre_2';
-  const { data: existe } = await sb.from('cierres_periodo')
-    .select('id').eq('institucion_id', instId)
-    .eq('ciclo_lectivo', anio).eq('tipo', tipoCierre).maybeSingle();
-
-  const accion = existe ? 're-generar las alertas' : `cerrar el Cuatrimestre ${cuatrimestre}`;
-  if (!confirm(`¿Querés ${accion}? Se calcularán las materias desaprobadas por alumno y se generarán alertas académicas.`)) return;
+// Cierra el período evaluativo elegido para un nivel. Reutiliza el motor de
+// calificaciones (_cerrarCuatrimestreTrayectoria) scopeado a ese nivel; `mitad`
+// (1 ó 2) es el cuatrimestre al que pertenece el período según su orden dentro
+// del nivel — ver _renderParamCalifNivel, que lo calcula igual que el motor.
+async function _cerrarPeriodoEvaluativo(nivel, periodoId, mitad) {
+  if (typeof _cerrarCuatrimestreTrayectoria !== 'function') {
+    alert('El módulo de Calificaciones no está cargado. Ir a Calificaciones → Gestión del ciclo lectivo.');
+    return;
+  }
+  const { data: per } = await sb.from('periodos_evaluativos').select('nombre').eq('id', periodoId).maybeSingle();
+  const etiqueta = per?.nombre || 'Período';
+  const nivelLbl = NIVEL_LABELS_ADM[nivel] || nivel;
+  if (!confirm(`¿Cerrar "${etiqueta}" de ${nivelLbl}? Se calcularán las materias desaprobadas por alumno y se generarán las alertas académicas del nivel.`)) return;
 
   const sec = document.getElementById('adm-section-content');
-  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div><div style="font-size:11px;color:var(--txt2);margin-top:8px">Calculando alertas...</div></div>';
+  if (sec) sec.innerHTML = '<div class="loading-state"><div class="spinner"></div><div style="font-size:11px;color:var(--txt2);margin-top:8px">Cerrando período y generando alertas...</div></div>';
 
-  // Reutilizar la lógica de calificaciones.js — llamar directamente si está disponible
-  if (typeof _cerrarCuatrimestreTrayectoria === 'function') {
-    await _cerrarCuatrimestreTrayectoria(cuatrimestre);
-  } else {
-    alert('Para usar esta función, el módulo de Calificaciones debe estar cargado. Ir a Calificaciones → Gestión del ciclo lectivo.');
-  }
+  await _cerrarCuatrimestreTrayectoria(mitad, {
+    nivelFiltro:         nivel,
+    periodoEvaluativoId: periodoId,
+    sinConfirm:          true,
+    sinReRender:         true,
+    etiqueta:            `${etiqueta} · ${nivelLbl}`,
+  });
 
-  await _renderCicloLectivo();
+  await _renderParamCalifNivel(nivel);
 }
 
 async function _verCierreAnualConf() {
