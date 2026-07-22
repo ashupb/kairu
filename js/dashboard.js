@@ -337,6 +337,9 @@ function renderPendientesRespuesta(pendientes) {
 
 // ── SHARED: Próximas actividades hoy ──────────────────
 function renderProximasActividades(eventosSem, hoy, nivelFiltro) {
+  // Panel de un módulo: si Agenda está apagada en Apps (o el rol no la ve),
+  // no se pinta. Cubre los 5 dashboards de una.
+  if (typeof puedeVer === 'function' && !puedeVer('agenda')) return '';
   // Incluye eventos que empiezan hoy O que abarcan hoy (multi-día)
   let eventos = eventosSem.filter(e => e.fecha_inicio <= hoy && (e.fecha_fin || e.fecha_inicio) >= hoy);
   if (nivelFiltro && nivelFiltro !== 'todos') {
@@ -925,6 +928,7 @@ function renderAlertasCruzadasNivel(alertas) {
 }
 
 function renderObjetivosDirectivo(objetivos) {
+  if (typeof puedeVer === 'function' && !puedeVer('obj')) return '';
   const lista = (objetivos || []).filter(o => o.estado !== 'archivado' && o.estado !== 'logrado');
   if (!lista.length) return '';
   const empeorando = lista.filter(o => o.tendencia === 'empeorando');

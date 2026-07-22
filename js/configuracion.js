@@ -101,6 +101,9 @@ const CONFIG_GRUPOS = [
       { id: 'param_periodos',   label: 'Períodos y escalas', roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderParamPeriodos },
       { id: 'param_otros',      label: 'Otros Parámetros',  roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderParamOtros },
     ] },
+  { id: 'apps', label: 'Apps', items: [
+      { id: 'apps', label: 'Módulos activos', roles: ['director_general'], renderer: _renderApps },
+    ] },
   { id: 'usuarios', label: 'Usuarios', items: [
       { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderUsuarios },
       { id: 'roles_permisos', label: 'Roles y Permisos', roles: ['director_general'], renderer: _renderRolesPermisos },
@@ -642,9 +645,14 @@ async function _abrirModalUsuario(userId) {
   const cursosTodos = cursosAll || [];
 
   // super_admin nunca es asignable desde acá: se crea sólo por migración/SQL (§5.1).
-  const rolesDisp = _puedeAdministrarInstitucion()
+  let rolesDisp = _puedeAdministrarInstitucion()
     ? ['director_general', 'directivo_nivel', 'secretario', 'vicedirector', 'docente', 'preceptor', 'eoe']
     : ['docente', 'preceptor', 'eoe'];
+  // Si la institución no usa el módulo EOE, el rol no se ofrece. Los usuarios
+  // que ya lo tengan se conservan (se sigue mostrando si es el rol del editado).
+  if (typeof moduloActivo === 'function' && !moduloActivo('eoe') && user?.rol !== 'eoe') {
+    rolesDisp = rolesDisp.filter(r => r !== 'eoe');
+  }
 
   const nivelesDisp = esDirectivoNivel(USUARIO_ACTUAL.rol)
     ? [USUARIO_ACTUAL.nivel]
@@ -1026,6 +1034,163 @@ async function _guardarUsuario(userId, esNuevo) {
 
 
 // ══════════════════════════════════════════════════════
+// SECCIÓN: APPS — módulos activos de la institución
+// ══════════════════════════════════════════════════════
+// Enciende/apaga módulos a nivel institución. Regla maestra: un módulo apagado
+// no lo ve nadie, sin importar Roles y Permisos (se aplica en _permResolver).
+// El catálogo sale de PERMISOS_MODULOS (permisos.js) — no duplicar la lista.
+let _appsEstado = {};   // modulo_id → bool
+
+const _APPS_DESC = {
+  asist:       'Toma de asistencia diaria, alertas por inasistencias y justificaciones.',
+  notas:       'Calificaciones, escalas e instancias evaluativas.',
+  leg:         'Ficha integral del estudiante: datos, contactos, observaciones y documentos.',
+  agenda:      'Calendario institucional de eventos y convocatorias.',
+  prob:        'Registro y seguimiento de situaciones problemáticas.',
+  obj:         'Objetivos institucionales y su seguimiento.',
+  eoe:         'Equipo de Orientación Escolar: actividades, intervenciones y derivaciones.',
+  tareas:      'Tareas personales de cada usuario.',
+  novedades:   'Publicaciones breves para las familias.',
+  comunicados: 'Comunicados formales con acuse de lectura.',
+  msgfam:      'Canal de mensajes entre la institución y cada familia.',
+  intensif:    'Períodos de intensificación y trayectorias.',
+  informes:    'Informes narrativos por dimensiones de desarrollo.',
+};
+
+async function _renderApps() {
+  const sec = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
+  const { data, error } = await sb.from('modulos_institucion')
+    .select('modulo_id, activo').eq('institucion_id', instId);
+
+  if (error) {
+    console.error('[Kairú] modulos_institucion:', error);
+    _admError(sec, 'No se pudieron cargar los módulos. Probá de nuevo en unos minutos.');
+    return;
+  }
+
+  // Sin fila = activo (mismo criterio que moduloActivo()).
+  _appsEstado = {};
+  (data || []).forEach(r => { _appsEstado[r.modulo_id] = r.activo !== false; });
+  _appsPintar();
+}
+
+function _appsOn(id) {
+  return _appsEstado[id] === undefined ? true : _appsEstado[id];
+}
+
+function _appsFila(id, label, desc, opts) {
+  opts = opts || {};
+  const on = _appsOn(id);
+  return `
+    <div class="toggle-row-ui" style="padding:11px 0;border-bottom:1px solid var(--brd);${opts.indent ? 'padding-left:14px' : ''}">
+      <div style="flex:1;min-width:0;padding-right:12px">
+        <div style="font-size:12px;font-weight:600">${label}</div>
+        ${desc ? `<div style="font-size:10px;color:var(--txt2);margin-top:2px;line-height:1.45">${desc}</div>` : ''}
+      </div>
+      <div class="tog${on ? ' on' : ''}" onclick="_appsToggle('${id}','${_esc(label)}')">
+        <div class="tog-thumb"></div>
+      </div>
+    </div>`;
+}
+
+function _appsPintar() {
+  const sec = document.getElementById('adm-section-content');
+  const portalOn = _appsOn('portal');
+
+  sec.innerHTML = `
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:14px;line-height:1.5">
+      Elegí qué módulos usa la institución. Lo que apagues acá <strong>desaparece para
+      todos</strong>, sin importar lo que digan los permisos por rol. Apagar un módulo
+      <strong>no borra información</strong>: se oculta y vuelve tal cual al reactivarlo.
+    </div>
+
+    <div class="card" style="padding:0 14px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);padding:12px 0 2px">
+        Módulos
+      </div>
+      ${APPS_ACTIVABLES.map(id => {
+        const m = PERMISOS_MODULOS.find(x => x.id === id);
+        return m ? _appsFila(id, m.label, _APPS_DESC[id]) : '';
+      }).join('')}
+    </div>
+
+    <div class="card" style="padding:0 14px;margin-bottom:14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);padding:12px 0 2px">
+        Portal Familiar
+      </div>
+      ${_appsFila('portal', 'Portal Familiar', 'Acceso de las familias a la plataforma. Si lo apagás, no pueden ingresar.')}
+      ${portalOn ? `
+        <div style="padding:4px 0 0">
+          <div style="font-size:10px;color:var(--txt2);padding:8px 0 2px;padding-left:14px">Del lado de la institución</div>
+          ${APPS_PORTAL_HIJOS.map(id => {
+            const m = PERMISOS_MODULOS.find(x => x.id === id);
+            return m ? _appsFila(id, m.label, _APPS_DESC[id], { indent: true }) : '';
+          }).join('')}
+          <div style="font-size:10px;color:var(--txt2);padding:10px 0 2px;padding-left:14px">Secciones que ven las familias</div>
+          ${PORTAL_SECCIONES.map(s => _appsFila(s.id, s.label, '', { indent: true })).join('')}
+        </div>`
+      : `<div style="font-size:10px;color:var(--txt2);padding:10px 0 12px">
+           Con el Portal apagado, las familias no acceden y sus secciones quedan ocultas.
+         </div>`}
+    </div>
+
+    <div class="card" style="padding:12px 14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);margin-bottom:8px">
+        Según los niveles de la institución
+      </div>
+      <div style="font-size:10px;color:var(--txt2);line-height:1.5;margin-bottom:8px">
+        Estos no se encienden a mano: aparecen solos según los niveles que tenga la institución.
+      </div>
+      ${Object.entries(APPS_DERIVADOS).map(([id, dep]) => {
+        const m = PERMISOS_MODULOS.find(x => x.id === id);
+        return m ? `
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
+            <span class="tag tgr">${dep}</span>
+            <span style="font-size:12px">${m.label}</span>
+          </div>` : '';
+      }).join('')}
+    </div>`;
+}
+
+async function _appsToggle(id, label) {
+  const apagando = _appsOn(id);
+
+  if (apagando) {
+    let extra = '';
+    // Avisar si hay usuarios con el rol EOE antes de apagar ese módulo.
+    if (id === 'eoe') {
+      const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
+      const { count } = await sb.from('usuarios')
+        .select('id', { count: 'exact', head: true })
+        .eq('institucion_id', instId).eq('rol', 'eoe');
+      if (count) extra = `\n\nHay ${count} usuario(s) con rol EOE. No se eliminan ni se cambian, pero pierden el acceso a este módulo.`;
+    }
+    if (id === 'portal') extra = '\n\nLas familias no van a poder ingresar al portal.';
+    if (!confirm(`¿Apagar "${label}"?\n\nDeja de verse para todos los usuarios. No se borra ninguna información: al reactivarlo vuelve tal cual.${extra}`)) return;
+  }
+
+  const nuevo  = !apagando;
+  const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
+  const { error } = await sb.from('modulos_institucion')
+    .upsert({ institucion_id: instId, modulo_id: id, activo: nuevo }, { onConflict: 'institucion_id,modulo_id' });
+
+  if (error) { console.error('[Kairú] modulos_institucion:', error); alert('No se pudo guardar el cambio. Probá de nuevo.'); return; }
+
+  _appsEstado[id] = nuevo;
+  _appsPintar();
+
+  // Refrescar caché y menú: el cambio impacta de inmediato en la navegación.
+  if (typeof cargarPermisos === 'function') await cargarPermisos();
+  renderNav();
+  if (typeof renderBottomNav === 'function') renderBottomNav();
+  _toastOk(nuevo ? `${label} activado` : `${label} desactivado`);
+}
+
+
+// ══════════════════════════════════════════════════════
 // SECCIÓN: ROLES Y PERMISOS (plantillas por institución)
 // ══════════════════════════════════════════════════════
 // Matriz roles × módulos con ver/editar/eliminar. El rol define todo: no hay
@@ -1034,6 +1199,7 @@ async function _guardarUsuario(userId, esNuevo) {
 // quede sin administrador) — ver _rpBloqueado().
 let _rpRolActivo = null;
 let _rpMatriz    = {};   // "rol|modulo" → {ver,editar,eliminar}
+let _rpCaps      = {};   // "rol|capacidad" → bool
 
 function _rpBloqueado(rol) {
   return rol === 'director_general';
@@ -1064,6 +1230,19 @@ async function _renderRolesPermisos() {
   (data || []).forEach(r => {
     if (_rpMatriz[`${r.rol}|${r.modulo_id}`]) {
       _rpMatriz[`${r.rol}|${r.modulo_id}`] = { ver: r.ver, editar: r.editar, eliminar: r.eliminar };
+    }
+  });
+
+  // Capacidades sensibles — mismo criterio: defaults pisados por la BD.
+  _rpCaps = {};
+  PERMISOS_ROLES.forEach(rol => {
+    CAPACIDADES.forEach(c => { _rpCaps[`${rol}|${c.id}`] = capacidadDefault(rol, c.id); });
+  });
+  const { data: caps } = await sb.from('roles_capacidades')
+    .select('rol, capacidad, habilitada').eq('institucion_id', instId);
+  (caps || []).forEach(c => {
+    if (_rpCaps[`${c.rol}|${c.capacidad}`] !== undefined) {
+      _rpCaps[`${c.rol}|${c.capacidad}`] = c.habilitada === true;
     }
   });
 
@@ -1112,19 +1291,50 @@ function _rpPintar() {
         <tbody>
           ${PERMISOS_MODULOS.map(m => {
             const p = _rpMatriz[`${rol}|${m.id}`] || { ver:false, editar:false, eliminar:false };
+            // Módulo apagado en Apps: no lo ve nadie, así que su fila no se edita.
+            const apagado = typeof moduloActivo === 'function' && !moduloActivo(m.id);
+            const off = bloqueado || apagado;
             const cel = campo => `
               <td style="text-align:center;padding:8px">
-                <input type="checkbox" ${p[campo] ? 'checked' : ''} ${bloqueado ? 'disabled' : ''}
+                <input type="checkbox" ${p[campo] && !apagado ? 'checked' : ''} ${off ? 'disabled' : ''}
                   onchange="_rpSet('${m.id}','${campo}',this.checked)">
               </td>`;
             return `
-              <tr style="border-bottom:1px solid var(--brd)">
-                <td style="padding:8px 13px">${m.label}</td>
+              <tr style="border-bottom:1px solid var(--brd);${apagado ? 'opacity:.5' : ''}">
+                <td style="padding:8px 13px">
+                  ${m.label}
+                  ${apagado ? `<a href="#" onclick="_irAItemAdmin('apps','apps');return false"
+                      style="display:block;font-size:10px;color:var(--acento);text-decoration:none;margin-top:2px">Apagado · Activar en Apps →</a>` : ''}
+                </td>
                 ${cel('ver')}${cel('editar')}${cel('eliminar')}
               </tr>`;
           }).join('')}
         </tbody>
       </table>
+    </div>
+
+    <div class="card" style="padding:12px 14px;margin-top:14px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);margin-bottom:4px">
+        Capacidades sensibles
+      </div>
+      <div style="font-size:10px;color:var(--txt2);margin-bottom:10px;line-height:1.5">
+        Permisos finos que no dependen de un módulo entero. Sirven para distinguir
+        roles que por lo demás ven lo mismo.
+      </div>
+      ${CAPACIDADES.map(c => {
+        const on = _rpCaps[`${rol}|${c.id}`] === true;
+        return `
+          <div class="toggle-row-ui" style="padding:9px 0;border-top:1px solid var(--brd)">
+            <div style="flex:1;min-width:0;padding-right:12px">
+              <div style="font-size:12px;font-weight:500">${c.label}</div>
+              <div style="font-size:10px;color:var(--txt2);margin-top:2px;line-height:1.45">${c.desc}</div>
+            </div>
+            <div class="tog${on ? ' on' : ''}" ${bloqueado ? '' : `onclick="_rpToggleCap('${c.id}')"`}
+              ${bloqueado ? 'style="opacity:.5;cursor:not-allowed"' : ''}>
+              <div class="tog-thumb"></div>
+            </div>
+          </div>`;
+      }).join('')}
     </div>
 
     <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
@@ -1156,6 +1366,12 @@ function _rpSet(moduloId, campo, valor) {
   }
 }
 
+function _rpToggleCap(capId) {
+  const k = `${_rpRolActivo}|${capId}`;
+  _rpCaps[k] = !_rpCaps[k];
+  _rpPintar();
+}
+
 function _rpRestaurarDefaults() {
   const rol = _rpRolActivo;
   if (_rpBloqueado(rol)) return;
@@ -1163,6 +1379,7 @@ function _rpRestaurarDefaults() {
   PERMISOS_MODULOS.forEach(m => {
     _rpMatriz[`${rol}|${m.id}`] = { ...permisosDefault(rol, m.id) };
   });
+  CAPACIDADES.forEach(c => { _rpCaps[`${rol}|${c.id}`] = capacidadDefault(rol, c.id); });
   _rpPintar();
 }
 
@@ -1184,7 +1401,26 @@ async function _rpGuardar() {
   const { error } = await sb.from('roles_permisos')
     .upsert(filas, { onConflict: 'institucion_id,rol,modulo_id' });
 
-  if (error) { alert('No se pudieron guardar los permisos: ' + error.message); return; }
+  if (error) {
+    console.error('[Kairú] roles_permisos:', error);
+    alert('No se pudieron guardar los permisos. Probá de nuevo.');
+    return;
+  }
+
+  const filasCaps = CAPACIDADES.map(c => ({
+    institucion_id: instId,
+    rol,
+    capacidad: c.id,
+    habilitada: _rpCaps[`${rol}|${c.id}`] === true,
+  }));
+  const { error: errCap } = await sb.from('roles_capacidades')
+    .upsert(filasCaps, { onConflict: 'institucion_id,rol,capacidad' });
+
+  if (errCap) {
+    console.error('[Kairú] roles_capacidades:', errCap);
+    alert('Los permisos se guardaron, pero no las capacidades. Probá de nuevo.');
+    return;
+  }
 
   // Refrescar el cache y el menú por si el rol editado es el del usuario actual.
   if (typeof cargarPermisos === 'function') await cargarPermisos();

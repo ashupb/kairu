@@ -51,6 +51,16 @@ function _notifItemHTML(n) {
     </div>`;
 }
 
+// Mapa tabla de origen → módulo del nav. Se usa para filtrar notificaciones de
+// módulos apagados y para navegar al abrirlas (abrirNotif).
+const NOTIF_TABLA_A_MODULO = {
+  problematicas:           'prob',
+  objetivos:               'obj',
+  eventos_institucionales: 'agenda',
+  mensajes_familia:        'msgfam',
+  derivaciones:            'eoe',
+};
+
 async function cargarNotificaciones() {
   const { data } = await sb
     .from('notificaciones')
@@ -59,7 +69,13 @@ async function cargarNotificaciones() {
     .order('created_at', { ascending: false })
     .limit(20);
 
-  const todas = data || [];
+  // No mostrar notificaciones de módulos apagados en Apps o no visibles para el
+  // rol: navegar ahí terminaría rebotando al inicio por el guard de goPage().
+  const todas = (data || []).filter(n => {
+    const mod = NOTIF_TABLA_A_MODULO[n.referencia_tabla];
+    if (!mod || typeof puedeVer !== 'function') return true;
+    return puedeVer(mod);
+  });
   const noLeidas = todas.filter(n => !n.leida).length;
   const cnt = document.getElementById('notif-count');
   if (cnt) {

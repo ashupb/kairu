@@ -581,7 +581,10 @@ function renderBottomNav() {
   const contenedor = document.getElementById('bottom-nav-items');
   if (!contenedor) return;
   const rol   = USUARIO_ACTUAL?.rol;
-  const items = BOTTOM_NAV_ITEMS[rol] || BOTTOM_NAV_ITEMS.docente;
+  let items   = BOTTOM_NAV_ITEMS[rol] || BOTTOM_NAV_ITEMS.docente;
+  // El bottom nav no pasaba por puedeVer(): sin esto, un módulo apagado en Apps
+  // (o denegado por rol) seguía accesible desde el menú inferior en mobile.
+  if (typeof puedeVer === 'function') items = items.filter(it => puedeVer(it.id));
   contenedor.innerHTML = items.map(item => `
     <button class="bn-item ${CUR_PAGE === item.id ? 'on' : ''}" onclick="goPage('${item.id}')">
       <span class="bn-icon">${item.icon}</span>

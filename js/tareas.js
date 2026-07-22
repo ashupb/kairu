@@ -45,6 +45,8 @@ function _inyectarEstilosTareas() {
 // ── PANEL EN DASHBOARD ────────────────────────────────
 
 async function _renderTareasDash() {
+  // Módulo apagado en Apps (o no visible para el rol) → no se pinta el panel.
+  if (typeof puedeVer === 'function' && !puedeVer('tareas')) return;
   _inyectarEstilosTareas();
 
   // Directivo/Director tienen #tareas-col en el dash-col-l; otros roles usan contenedor flotante

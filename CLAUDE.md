@@ -127,6 +127,46 @@ Las funciones `renderObjetivosStrip`, `renderAlertasAsistDir` y `renderNivelPane
 - A `director_general` no se le pueden editar los permisos (`_rpBloqueado()`), para que la institución no se quede sin administrador.
 - Semillas: la migración siembra cada institución existente y un **trigger** (`instituciones_seed_permisos`) siembra las nuevas. `ON CONFLICT DO NOTHING`: re-ejecutar no pisa lo que la institución haya editado.
 
+### Apps — módulos activos por institución (migración v39)
+
+`js/permisos.js` es el **punto único de resolución de acceso**, con tres capas:
+
+```
+Acceso efectivo = moduloActivo(id) AND (permiso del rol)
+```
+
+- **Regla maestra**: si un módulo está apagado en Configuración → **Apps** (tabla `modulos_institucion`), **no lo ve nadie**, sin importar `roles_permisos`. Se aplica dentro de `_permResolver()`, así que `renderNav()`, `goPage()`, `renderBottomNav()` y todo lo que ya llamaba a `puedeVer()` lo heredan **sin tocarlos**. Al agregar una pantalla nueva, consultá `puedeVer()` y queda cubierta sola.
+- **`super_admin` es la excepción**: `_permResolver()` le devuelve `true` antes de mirar módulos — necesita ver la institución completa para dar soporte y poder reactivar lo apagado.
+- **Fallback en las 3 capas**: sin fila (o sin tabla) → módulo **activo** y permiso por default. Nada desaparece por un registro faltante ni por una migración sin correr.
+- **Catálogo único**: `PERMISOS_MODULOS` (15 módulos, incluye `tareas`). **No crear una lista paralela** — Apps y Roles y Permisos leen de ahí. `APPS_NUCLEO` (`dash`, `admin`) no se apaga nunca: es lo que garantiza que el director siempre pueda volver a Configuración a reactivar.
+- **`tareas` no está en `NAV_CONFIG`** (se entra desde el panel del dashboard), así que `_permVerDefault()` tiene un caso explícito que devuelve `true`. Sin eso el default sería `false` y el módulo desaparecería al sembrar la tabla.
+- **Portal Familiar**: el módulo maestro `portal` manda sobre `novedades`, `comunicados` y `msgfam` (constante `APPS_PORTAL_HIJOS`). Las secciones de la app de familias usan ids prefijados **`portal_*`** (`PORTAL_SECCIONES`) porque `novedades`, `comunicados` y `agenda` ya existen como módulos internos y colisionarían.
+- **App de familias**: no usa `permisos.js` (es otra app). `familias/js/main.js` replica lo mínimo — `cargarModulosPortal()` + `seccionPortalActiva()` — y filtra su nav y su `goPage()`. Si `portal` está apagado, no deja entrar.
+- **Derivados del nivel** (`intensif`, `informes`): **no** se fuerzan desde Apps. Su visibilidad la sigue resolviendo `renderNav()` según los niveles de la institución; en Apps se muestran sólo como informativos. Se hizo así a propósito para no cambiar el comportamiento actual.
+- **Puntos que no pasan por `puedeVer()`** y se cablearon a mano: `renderBottomNav()` (main.js), los paneles del dashboard (el guard está **dentro** de `renderProximasActividades`, `renderObjetivosDirectivo` y `_renderTareasDash`, así cubre los 5 dashboards), y el filtro de notificaciones (`NOTIF_TABLA_A_MODULO` en ui.js). Si agregás un panel de dashboard nuevo que dependa de un módulo, guardalo ahí adentro.
+- Apagar un módulo **no borra nada**: los permisos guardados se conservan y vuelven al reactivarlo. Al apagar `eoe` se avisa cuántos usuarios tienen ese rol (no se los toca) y el rol deja de ofrecerse en el alta de usuarios.
+
+### Capacidades sensibles (`roles_capacidades`, migración v39)
+
+Permisos finos que la matriz ver/editar/eliminar no puede expresar — el caso que lo motivó es distinguir "ver el legajo" de "ver las observaciones privadas del EOE" (salud y psicología de menores), que separa a la secretaria del directivo de nivel.
+
+- Catálogo `CAPACIDADES` en permisos.js (6 capacidades). **No agregar capacidades nuevas sin consultar**: el valor del set es que sea chico y entendible para quien configura.
+- Resolución con `tieneCapacidad(capacidad, rol)`, mismo patrón que los permisos: caché + fallback a `capacidadDefault()` (que replica los arrays hardcodeados originales) + `super_admin` siempre `true`.
+- UI: bloque debajo de la matriz en Configuración → Usuarios → Roles y Permisos.
+
+**Estado de cableado** (mantener actualizado al adoptar más):
+
+| Capacidad | ¿Cableada? | Dónde |
+|---|---|---|
+| `ver_obs_privadas_eoe` | **Sí** | `legPermisos().verObsPrivadas` en legajos.js |
+| `cargar_calificaciones` | No | calificaciones.js sigue con sus arrays de rol |
+| `cerrar_periodos` | No | configuracion.js / calificaciones.js |
+| `gestionar_alumnos` | No | CONFIG_GRUPOS → Alumnos |
+| `gestionar_usuarios` | No | `_puedeGestionarUsuarios()` |
+| `editar_roles_permisos` | No | `_puedeAdministrarInstitucion()` |
+
+Las no cableadas se guardan y se editan, pero todavía no gobiernan nada. Adoptarlas es incremental — igual criterio que `editar`/`eliminar` en `roles_permisos`.
+
 **RLS y `is_super_admin()`**: la v38 **no reescribe** las ~80 policies existentes. Como las policies permisivas se combinan con **OR**, agrega una policy `<tabla>_super_admin` por tabla que sólo habilita al super admin — así ninguna policy existente se toca y cubre también las creadas a mano en el dashboard. `is_super_admin()` es **`SECURITY DEFINER`** (obligatorio: consultar `usuarios` desde una policy sin eso provoca recursión infinita de RLS — ver v31). **El loop sólo agrega la policy en tablas que YA tienen RLS activo**: habilitar RLS en una tabla que hoy está abierta dejaría afuera a todos los usuarios normales.
 
 ### Roles y permisos
@@ -228,6 +268,8 @@ El ícono de sliders en la topbar (`.pref-btn`) abre `#pref-panel`, mismo patró
 | `tipos_justificacion` | Tipos de justificación de ausencia |
 | `tipos_instancia_evaluativa` | Tipos de instancia evaluativa configurables por institución (`nombre`, `activo`, `es_recuperatorio`, `orden`). Gestionados desde configuracion.js. **Nota**: `instancias_evaluativas.tipo_id` apunta a esta tabla (FK corregida en v20). La tabla legacy `tipos_evaluacion` queda en desuso. |
 | `instancias_evaluativas` | Instancias evaluativas de un curso × materia × período. FK `tipo_id` → `tipos_instancia_evaluativa`. Tiene columna denormalizada `es_recuperatorio`. |
+| `modulos_institucion` | Qué módulos usa cada institución (`migrations/migration_v39_apps_capacidades.sql`). `UNIQUE(institucion_id, modulo_id)`. **Sin fila = ACTIVO.** Incluye el maestro `portal` y las secciones `portal_*` de la app de familias. Gestionada en Configuración → Apps. Lectura también para familias |
+| `roles_capacidades` | Capacidades sensibles por rol (v39). `UNIQUE(institucion_id, rol, capacidad)`. Ver "Capacidades sensibles" para cuáles están cableadas |
 | `roles_permisos` | Plantillas de permisos por institución (`migrations/migration_v38_roles_permisos.sql`). `UNIQUE(institucion_id, rol, modulo_id)`, con `ver`/`editar`/`eliminar`. `modulo_id` = id del nav (`prob`, `asist`, `admin`, …). Sembrada por `seed_roles_permisos()` + trigger en `instituciones`. Ver "Roles, permisos y administrador de plataforma" |
 | `tareas_usuario` | Tareas personales por usuario. RLS: `usuario_id = auth.uid()`. Campos: `texto`, `fecha_vencimiento DATE`, `estado` ('pendiente'/'completada'), `observacion`, `contexto_tipo` ('alumno'/'problematica'/'general'), `contexto_id UUID`, `contexto_label`. SQL: `migrations/tareas_usuario.sql`. Gestionadas desde `js/tareas.js`. |
 | `mensajes_familia` | Canal directo bidireccional institución ↔ familia (uno por alumno, hilo cronológico). Reemplaza cuaderno de comunicaciones/WhatsApp. Campos: `enviado_por_id`/`enviado_por_tipo` ('institucion'/'familia'), `destinatario_id` (a quién va dirigido un mensaje de familia — ver routing abajo), `cuerpo`, `leido_familia`/`leido_institucion` (acuse de recibo explícito, no implícito al abrir), `requiere_respuesta`. SQL: `migrations/migration_v34_mensajes_familia.sql`. Lado institución: tab "Mensajes" en legajo de alumno (`js/legajos.js` → `_tabMensajes`). Lado familia: `familias/js/mensajes.js` (`rMensajes()`). |

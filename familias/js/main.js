@@ -44,6 +44,47 @@ const NAV_ITEMS = [
   },
 ];
 
+// ── Módulos activos de la institución (tabla modulos_institucion) ──
+// La app de familias no usa js/permisos.js (es otra app), así que replica acá
+// lo mínimo: qué secciones encendió la institución en Configuración → Apps.
+// Los ids van prefijados con `portal_` para no chocar con los módulos internos.
+// Fallback: sin fila o sin poder leer la tabla, la sección se considera ACTIVA
+// (nada desaparece por un registro faltante o una migración sin correr).
+const SECCION_A_MODULO = {
+  novedades:     'portal_novedades',
+  comunicados:   'portal_comunicados',
+  mensajes:      'portal_mensajes',
+  seguimiento:   'portal_seguimiento',
+  asistencia:    'portal_asistencia',
+  agenda:        'portal_agenda',
+  convocatorias: 'portal_convocatorias',
+};
+
+let MODULOS_PORTAL = null;   // modulo_id → bool
+
+async function cargarModulosPortal() {
+  MODULOS_PORTAL = null;
+  const instId = ALUMNO_ACTUAL?.institucion_id || USUARIO_ACTUAL?.institucion_id;
+  if (!instId) return;
+  try {
+    const { data, error } = await sb.from('modulos_institucion')
+      .select('modulo_id, activo').eq('institucion_id', instId);
+    if (error || !data) return;
+    const mapa = {};
+    data.forEach(r => { mapa[r.modulo_id] = r.activo !== false; });
+    MODULOS_PORTAL = mapa;
+  } catch (_) { /* todo activo */ }
+}
+
+function seccionPortalActiva(pageId) {
+  if (pageId === 'inicio') return true;              // núcleo del portal
+  if (!MODULOS_PORTAL) return true;                  // fallback
+  if (MODULOS_PORTAL.portal === false) return false; // maestro apagado
+  const mod = SECCION_A_MODULO[pageId];
+  if (!mod) return true;
+  return MODULOS_PORTAL[mod] === undefined ? true : MODULOS_PORTAL[mod];
+}
+
 // ── Mapa de renderers ─────────────────────────────────────────────
 const PAGE_RENDERERS = {
   inicio:       () => rInicio(),
@@ -59,6 +100,9 @@ const PAGE_RENDERERS = {
 
 // ── Navegación ────────────────────────────────────────────────────
 function goPage(id) {
+  // Sección apagada por la institución en Apps → vuelve al inicio.
+  if (id !== 'login' && !seccionPortalActiva(id)) id = 'inicio';
+
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const page = document.getElementById('page-' + id);
   if (page) page.classList.add('active');
@@ -146,7 +190,18 @@ function selectAlumnoSidebar(alumnoId) {
 function renderSidebarNav() {
   const nav = document.getElementById('sidebar-nav');
   if (!nav) return;
-  nav.innerHTML = NAV_ITEMS.map(item => {
+
+  // Ocultar las secciones que la institución apagó en Apps, y los encabezados
+  // que queden sin ítems debajo.
+  const visibles = NAV_ITEMS.filter(it => it.section || seccionPortalActiva(it.id));
+  const items = visibles.filter((it, i) => {
+    if (!it.section) return true;
+    const sig = visibles.slice(i + 1);
+    const hasta = sig.findIndex(x => x.section);
+    return (hasta === -1 ? sig : sig.slice(0, hasta)).length > 0;
+  });
+
+  nav.innerHTML = items.map(item => {
     if (item.section) {
       return `<div class="sidebar-nav-section">${item.section}</div>`;
     }
@@ -341,9 +396,22 @@ function startClock() {
 }
 
 // ── App init ──────────────────────────────────────────────────────
-function iniciarApp() {
+async function iniciarApp() {
   initDarkMode();
   applySidebarCollapsedState();
+
+  // Qué secciones habilitó la institución (Configuración → Apps). Se carga
+  // antes de pintar el nav para no mostrar y esconder.
+  await cargarModulosPortal();
+
+  // Portal Familiar apagado: las familias no acceden.
+  if (MODULOS_PORTAL && MODULOS_PORTAL.portal === false) {
+    document.getElementById('app')?.style.setProperty('display', 'none');
+    alert('El portal de familias no está disponible en este momento. Consultá con la institución.');
+    if (typeof cerrarSesion === 'function') cerrarSesion();
+    return;
+  }
+
   renderSidebar();
   startClock();
   fetchUnreadCount();

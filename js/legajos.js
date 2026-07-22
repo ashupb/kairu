@@ -41,7 +41,12 @@ function legPermisos() {
     verEOE:               ['eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
     agregarEOE:           r === 'eoe',
     agregarObservaciones: ['preceptor','docente','eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
-    verObsPrivadas:       ['eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
+    // Capacidad sensible (datos de salud y psicología de menores): sale de
+    // roles_capacidades, editable por institución en Roles y Permisos. El
+    // default replica el array que estaba acá hardcodeado.
+    verObsPrivadas:       typeof tieneCapacidad === 'function'
+                            ? tieneCapacidad('ver_obs_privadas_eoe')
+                            : ['eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
     marcarPrivada:        ['eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
     subirDocs:            ['director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
     enviarMensajeFamilia: ['preceptor','docente','eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
