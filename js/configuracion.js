@@ -4110,6 +4110,8 @@ async function _guardarFamilia(userId) {
         email,
         password:    pass,
         alumno_ids:  _famAlumnosSelIds,
+        // El super_admin no tiene institución propia: manda la activa.
+        institucion_id: USUARIO_ACTUAL.institucion_id,
       });
     } else {
       await _llamarAdminUsers('actualizar_usuario_familia', {

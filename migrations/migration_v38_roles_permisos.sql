@@ -21,22 +21,21 @@
 -- Este usuario pasa a ser super_admin: deja de pertenecer a una institución
 -- (institucion_id = NULL) y accede a todas mediante el selector de la topbar.
 --
---     EMAIL:  aperezbenary+admin@gmail.com
+--     EMAIL:  aperezbenary@gmail.com
 --
--- ⚠ IMPORTANTE — debe ser un email DISTINTO al de tu cuenta institucional.
--- Los emails de Supabase Auth son únicos: una misma dirección no puede ser
--- director_general y super_admin a la vez. El truco del "+" resuelve esto:
--- Gmail entrega aperezbenary+admin@gmail.com a la misma casilla, pero para
--- Supabase es otra cuenta. Así conservás tu director_general actual.
+-- Es una cuenta que YA EXISTE: no se crea nada ni se define contraseña alguna.
+-- Se entra con el mismo email y la misma contraseña de siempre; sólo cambia
+-- el rol. Ningún otro usuario se toca (no hay DELETE en esta migración).
 --
--- La cuenta debe existir en `usuarios` ANTES de correr esto. Creala desde la
--- app: Configuración → Usuarios → Nuevo usuario → modo "Contraseña temporal"
--- (elegís vos la contraseña; el rol que le pongas da igual, se pisa acá).
+-- Por qué esta cuenta: la institución demo tiene además
+-- directorgeneral@demo.kairu como director_general, así que al promover ésta
+-- la institución NO se queda sin administrador (sigue en el listado de
+-- Usuarios y sigue recibiendo las notificaciones dirigidas a director_general).
+-- Para probar la experiencia de directora, entrar con directorgeneral@demo.kairu.
 --
--- Si el email no existe todavía, la migración NO falla: avisa por NOTICE y no
--- promueve a nadie. Podés correr después migrations/promover_super_admin.sql.
---
--- Para usar otro email, editá v_email en el bloque DO del punto 2.
+-- Si el email no existe, la migración NO falla: avisa por NOTICE y no promueve
+-- a nadie. Para designar otra cuenta después, usar
+-- migrations/promover_super_admin.sql.
 
 
 -- ═══════════════════════════════════════════════════════════════
@@ -71,11 +70,10 @@ ALTER TABLE public.usuarios ALTER COLUMN institucion_id DROP NOT NULL;
 -- El rol 'admin' era huérfano (no asignable desde la UI). Se renombra.
 UPDATE public.usuarios SET rol = 'super_admin' WHERE rol = 'admin';
 
--- Promover la cuenta de la dueña de la plataforma.
--- Debe ser un email DISTINTO al de la cuenta institucional (ver cabecera).
+-- Promover la cuenta de la dueña de la plataforma (ver cabecera).
 DO $$
 DECLARE
-  v_email text := 'aperezbenary+admin@gmail.com';   -- ← ÚNICO INPUT HUMANO
+  v_email text := 'aperezbenary@gmail.com';   -- ← ÚNICO INPUT HUMANO
   v_id    uuid;
 BEGIN
   SELECT id INTO v_id FROM public.usuarios WHERE lower(email) = lower(v_email) LIMIT 1;

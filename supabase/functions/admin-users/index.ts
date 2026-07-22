@@ -51,7 +51,7 @@ serve(async (req) => {
     const perfilArr = await perfilRes.json();
     const perfil = Array.isArray(perfilArr) ? perfilArr[0] : null;
 
-    const ADMIN_ROLES   = ["director_general", "directivo_nivel", "secretario", "vicedirector"];
+    const ADMIN_ROLES   = ["super_admin", "director_general", "directivo_nivel", "secretario", "vicedirector"];
     const FAMILIA_ROLES = [...ADMIN_ROLES, "preceptor"];
     const FAMILIA_ACTIONS = ["crear_usuario_familia", "actualizar_usuario_familia"];
 
@@ -63,9 +63,17 @@ serve(async (req) => {
       });
     }
 
+    // El administrador de plataforma no pertenece a ninguna institución
+    // (institucion_id NULL): queda exento de los chequeos de "misma
+    // institución", que si no fallarían siempre para él.
+    const esSuper = perfil.rol === "super_admin";
+    // Institución sobre la que opera: la propia, o la que manda el super_admin
+    // (la activa que eligió en el selector de la topbar).
+    const instOperativa = esSuper ? (payload.institucion_id ?? null) : perfil.institucion_id;
+
     // ── Acción: crear usuario ──────────────────────────
     if (action === "crear_usuario") {
-      if (payload.institucion_id !== perfil.institucion_id) {
+      if (!esSuper && payload.institucion_id !== perfil.institucion_id) {
         return new Response(JSON.stringify({ error: "Institución inválida" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -136,7 +144,7 @@ serve(async (req) => {
     // link → pantalla set-password. Requiere SMTP configurado en Supabase; si
     // no lo está, el alta debe usar la acción crear_usuario (contraseña temporal).
     if (action === "invitar_usuario") {
-      if (payload.institucion_id !== perfil.institucion_id) {
+      if (!esSuper && payload.institucion_id !== perfil.institucion_id) {
         return new Response(JSON.stringify({ error: "Institución inválida" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -210,7 +218,7 @@ serve(async (req) => {
       const targetArr = await targetRes.json();
       const target = Array.isArray(targetArr) ? targetArr[0] : null;
 
-      if (!target || target.institucion_id !== perfil.institucion_id) {
+      if (!target || (!esSuper && target.institucion_id !== perfil.institucion_id)) {
         return new Response(JSON.stringify({ error: "Usuario no encontrado o de otra institución" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -250,7 +258,7 @@ serve(async (req) => {
       const targetArr = await targetRes.json();
       const target = Array.isArray(targetArr) ? targetArr[0] : null;
 
-      if (!target || target.institucion_id !== perfil.institucion_id) {
+      if (!target || (!esSuper && target.institucion_id !== perfil.institucion_id)) {
         return new Response(JSON.stringify({ error: "Usuario no encontrado o de otra institución" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -311,7 +319,7 @@ serve(async (req) => {
           nombre_completo: payload.nombre_completo,
           rol:             "familia",
           activo:          true,
-          institucion_id:  perfil.institucion_id,
+          institucion_id:  instOperativa,
         }),
       });
       if (!upsertRes.ok) {
@@ -354,7 +362,7 @@ serve(async (req) => {
       );
       const targetArr = await targetRes.json();
       const target = Array.isArray(targetArr) ? targetArr[0] : null;
-      if (!target || target.institucion_id !== perfil.institucion_id || target.rol !== "familia") {
+      if (!target || (!esSuper && target.institucion_id !== perfil.institucion_id) || target.rol !== "familia") {
         return new Response(JSON.stringify({ error: "Usuario no encontrado o no válido" }), {
           status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
