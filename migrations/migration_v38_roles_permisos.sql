@@ -67,6 +67,39 @@ GRANT EXECUTE ON FUNCTION public.is_super_admin() TO authenticated;
 -- El super_admin no pertenece a ninguna institución (§5.1).
 ALTER TABLE public.usuarios ALTER COLUMN institucion_id DROP NOT NULL;
 
+-- ── CHECK constraint de `rol` ─────────────────────────────────
+-- `usuarios` tiene un CHECK que limita los valores de `rol` (viene del esquema
+-- original, no está versionado en migrations/). No incluye 'super_admin', así
+-- que sin esto la promoción falla con:
+--   ERROR 23514: new row for relation "usuarios" violates check
+--   constraint "usuarios_rol_check"
+--
+-- Se reconstruye incluyendo los roles del modelo nuevo MÁS todos los valores
+-- que ya existan en la tabla, para no invalidar ninguna fila actual.
+DO $$
+DECLARE
+  v_lista text;
+BEGIN
+  ALTER TABLE public.usuarios DROP CONSTRAINT IF EXISTS usuarios_rol_check;
+
+  SELECT string_agg(DISTINCT quote_literal(r), ', ')
+    INTO v_lista
+  FROM (
+    SELECT unnest(ARRAY[
+      'super_admin','director_general','directivo_nivel','vicedirector',
+      'secretario','eoe','docente','preceptor','familia'
+    ]) AS r
+    UNION
+    SELECT rol FROM public.usuarios WHERE rol IS NOT NULL
+  ) x;
+
+  EXECUTE format(
+    'ALTER TABLE public.usuarios ADD CONSTRAINT usuarios_rol_check CHECK (rol IN (%s))',
+    v_lista
+  );
+  RAISE NOTICE 'v38: usuarios_rol_check reconstruido con: %', v_lista;
+END $$;
+
 -- El rol 'admin' era huérfano (no asignable desde la UI). Se renombra.
 UPDATE public.usuarios SET rol = 'super_admin' WHERE rol = 'admin';
 
