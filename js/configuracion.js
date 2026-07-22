@@ -1081,19 +1081,27 @@ function _appsOn(id) {
   return _appsEstado[id] === undefined ? true : _appsEstado[id];
 }
 
+// La fila usa el padding propio de .toggle-row-ui (11px 13px): no pisarlo con
+// estilos inline, o el texto queda pegado al borde del recuadro.
 function _appsFila(id, label, desc, opts) {
   opts = opts || {};
   const on = _appsOn(id);
   return `
-    <div class="toggle-row-ui" style="padding:11px 0;border-bottom:1px solid var(--brd);${opts.indent ? 'padding-left:14px' : ''}">
-      <div style="flex:1;min-width:0;padding-right:12px">
+    <div class="toggle-row-ui"${opts.indent ? ' style="margin-left:16px"' : ''}>
+      <div style="flex:1;min-width:0;padding-right:14px">
         <div style="font-size:12px;font-weight:600">${label}</div>
-        ${desc ? `<div style="font-size:10px;color:var(--txt2);margin-top:2px;line-height:1.45">${desc}</div>` : ''}
+        ${desc ? `<div style="font-size:10px;color:var(--txt2);margin-top:3px;line-height:1.5">${desc}</div>` : ''}
       </div>
       <div class="tog${on ? ' on' : ''}" onclick="_appsToggle('${id}','${_esc(label)}')">
         <div class="tog-thumb"></div>
       </div>
     </div>`;
+}
+
+// Encabezado de grupo dentro de una card
+function _appsTitulo(txt) {
+  return `<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--txt2);margin-bottom:10px">${txt}</div>`;
 }
 
 function _appsPintar() {
@@ -1107,51 +1115,49 @@ function _appsPintar() {
       <strong>no borra información</strong>: se oculta y vuelve tal cual al reactivarlo.
     </div>
 
-    <div class="card" style="padding:0 14px;margin-bottom:14px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);padding:12px 0 2px">
-        Módulos
+    <div class="card">
+      ${_appsTitulo('Módulos')}
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${APPS_ACTIVABLES.map(id => {
+          const m = PERMISOS_MODULOS.find(x => x.id === id);
+          return m ? _appsFila(id, m.label, _APPS_DESC[id]) : '';
+        }).join('')}
       </div>
-      ${APPS_ACTIVABLES.map(id => {
-        const m = PERMISOS_MODULOS.find(x => x.id === id);
-        return m ? _appsFila(id, m.label, _APPS_DESC[id]) : '';
-      }).join('')}
     </div>
 
-    <div class="card" style="padding:0 14px;margin-bottom:14px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);padding:12px 0 2px">
-        Portal Familiar
-      </div>
-      ${_appsFila('portal', 'Portal Familiar', 'Acceso de las familias a la plataforma. Si lo apagás, no pueden ingresar.')}
-      ${portalOn ? `
-        <div style="padding:4px 0 0">
-          <div style="font-size:10px;color:var(--txt2);padding:8px 0 2px;padding-left:14px">Del lado de la institución</div>
+    <div class="card">
+      ${_appsTitulo('Portal Familiar')}
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${_appsFila('portal', 'Portal Familiar', 'Acceso de las familias a la plataforma. Si lo apagás, no pueden ingresar.')}
+        ${portalOn ? `
+          <div style="font-size:10px;color:var(--txt2);margin:6px 0 0 16px">Del lado de la institución</div>
           ${APPS_PORTAL_HIJOS.map(id => {
             const m = PERMISOS_MODULOS.find(x => x.id === id);
             return m ? _appsFila(id, m.label, _APPS_DESC[id], { indent: true }) : '';
           }).join('')}
-          <div style="font-size:10px;color:var(--txt2);padding:10px 0 2px;padding-left:14px">Secciones que ven las familias</div>
-          ${PORTAL_SECCIONES.map(s => _appsFila(s.id, s.label, '', { indent: true })).join('')}
-        </div>`
-      : `<div style="font-size:10px;color:var(--txt2);padding:10px 0 12px">
-           Con el Portal apagado, las familias no acceden y sus secciones quedan ocultas.
-         </div>`}
+          <div style="font-size:10px;color:var(--txt2);margin:6px 0 0 16px">Secciones que ven las familias</div>
+          ${PORTAL_SECCIONES.map(s => _appsFila(s.id, s.label, '', { indent: true })).join('')}`
+        : `<div style="font-size:10px;color:var(--txt2);line-height:1.5">
+             Con el Portal apagado, las familias no acceden y sus secciones quedan ocultas.
+           </div>`}
+      </div>
     </div>
 
-    <div class="card" style="padding:12px 14px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);margin-bottom:8px">
-        Según los niveles de la institución
-      </div>
-      <div style="font-size:10px;color:var(--txt2);line-height:1.5;margin-bottom:8px">
+    <div class="card">
+      ${_appsTitulo('Según los niveles de la institución')}
+      <div style="font-size:10px;color:var(--txt2);line-height:1.5;margin-bottom:10px">
         Estos no se encienden a mano: aparecen solos según los niveles que tenga la institución.
       </div>
-      ${Object.entries(APPS_DERIVADOS).map(([id, dep]) => {
-        const m = PERMISOS_MODULOS.find(x => x.id === id);
-        return m ? `
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 0">
-            <span class="tag tgr">${dep}</span>
-            <span style="font-size:12px">${m.label}</span>
-          </div>` : '';
-      }).join('')}
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${Object.entries(APPS_DERIVADOS).map(([id, dep]) => {
+          const m = PERMISOS_MODULOS.find(x => x.id === id);
+          return m ? `
+            <div class="toggle-row-ui">
+              <span style="font-size:12px">${m.label}</span>
+              <span class="tag tgr">${dep}</span>
+            </div>` : '';
+        }).join('')}
+      </div>
     </div>`;
 }
 
@@ -1313,28 +1319,28 @@ function _rpPintar() {
       </table>
     </div>
 
-    <div class="card" style="padding:12px 14px;margin-top:14px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--txt2);margin-bottom:4px">
-        Capacidades sensibles
-      </div>
-      <div style="font-size:10px;color:var(--txt2);margin-bottom:10px;line-height:1.5">
+    <div class="card" style="margin-top:14px">
+      ${_appsTitulo('Capacidades sensibles')}
+      <div style="font-size:10px;color:var(--txt2);margin:-4px 0 12px;line-height:1.5">
         Permisos finos que no dependen de un módulo entero. Sirven para distinguir
         roles que por lo demás ven lo mismo.
       </div>
-      ${CAPACIDADES.map(c => {
-        const on = _rpCaps[`${rol}|${c.id}`] === true;
-        return `
-          <div class="toggle-row-ui" style="padding:9px 0;border-top:1px solid var(--brd)">
-            <div style="flex:1;min-width:0;padding-right:12px">
-              <div style="font-size:12px;font-weight:500">${c.label}</div>
-              <div style="font-size:10px;color:var(--txt2);margin-top:2px;line-height:1.45">${c.desc}</div>
-            </div>
-            <div class="tog${on ? ' on' : ''}" ${bloqueado ? '' : `onclick="_rpToggleCap('${c.id}')"`}
-              ${bloqueado ? 'style="opacity:.5;cursor:not-allowed"' : ''}>
-              <div class="tog-thumb"></div>
-            </div>
-          </div>`;
-      }).join('')}
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${CAPACIDADES.map(c => {
+          const on = _rpCaps[`${rol}|${c.id}`] === true;
+          return `
+            <div class="toggle-row-ui">
+              <div style="flex:1;min-width:0;padding-right:14px">
+                <div style="font-size:12px;font-weight:500">${c.label}</div>
+                <div style="font-size:10px;color:var(--txt2);margin-top:3px;line-height:1.5">${c.desc}</div>
+              </div>
+              <div class="tog${on ? ' on' : ''}" ${bloqueado ? '' : `onclick="_rpToggleCap('${c.id}')"`}
+                ${bloqueado ? 'style="opacity:.5;cursor:not-allowed"' : ''}>
+                <div class="tog-thumb"></div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
     </div>
 
     <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
