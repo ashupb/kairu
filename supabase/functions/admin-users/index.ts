@@ -105,13 +105,18 @@ serve(async (req) => {
           id:              authData.id,
           email:           payload.email,
           nombre_completo: meta.nombre_completo,
-          username:        meta.username,
+          username:        meta.username || null,
           rol:             meta.rol,
           nivel:           meta.nivel || null,
           activo:          meta.activo,
           dni:             meta.dni || null,
           institucion_id:  meta.institucion_id,
           cursos_ids:      payload.cursos_ids?.length ? payload.cursos_ids : [],
+          avatar_url:       meta.avatar_url || null,
+          fecha_nacimiento: meta.fecha_nacimiento || null,
+          fecha_ingreso:    meta.fecha_ingreso || null,
+          // Creado con contraseña temporal → debe definir la suya al primer ingreso.
+          debe_cambiar_password: meta.debe_cambiar_password === true,
         }),
       });
       if (!upsertRes.ok) {
@@ -121,6 +126,77 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ id: authData.id }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ── Acción: invitar usuario por email ──────────────
+    // Crea el usuario en Auth SIN contraseña y dispara el email de invitación
+    // (GoTrue POST /auth/v1/invite). El usuario define su contraseña desde el
+    // link → pantalla set-password. Requiere SMTP configurado en Supabase; si
+    // no lo está, el alta debe usar la acción crear_usuario (contraseña temporal).
+    if (action === "invitar_usuario") {
+      if (payload.institucion_id !== perfil.institucion_id) {
+        return new Response(JSON.stringify({ error: "Institución inválida" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const redirect = payload.redirect_to ? `?redirect_to=${encodeURIComponent(payload.redirect_to)}` : "";
+      const inviteRes = await fetch(`${SUPABASE_URL}/auth/v1/invite${redirect}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "apikey": SERVICE_KEY,
+        },
+        body: JSON.stringify({
+          email: payload.email,
+          data:  payload.user_metadata,
+        }),
+      });
+      const inviteData = await inviteRes.json();
+      if (!inviteRes.ok || inviteData.error || !inviteData.id) {
+        throw new Error(inviteData.error?.message || inviteData.msg || inviteData.error_description || "Error al enviar la invitación");
+      }
+
+      // Upsert explícito en usuarios (mismo criterio que crear_usuario). El
+      // usuario invitado NO lleva debe_cambiar_password: define su contraseña
+      // desde el link de invitación.
+      const meta = payload.user_metadata;
+      const upsertRes = await fetch(`${SUPABASE_URL}/rest/v1/usuarios`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SERVICE_KEY}`,
+          "apikey": SERVICE_KEY,
+          "Prefer": "resolution=merge-duplicates",
+        },
+        body: JSON.stringify({
+          id:               inviteData.id,
+          email:            payload.email,
+          nombre_completo:  meta.nombre_completo,
+          username:         meta.username || null,
+          rol:              meta.rol,
+          nivel:            meta.nivel || null,
+          activo:           meta.activo,
+          dni:              meta.dni || null,
+          institucion_id:   meta.institucion_id,
+          cursos_ids:       payload.cursos_ids?.length ? payload.cursos_ids : [],
+          avatar_url:       meta.avatar_url || null,
+          fecha_nacimiento: meta.fecha_nacimiento || null,
+          fecha_ingreso:    meta.fecha_ingreso || null,
+          debe_cambiar_password: false,
+        }),
+      });
+      if (!upsertRes.ok) {
+        const upsertErr = await upsertRes.json().catch(() => ({}));
+        throw new Error("Error al crear perfil de usuario: " + (upsertErr.message || upsertErr.details || upsertErr.hint || upsertRes.status));
+      }
+
+      return new Response(
+        JSON.stringify({ id: inviteData.id }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

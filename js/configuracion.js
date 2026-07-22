@@ -511,6 +511,8 @@ async function _quitarLogoInstitucion() {
 // ══════════════════════════════════════════════════════
 let _usrFiltroRol   = 'todos';
 let _usrFiltroNivel = 'todos';
+let _muAvatarUrl    = null;          // foto elegida en el modal (subida al storage, aún no ligada al usuario hasta guardar)
+let _muModo         = 'invitacion';  // alta nueva: 'invitacion' (email) | 'temporal' (contraseña temporal)
 
 async function _renderUsuarios() {
   const sec = document.getElementById('adm-section-content');
@@ -563,8 +565,11 @@ function _renderUsuariosList() {
         const nivelColor = u.nivel ? NIVEL_COLORS_ADM[u.nivel] : 'var(--gris)';
         const inactivo   = u.activo === false;
         const enLicencia = u.en_licencia === true;
+        const avInner = u.avatar_url
+          ? `<img src="${u.avatar_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`
+          : iniciales;
         return `<div class="adm-user-row" onclick="_abrirModalUsuario('${u.id}')">
-            <div class="av av32" style="background:${nivelColor};color:#fff;flex-shrink:0">${iniciales}</div>
+            <div class="av av32" style="background:${nivelColor};color:#fff;flex-shrink:0;overflow:hidden">${avInner}</div>
             <div style="flex:1;min-width:0">
               <div style="font-size:12px;font-weight:600;${inactivo ? 'color:var(--txt3);text-decoration:line-through' : ''}">${_esc(u.nombre_completo) || '—'}</div>
               <div style="font-size:10px;color:var(--txt2)">${u.username ? '@' + u.username : (u.email || '')}</div>
@@ -628,40 +633,74 @@ async function _abrirModalUsuario(userId) {
   const cursosTodosJSON = JSON.stringify(cursosTodos).replace(/"/g, '&quot;');
   const nivelesJSON     = JSON.stringify(nivelesDisp).replace(/"/g, '&quot;');
 
+  _muAvatarUrl = user?.avatar_url || null;
+  _muModo      = 'invitacion';
+  const iniAv   = generarIniciales(user?.nombre_completo || '').toUpperCase();
+  const avInner = _muAvatarUrl
+    ? `<img src="${_muAvatarUrl}" alt="" style="width:100%;height:100%;object-fit:cover">`
+    : iniAv;
+
   const modal = _crearModal(
     esNuevo ? 'Nuevo usuario' : 'Editar usuario',
     `
+    ${esNuevo ? `
+    <div class="adm-tabs-bar" style="margin-bottom:14px">
+      <button type="button" class="adm-tab on" id="mu-modo-inv" onclick="_muOnModoChange('invitacion')">✉️ Invitar por email</button>
+      <button type="button" class="adm-tab" id="mu-modo-tmp" onclick="_muOnModoChange('temporal')">🔑 Contraseña temporal</button>
+    </div>
+    <div id="mu-modo-hint" style="font-size:10px;color:var(--txt2);margin:-6px 0 14px">Se enviará un email de invitación para que defina su contraseña. (Requiere SMTP configurado en Supabase.)</div>` : ''}
     <div class="adm-form-row">
       <label class="adm-label">Nombre completo</label>
       <input type="text" id="mu-nombre" value="${_esc(user?.nombre_completo)}" placeholder="Nombre y apellido"
-        ${esNuevo ? 'onblur="_muSugerirUsername()"' : ''}>
+        oninput="_muPintarAvatar()">
     </div>
     <div class="adm-form-row">
+      <label class="adm-label">Foto de perfil</label>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div id="mu-avatar-preview" style="width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;color:#fff;background:var(--acento);overflow:hidden;flex-shrink:0">${avInner}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <input type="file" id="mu-avatar-file" accept="image/*" style="display:none" onchange="_muSubirAvatar(this)">
+          <button type="button" class="btn-s" onclick="document.getElementById('mu-avatar-file').click()">Subir foto</button>
+          <button type="button" class="btn-s" id="mu-avatar-quitar" onclick="_muQuitarAvatar()" ${_muAvatarUrl ? '' : 'style="display:none"'}>Quitar</button>
+        </div>
+      </div>
+    </div>
+    ${(!esNuevo && user?.username) ? `
+    <div class="adm-form-row">
       <label class="adm-label">Nombre de usuario</label>
-      <input type="text" id="mu-username" value="${_esc(user?.username)}" placeholder="Ej: jgarcia"
+      <input type="text" id="mu-username" value="${_esc(user.username)}" readonly style="opacity:.6;cursor:default">
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Usuario heredado — puede ingresar con este nombre o con el email.</div>
+    </div>` : ''}
+    <div class="adm-form-row">
+      <label class="adm-label">Email</label>
+      <input type="email" id="mu-email" value="${_esc(user?.email)}" placeholder="email@ejemplo.com"
         ${!esNuevo ? 'readonly style="opacity:.6;cursor:default"' : ''}>
-      ${esNuevo ? `<div style="font-size:10px;color:var(--txt2);margin-top:3px">Inicial del nombre + apellido. Se completa automático al salir del campo nombre.</div>` : ''}
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">${esNuevo ? 'Identidad para ingresar. Obligatorio.' : 'El email de ingreso no se edita desde acá.'}</div>
     </div>
     <div class="adm-form-row">
       <label class="adm-label">DNI</label>
       <input type="text" id="mu-dni" value="${_esc(user?.dni)}" placeholder="Ej: 12345678">
     </div>
     ${esNuevo ? `
-    <div class="adm-form-row">
-      <label class="adm-label">Contraseña inicial</label>
-      <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para usar el DNI como contraseña">
-      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si no se completa, el DNI se usa como contraseña de ingreso.</div>
+    <div class="adm-form-row" id="mu-pass-row" style="display:none">
+      <label class="adm-label">Contraseña temporal</label>
+      <input type="text" id="mu-pass" value="" placeholder="Dejar vacío para usar el DNI">
+      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si no se completa, se usa el DNI como contraseña temporal. Se le pedirá cambiarla al primer ingreso.</div>
     </div>` : `
     <div class="adm-form-row">
       <label class="adm-label">Nueva contraseña</label>
       <input type="text" id="mu-pass" value="" placeholder="${user?.dni ? 'Actual: ' + _esc(user.dni) + ' — Dejar vacío para no modificar' : 'Dejar vacío para no modificar'}">
       <div style="font-size:10px;color:var(--txt2);margin-top:3px">Si completás este campo se actualizará la contraseña y el DNI registrado.</div>
     </div>`}
-    <div class="adm-form-row">
-      <label class="adm-label">Email</label>
-      <input type="email" id="mu-email" value="${_esc(user?.email)}" placeholder="email@ejemplo.com"
-        ${!esNuevo ? 'readonly style="opacity:.6;cursor:default"' : ''}>
-      <div style="font-size:10px;color:var(--txt2);margin-top:3px">Solo informativo.</div>
+    <div class="adm-form-row" style="display:flex;gap:10px">
+      <div style="flex:1">
+        <label class="adm-label">Fecha de nacimiento</label>
+        <input type="date" id="mu-fnac" value="${user?.fecha_nacimiento || ''}">
+      </div>
+      <div style="flex:1">
+        <label class="adm-label">Fecha de ingreso</label>
+        <input type="date" id="mu-fingreso" value="${user?.fecha_ingreso || ''}">
+      </div>
     </div>
     <div class="adm-form-row">
       <label class="adm-label">Rol</label>
@@ -753,23 +792,62 @@ function _togPassVis(inputId) {
   if (inp) inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
-function _muSugerirUsername() {
-  const nombre = document.getElementById('mu-nombre')?.value?.trim();
-  const usrInp = document.getElementById('mu-username');
-  if (!nombre || !usrInp || usrInp.value) return;
-  const rmDia = s => [...s.normalize('NFD')].filter(c => c.charCodeAt(0) < 768 || c.charCodeAt(0) > 879).join('');
-  const clean = s => rmDia(s).toLowerCase().replace(/[^a-z]/g, '');
-  let inicial = '', apellido = '';
-  if (nombre.includes(',')) {
-    const [ap, nm] = nombre.split(',');
-    apellido = clean(ap.trim().split(/\s+/)[0]);
-    inicial  = clean(nm.trim().split(/\s+/)[0])[0] || '';
+// ── Modal de usuario: modo de alta (invitación vs contraseña temporal) ──
+function _muOnModoChange(modo) {
+  _muModo = modo;
+  document.getElementById('mu-modo-inv')?.classList.toggle('on', modo === 'invitacion');
+  document.getElementById('mu-modo-tmp')?.classList.toggle('on', modo === 'temporal');
+  const passRow = document.getElementById('mu-pass-row');
+  if (passRow) passRow.style.display = modo === 'temporal' ? '' : 'none';
+  const hint = document.getElementById('mu-modo-hint');
+  if (hint) hint.textContent = modo === 'invitacion'
+    ? 'Se enviará un email de invitación para que defina su contraseña. (Requiere SMTP configurado en Supabase.)'
+    : 'Se crea con una contraseña temporal, sin enviar email. Se le pedirá cambiarla al primer ingreso.';
+}
+
+// ── Modal de usuario: foto de perfil ──
+function _muPintarAvatar() {
+  const el = document.getElementById('mu-avatar-preview');
+  if (!el) return;
+  if (_muAvatarUrl) {
+    el.innerHTML = `<img src="${_muAvatarUrl}" alt="" style="width:100%;height:100%;object-fit:cover">`;
   } else {
-    const partes = nombre.trim().split(/\s+/);
-    inicial  = clean(partes[0])[0] || '';
-    apellido = clean(partes[partes.length - 1]);
+    const nombre = document.getElementById('mu-nombre')?.value?.trim();
+    el.textContent = generarIniciales(nombre || '').toUpperCase();
   }
-  usrInp.value = (inicial + apellido).slice(0, 20);
+  const btnQuitar = document.getElementById('mu-avatar-quitar');
+  if (btnQuitar) btnQuitar.style.display = _muAvatarUrl ? '' : 'none';
+}
+
+async function _muSubirAvatar(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { alert('Elegí un archivo de imagen.'); input.value = ''; return; }
+
+  const el   = document.getElementById('mu-avatar-preview');
+  const prev = el?.innerHTML;
+  if (el) el.innerHTML = '<div class="spinner" style="width:18px;height:18px"></div>';
+
+  try {
+    // Reutiliza el compresor del logo (PNG, máx 300px) y el bucket institucion-assets,
+    // subcarpeta avatars/ — sus políticas RLS ya cubren la subida (ver migración).
+    const blob = await _comprimirLogo(file, 300);
+    const path = `avatars/${USUARIO_ACTUAL.institucion_id}/${Date.now()}.png`;
+    const { error: upErr } = await sb.storage.from('institucion-assets').upload(path, blob, { contentType: 'image/png' });
+    if (upErr) throw upErr;
+    const { data: urlData } = sb.storage.from('institucion-assets').getPublicUrl(path);
+    _muAvatarUrl = urlData.publicUrl;
+    _muPintarAvatar();
+  } catch (e) {
+    if (el) el.innerHTML = prev;
+    alert('No se pudo subir la foto: ' + (e?.message || 'error desconocido'));
+  }
+  input.value = '';
+}
+
+function _muQuitarAvatar() {
+  _muAvatarUrl = null;
+  _muPintarAvatar();
 }
 
 function _muOnRolChange(nivelesJSON, cursosTodosJSON) {
@@ -812,7 +890,6 @@ function _muOnNivelChange(cursosTodosJSON) {
 
 async function _guardarUsuario(userId, esNuevo) {
   const nombre_completo = document.getElementById('mu-nombre')?.value?.trim();
-  const username        = document.getElementById('mu-username')?.value?.trim().toLowerCase();
   const email           = document.getElementById('mu-email')?.value?.trim();
   const dni             = document.getElementById('mu-dni')?.value?.trim() || null;
   const passField       = document.getElementById('mu-pass')?.value?.trim();
@@ -820,64 +897,96 @@ async function _guardarUsuario(userId, esNuevo) {
   const nivel           = document.getElementById('mu-nivel')?.value || null;
   const activo          = document.getElementById('mu-activo')?.classList.contains('on');
   const en_licencia     = document.getElementById('mu-licencia')?.classList.contains('on') ?? false;
+  const fecha_nacimiento = document.getElementById('mu-fnac')?.value || null;
+  const fecha_ingreso    = document.getElementById('mu-fingreso')?.value || null;
 
   const cursosChecks = document.querySelectorAll('#mu-cursos-list input[type=checkbox]:checked');
   const cursos_ids   = Array.from(cursosChecks).map(c => c.value);
 
-  if (!nombre_completo)     { alert('El nombre es requerido.'); return; }
-  if (esNuevo && !username) { alert('El nombre de usuario es requerido.'); return; }
-  if (esNuevo && !email)    { alert('El email es requerido.'); return; }
-  if (esNuevo && !dni)      { alert('El DNI es requerido.'); return; }
-  if (esNuevo && !/^[a-z0-9._-]+$/.test(username)) {
-    alert('El nombre de usuario solo puede contener letras minúsculas, números, puntos y guiones.');
+  if (!nombre_completo)  { alert('El nombre es requerido.'); return; }
+  if (esNuevo && !email) { alert('El email es requerido — es la identidad con la que ingresa.'); return; }
+  // La contraseña temporal usa el DNI por defecto, así que en ese modo el DNI es necesario.
+  if (esNuevo && _muModo === 'temporal' && !dni && !passField) {
+    alert('Ingresá una contraseña temporal o un DNI (se usa como contraseña por defecto).');
     return;
   }
 
   try {
     if (esNuevo) {
-      const authData = await _llamarAdminUsers('crear_usuario', {
-        email,
-        password:      passField || dni,
-        user_metadata: {
-          nombre_completo,
-          username,
-          rol,
-          nivel:          nivel || '',
-          activo,
-          dni:            dni || '',
-          institucion_id: USUARIO_ACTUAL.institucion_id,
+      const metaComun = {
+        nombre_completo,
+        rol,
+        nivel:            nivel || '',
+        activo,
+        dni:              dni || '',
+        institucion_id:   USUARIO_ACTUAL.institucion_id,
+        cursos_ids:       cursos_ids.length ? cursos_ids : [],
+        avatar_url:       _muAvatarUrl || '',
+        fecha_nacimiento: fecha_nacimiento || '',
+        fecha_ingreso:    fecha_ingreso || '',
+      };
+
+      let authData;
+      if (_muModo === 'invitacion') {
+        // Alta por invitación: Supabase envía el email; el usuario define su
+        // contraseña desde el link → pantalla set-password (redirect_to = esta app).
+        authData = await _llamarAdminUsers('invitar_usuario', {
+          email,
+          redirect_to:    window.location.origin + window.location.pathname,
+          user_metadata:  metaComun,
           cursos_ids:     cursos_ids.length ? cursos_ids : [],
-        },
-        cursos_ids:     cursos_ids.length ? cursos_ids : [],
-        institucion_id: USUARIO_ACTUAL.institucion_id,
-      });
+          institucion_id: USUARIO_ACTUAL.institucion_id,
+        });
+      } else {
+        // Alta con contraseña temporal (sin email): marca debe_cambiar_password.
+        authData = await _llamarAdminUsers('crear_usuario', {
+          email,
+          password:       passField || dni,
+          user_metadata:  { ...metaComun, debe_cambiar_password: true },
+          cursos_ids:     cursos_ids.length ? cursos_ids : [],
+          institucion_id: USUARIO_ACTUAL.institucion_id,
+        });
+      }
+
       if (rol === 'preceptor' && cursos_ids.length) {
         await sb.from('cursos').update({ preceptor_id: authData.id }).in('id', cursos_ids);
       }
-    } else {
-      const campos = {
-        nombre_completo, rol, nivel, activo, en_licencia,
-        dni: dni || null,
-        cursos_ids: cursos_ids.length ? cursos_ids : null,
-      };
-      if (_configExtraOk && USUARIO_ACTUAL.rol === 'director_general') {
-        const tabChecks = document.querySelectorAll('input[name="mu-cfg-tab"]:not(:disabled):checked');
-        const tabsExtra = Array.from(tabChecks).map(c => c.value);
-        campos.config_extra = tabsExtra.length ? { tabs: tabsExtra } : {};
+
+      _cerrarModal();
+      await _renderUsuarios();
+      if (_muModo === 'invitacion') {
+        _toastOk('Invitación enviada a ' + email);
+      } else {
+        alert('Usuario creado.\n\nContraseña temporal: ' + (passField || dni) + '\n\nComunicásela al usuario; deberá cambiarla en su primer ingreso.');
       }
-      await _llamarAdminUsers('actualizar_usuario', { usuario_id: userId, campos });
-      if (rol === 'preceptor') {
-        await sb.from('cursos')
-          .update({ preceptor_id: null })
-          .eq('preceptor_id', userId)
-          .eq('institucion_id', USUARIO_ACTUAL.institucion_id);
-        if (cursos_ids.length) {
-          await sb.from('cursos').update({ preceptor_id: userId }).in('id', cursos_ids);
-        }
+      return;
+    }
+
+    const campos = {
+      nombre_completo, rol, nivel, activo, en_licencia,
+      dni: dni || null,
+      cursos_ids: cursos_ids.length ? cursos_ids : null,
+      avatar_url: _muAvatarUrl,
+      fecha_nacimiento,
+      fecha_ingreso,
+    };
+    if (_configExtraOk && USUARIO_ACTUAL.rol === 'director_general') {
+      const tabChecks = document.querySelectorAll('input[name="mu-cfg-tab"]:not(:disabled):checked');
+      const tabsExtra = Array.from(tabChecks).map(c => c.value);
+      campos.config_extra = tabsExtra.length ? { tabs: tabsExtra } : {};
+    }
+    await _llamarAdminUsers('actualizar_usuario', { usuario_id: userId, campos });
+    if (rol === 'preceptor') {
+      await sb.from('cursos')
+        .update({ preceptor_id: null })
+        .eq('preceptor_id', userId)
+        .eq('institucion_id', USUARIO_ACTUAL.institucion_id);
+      if (cursos_ids.length) {
+        await sb.from('cursos').update({ preceptor_id: userId }).in('id', cursos_ids);
       }
-      if (passField) {
-        await _llamarAdminUsers('actualizar_contrasena', { usuario_id: userId, password: passField });
-      }
+    }
+    if (passField) {
+      await _llamarAdminUsers('actualizar_contrasena', { usuario_id: userId, password: passField });
     }
 
     _cerrarModal();

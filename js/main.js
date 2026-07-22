@@ -66,8 +66,15 @@ async function iniciarApp() {
   const u       = USUARIO_ACTUAL;
   const iniciales = (u.avatar_iniciales || generarIniciales(u.nombre_completo)).toUpperCase();
   const rolLabel   = labelRol(u.rol_display || u.rol);
-  document.getElementById('tb-av').textContent       = iniciales;
-  document.getElementById('perfil-av').textContent    = iniciales;
+  const tbAv = document.getElementById('tb-av');
+  const pfAv = document.getElementById('perfil-av');
+  if (u.avatar_url) {
+    const imgHtml = `<img src="${u.avatar_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">`;
+    [tbAv, pfAv].forEach(el => { if (el) { el.style.overflow = 'hidden'; el.innerHTML = imgHtml; } });
+  } else {
+    if (tbAv) tbAv.textContent = iniciales;
+    if (pfAv) pfAv.textContent = iniciales;
+  }
   document.getElementById('perfil-nombre').textContent = u.nombre_completo;
   document.getElementById('perfil-rol').textContent    = rolLabel;
 
@@ -437,16 +444,50 @@ function mostrarToast(msg, tipo) {
 // ── ARRANQUE AL CARGAR LA PÁGINA ─────────────────────
 window.addEventListener('load', () => {
   document.getElementById('login-screen').style.display = 'none';
+  // Si llegamos por un link de invitación / recuperación (hash capturado en
+  // index.html antes de que supabase-js lo consuma), mostrar set-password en
+  // vez de entrar directo. supabase-js ya habrá establecido la sesión temporal.
+  if (window.__authLinkType === 'invite' || window.__authLinkType === 'recovery') {
+    mostrarSetPassword(window.__authLinkType);
+    return;
+  }
   verificarSesion();
 });
 
-// Enter en el login
+// Enter en el login / set-password
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    const ls = document.getElementById('login-screen');
-    if (ls && ls.style.display !== 'none') login();
-  }
+  if (e.key !== 'Enter') return;
+  const sp = document.getElementById('setpass-screen');
+  if (sp && sp.style.display !== 'none') { guardarNuevaContrasena(); return; }
+  const ls = document.getElementById('login-screen');
+  if (ls && ls.style.display !== 'none') login();
 });
+
+// ── CAMBIAR MI CONTRASEÑA (usuario logueado, desde el panel de perfil) ──
+function cambiarMiContrasena() {
+  const panel = document.getElementById('perfil-panel');
+  if (panel) panel.style.display = 'none';
+  if (typeof inyectarEstilosAdmin === 'function') inyectarEstilosAdmin(); // estilos del modal
+  _crearModal('Cambiar contraseña', `
+    <div class="adm-form-row">
+      <label class="adm-label">Nueva contraseña</label>
+      <input type="password" id="cmc-1" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+    </div>
+    <div class="adm-form-row">
+      <label class="adm-label">Repetir contraseña</label>
+      <input type="password" id="cmc-2" placeholder="Repetí la contraseña" autocomplete="new-password">
+    </div>
+  `, async () => {
+    const p1 = document.getElementById('cmc-1')?.value || '';
+    const p2 = document.getElementById('cmc-2')?.value || '';
+    if (p1.length < 6) { alert('La contraseña debe tener al menos 6 caracteres.'); return; }
+    if (p1 !== p2)     { alert('Las contraseñas no coinciden.'); return; }
+    const { error } = await sb.auth.updateUser({ password: p1 });
+    if (error) { alert('No se pudo cambiar la contraseña: ' + error.message); return; }
+    _cerrarModal();
+    _toastOk('Contraseña actualizada');
+  });
+}
 
 // ── MOBILE SIDEBAR ────────────────────────────────────
 function toggleMobileSidebar() {

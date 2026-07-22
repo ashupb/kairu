@@ -116,7 +116,7 @@
 
       <div class="l-form">
 
-        <label class="l-label">USUARIO</label>
+        <label class="l-label">EMAIL</label>
         <div class="l-input-wrap">
           <span class="l-input-icon">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -124,7 +124,7 @@
               <circle cx="12" cy="7" r="4"/>
             </svg>
           </span>
-          <input type="text" id="inp-email" placeholder="tu.usuario" autocomplete="username">
+          <input type="text" id="inp-email" placeholder="tu@email.com" autocomplete="username">
         </div>
 
         <label class="l-label" style="margin-top:16px">CONTRASEÑA</label>
@@ -150,7 +150,7 @@
         </div>
 
         <div class="l-forgot">
-          <a href="#" onclick="return false">¿Olvidaste tu contraseña?</a>
+          <a href="#" onclick="olvideContrasena();return false">¿Olvidaste tu contraseña?</a>
         </div>
 
       </div>
@@ -218,6 +218,43 @@
     <div class="l-hint" style="margin-top:12px">
       ¿No sos el administrador? Pedile al director que complete este paso.
     </div>
+  </div>
+</div>
+
+<!-- SET-PASSWORD: definir contraseña vía invitación / recuperación / primer ingreso -->
+<div id="setpass-screen" style="display:none;min-height:100vh;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:var(--bg)">
+  <div class="l-logo">
+    <svg viewBox="0 0 48 48" width="52" height="52" fill="none">
+      <circle cx="24" cy="24" r="22" stroke="var(--verde)" stroke-width="2.5"/>
+      <rect x="13" y="13" width="6" height="22" fill="var(--txt)"/>
+      <polygon points="19,24 19,13 33,13 25.5,24" fill="var(--txt)"/>
+      <polygon points="19,24 19,35 33,35 25.5,24" fill="var(--txt)"/>
+      <rect x="33" y="32" width="4" height="4" fill="var(--verde)"/>
+    </svg>
+  </div>
+  <div class="l-nombre">KAIRU</div>
+  <div class="l-sub">Plataforma de gestión escolar</div>
+
+  <div class="l-card" style="max-width:390px">
+    <div class="l-card-t" id="setpass-title">Definí tu contraseña</div>
+    <div class="l-card-s" id="setpass-sub">Creá una contraseña para activar tu cuenta.</div>
+
+    <div id="setpass-error" class="login-error" style="display:none"></div>
+
+    <div class="l-form" style="display:grid;gap:12px;margin-top:6px">
+      <div>
+        <label class="l-label">NUEVA CONTRASEÑA</label>
+        <input type="password" id="setpass-1" placeholder="Mínimo 6 caracteres" autocomplete="new-password" style="width:100%;box-sizing:border-box">
+      </div>
+      <div>
+        <label class="l-label">REPETIR CONTRASEÑA</label>
+        <input type="password" id="setpass-2" placeholder="Repetí la contraseña" autocomplete="new-password" style="width:100%;box-sizing:border-box">
+      </div>
+    </div>
+
+    <button class="btn-ing" id="btn-setpass" onclick="guardarNuevaContrasena()" style="margin-top:18px">
+      <span id="btn-setpass-text">Guardar contraseña</span>
+    </button>
   </div>
 </div>
 
@@ -298,6 +335,9 @@
           <div class="perfil-rol" id="perfil-rol">—</div>
         </div>
       </div>
+      <button class="perfil-cerrar-btn" onclick="cambiarMiContrasena()" style="margin-bottom:8px">
+        <span>🔑</span> Cambiar contraseña
+      </button>
       <button class="perfil-cerrar-btn" onclick="cerrarSesion()">
         <span>⏻</span> Cerrar sesión
       </button>
@@ -323,6 +363,17 @@
     </div>
   </div>
 </div>
+
+<!-- Captura del tipo de link de auth (invite/recovery) ANTES de que supabase-js
+     consuma y limpie el hash. No borra el hash — supabase sigue estableciendo
+     la sesión desde el token. Ver window.load en main.js. -->
+<script>
+  window.__authLinkType = (function () {
+    var h = window.location.hash || '';
+    var m = h.match(/[#&]type=([a-z_]+)/i);
+    return m ? m[1].toLowerCase() : null;
+  })();
+</script>
 
 <!-- Supabase SDK -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
