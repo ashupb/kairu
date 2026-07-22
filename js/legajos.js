@@ -36,15 +36,15 @@ function _cursoAnio(cur) {
 function legPermisos() {
   const r = USUARIO_ACTUAL?.rol;
   return {
-    editarDatos:          ['director_general','directivo_nivel','admin','preceptor'].includes(r),
-    editarContactos:      ['director_general','directivo_nivel','eoe','admin','preceptor'].includes(r),
-    verEOE:               ['eoe','director_general','directivo_nivel','admin'].includes(r),
+    editarDatos:          ['director_general','directivo_nivel','secretario','vicedirector','super_admin','preceptor'].includes(r),
+    editarContactos:      ['director_general','directivo_nivel','secretario','vicedirector','eoe','super_admin','preceptor'].includes(r),
+    verEOE:               ['eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
     agregarEOE:           r === 'eoe',
-    agregarObservaciones: ['preceptor','docente','eoe','director_general','directivo_nivel','admin'].includes(r),
-    verObsPrivadas:       ['eoe','director_general','directivo_nivel','admin'].includes(r),
-    marcarPrivada:        ['eoe','director_general','directivo_nivel','admin'].includes(r),
-    subirDocs:            ['director_general','directivo_nivel','admin'].includes(r),
-    enviarMensajeFamilia: ['preceptor','docente','eoe','director_general','directivo_nivel','admin'].includes(r),
+    agregarObservaciones: ['preceptor','docente','eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
+    verObsPrivadas:       ['eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
+    marcarPrivada:        ['eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
+    subirDocs:            ['director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
+    enviarMensajeFamilia: ['preceptor','docente','eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(r),
   };
 }
 
@@ -66,7 +66,7 @@ async function rLeg() {
   const rol       = USUARIO_ACTUAL.rol;
   const instId    = USUARIO_ACTUAL.institucion_id;
   const anioLect  = INSTITUCION_ACTUAL?.anio_lectivo || new Date().getFullYear();
-  const soloNivel = rol === 'directivo_nivel' ? USUARIO_ACTUAL.nivel : null;
+  const soloNivel = esDirectivoNivel(rol) ? USUARIO_ACTUAL.nivel : null;
 
   try {
     // Obtener IDs de cursos permitidos para docente y preceptor
@@ -287,7 +287,7 @@ function _renderLegAlumnos() {
 }
 
 // ── VISTA 4: LEGAJO INDIVIDUAL (TABS) ─────────────────
-const _ROLES_VER_DERIVACIONES = ['eoe','director_general','directivo_nivel'];
+const _ROLES_VER_DERIVACIONES = ['eoe','director_general','directivo_nivel','secretario','vicedirector'];
 
 const LEG_TABS_BASE = [
   { id:'datos',         label:'Datos' },
@@ -348,7 +348,7 @@ async function abrirLegajoAlumno(alumnoId) {
       </div>
     </div>
 
-    ${['director_general','directivo_nivel'].includes(USUARIO_ACTUAL?.rol) ? `
+    ${['director_general','directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL?.rol) ? `
     <div style="margin-top:10px">
       <button id="leg-ia-btn" class="btn-ia" onclick="_generarResumenIA('${alumno.id}')"><span class="ia-star">✦</span> Generar síntesis del estudiante</button>
     </div>

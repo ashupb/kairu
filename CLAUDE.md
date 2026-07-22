@@ -111,8 +111,26 @@ Las funciones `renderObjetivosStrip`, `renderAlertasAsistDir` y `renderNivelPane
 
 **Nota de convención de color**: los niveles usan siempre los colores de `NIVEL_CONFIG` (agenda.js: inicial verde, primario azul, secundario violeta) para ser consistentes con la agenda y las próximas actividades en la misma pantalla — no inventar una paleta de color distinta por nivel en nuevas secciones del dashboard.
 
+### Roles, permisos y administrador de plataforma (migración v38)
+
+**Los roles son reales — ya no hay alias.** Hasta la v38, `js/auth.js` reescribía `secretario` y `vicedirector` a `directivo_nivel` al iniciar sesión (guardando el original en `rol_display`). **Eso se eliminó**: el rol real viaja en `USUARIO_ACTUAL.rol` y `rol_display` ya no existe. No reintroducir el alias.
+
+- **`ROLES_DIRECTIVOS_NIVEL`** y **`esDirectivoNivel(rol)`** (`js/nav.js`) — `directivo_nivel`, `secretario` y `vicedirector` comparten permisos y alcance de nivel. **Toda comparación `rol === 'directivo_nivel'` debe usar `esDirectivoNivel(rol)`**; los arrays de permisos incluyen los tres roles. Si agregás un chequeo de rol nuevo, no compares contra `'directivo_nivel'` a secas.
+- **`esSuperAdmin(rol)`** — `super_admin` es el administrador de plataforma (Kairú), **no un actor institucional**. Reemplaza al rol huérfano `admin` (que no era asignable y quedó eliminado). No aparece en listados de usuarios (`_renderUsuarios` filtra con `.neq('rol','super_admin')`), no es asignable desde el modal, y **no pasa por `roles_permisos`**: siempre tiene acceso total.
+- **`super_admin` e `institucion_id`**: en la BD es `NULL` (la columna pasó a nullable). Como casi todos los módulos consultan `USUARIO_ACTUAL.institucion_id`, `_fijarInstitucionActiva()` (auth.js) apunta ese campo **en memoria** a la institución activa. La fila de `usuarios` sigue con NULL. El selector de la topbar (`#tb-inst-selector`, `_renderSelectorInstitucion()` en main.js → `cambiarInstitucionActiva()` en auth.js) cambia de institución y recuerda la última en `localStorage` (`kairu_super_inst`). `login()`/`verificarSesion()` **eximen al super_admin** de `iniciarSetupInstitucional()` — sin esa excepción quedaría bloqueado en la pantalla de configuración inicial.
+- **Etiquetas**: `director_general` es **"Director/a General"** (antes decía "Administrador", que ahora es sólo `super_admin`).
+
+**Plantillas de permisos por institución** (`js/permisos.js` + tabla `roles_permisos`):
+- Matriz **rol × módulo** con `ver`/`editar`/`eliminar`, editable en Configuración → Usuarios → **Roles y Permisos** (`_renderRolesPermisos` en configuracion.js, sólo `director_general`/`super_admin`). Sin override por usuario: el rol define todo.
+- Resolución en `_permResolver()`: `super_admin` → siempre true; si hay fila en `roles_permisos` → se usa; **si no hay fila → fallback a `permisosDefault()`**, que replica el comportamiento previo. Por eso, si la migración no corrió, la app se comporta igual que siempre.
+- **Alcance real hoy: sólo `ver` está cableado** — filtra el menú en `renderNav()` (vía `_navQuitarSeccionesVacias`) y protege `goPage()`. `editar`/`eliminar` se persisten y se editan en la matriz, pero **los módulos siguen usando sus arrays de rol históricos**. Adoptarlos es incremental; no hacerlo en bloque.
+- A `director_general` no se le pueden editar los permisos (`_rpBloqueado()`), para que la institución no se quede sin administrador.
+- Semillas: la migración siembra cada institución existente y un **trigger** (`instituciones_seed_permisos`) siembra las nuevas. `ON CONFLICT DO NOTHING`: re-ejecutar no pisa lo que la institución haya editado.
+
+**RLS y `is_super_admin()`**: la v38 **no reescribe** las ~80 policies existentes. Como las policies permisivas se combinan con **OR**, agrega una policy `<tabla>_super_admin` por tabla que sólo habilita al super admin — así ninguna policy existente se toca y cubre también las creadas a mano en el dashboard. `is_super_admin()` es **`SECURITY DEFINER`** (obligatorio: consultar `usuarios` desde una policy sin eso provoca recursión infinita de RLS — ver v31). **El loop sólo agrega la policy en tablas que YA tienen RLS activo**: habilitar RLS en una tabla que hoy está abierta dejaría afuera a todos los usuarios normales.
+
 ### Roles y permisos
-Los roles son: `director_general`, `directivo_nivel`, `eoe`, `docente`, `preceptor`.
+Los roles son: `super_admin` (plataforma), `director_general`, `directivo_nivel`, `vicedirector`, `secretario`, `eoe`, `docente`, `preceptor`. Ver la sección anterior — `vicedirector` y `secretario` son roles reales con los permisos de `directivo_nivel` por defecto.
 
 El nav lateral (`nav.js`) y bottom nav mobile (`main.js`) se configuran por rol en `NAV_CONFIG` y `BOTTOM_NAV_ITEMS`. Cada módulo tiene su propia función `xxxPermisos()` que retorna un objeto de booleanos.
 
@@ -210,6 +228,7 @@ El ícono de sliders en la topbar (`.pref-btn`) abre `#pref-panel`, mismo patró
 | `tipos_justificacion` | Tipos de justificación de ausencia |
 | `tipos_instancia_evaluativa` | Tipos de instancia evaluativa configurables por institución (`nombre`, `activo`, `es_recuperatorio`, `orden`). Gestionados desde configuracion.js. **Nota**: `instancias_evaluativas.tipo_id` apunta a esta tabla (FK corregida en v20). La tabla legacy `tipos_evaluacion` queda en desuso. |
 | `instancias_evaluativas` | Instancias evaluativas de un curso × materia × período. FK `tipo_id` → `tipos_instancia_evaluativa`. Tiene columna denormalizada `es_recuperatorio`. |
+| `roles_permisos` | Plantillas de permisos por institución (`migrations/migration_v38_roles_permisos.sql`). `UNIQUE(institucion_id, rol, modulo_id)`, con `ver`/`editar`/`eliminar`. `modulo_id` = id del nav (`prob`, `asist`, `admin`, …). Sembrada por `seed_roles_permisos()` + trigger en `instituciones`. Ver "Roles, permisos y administrador de plataforma" |
 | `tareas_usuario` | Tareas personales por usuario. RLS: `usuario_id = auth.uid()`. Campos: `texto`, `fecha_vencimiento DATE`, `estado` ('pendiente'/'completada'), `observacion`, `contexto_tipo` ('alumno'/'problematica'/'general'), `contexto_id UUID`, `contexto_label`. SQL: `migrations/tareas_usuario.sql`. Gestionadas desde `js/tareas.js`. |
 | `mensajes_familia` | Canal directo bidireccional institución ↔ familia (uno por alumno, hilo cronológico). Reemplaza cuaderno de comunicaciones/WhatsApp. Campos: `enviado_por_id`/`enviado_por_tipo` ('institucion'/'familia'), `destinatario_id` (a quién va dirigido un mensaje de familia — ver routing abajo), `cuerpo`, `leido_familia`/`leido_institucion` (acuse de recibo explícito, no implícito al abrir), `requiere_respuesta`. SQL: `migrations/migration_v34_mensajes_familia.sql`. Lado institución: tab "Mensajes" en legajo de alumno (`js/legajos.js` → `_tabMensajes`). Lado familia: `familias/js/mensajes.js` (`rMensajes()`). |
 

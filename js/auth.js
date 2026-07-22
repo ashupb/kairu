@@ -5,6 +5,48 @@
 let USUARIO_ACTUAL    = null;  // datos del usuario logueado
 let INSTITUCION_ACTUAL = null; // datos de su institución
 
+// Campos de institución que necesita la app al arrancar. Incluye tema_color:
+// sin él, _aplicarTemaInstitucion() en iniciarApp() recibía undefined y el color
+// de marca institucional nunca llegaba a aplicarse.
+const _INST_CAMPOS = 'id, nombre, logo_url, tema_color, nivel_inicial, nivel_primario, nivel_secundario, anio_lectivo';
+
+// ── super_admin: institución activa ──────────────────
+// El administrador de plataforma no tiene institucion_id (§5.1): elige con qué
+// institución trabajar. Se recuerda la última en localStorage; si no hay, toma
+// la primera por nombre. Sin esto caería en iniciarSetupInstitucional() y
+// quedaría bloqueado en la pantalla de configuración inicial.
+const SUPER_INST_KEY = 'kairu_super_inst';
+
+async function _institucionParaSuperAdmin() {
+  const guardada = localStorage.getItem(SUPER_INST_KEY);
+  if (guardada) {
+    const { data } = await sb.from('instituciones').select(_INST_CAMPOS).eq('id', guardada).maybeSingle();
+    if (data) return data;
+  }
+  const { data } = await sb.from('instituciones').select(_INST_CAMPOS).order('nombre').limit(1);
+  return data?.[0] || null;
+}
+
+// El super_admin no tiene institucion_id en la BD, pero prácticamente todos los
+// módulos consultan USUARIO_ACTUAL.institucion_id. En vez de tocar decenas de
+// queries, se apunta el objeto EN MEMORIA a la institución activa: la fila de
+// `usuarios` sigue con institucion_id NULL (no es un actor institucional).
+function _fijarInstitucionActiva(inst) {
+  INSTITUCION_ACTUAL = inst || null;
+  if (USUARIO_ACTUAL && inst?.id) USUARIO_ACTUAL.institucion_id = inst.id;
+}
+
+// Cambia la institución activa del super_admin y recarga la app.
+async function cambiarInstitucionActiva(instId) {
+  if (!instId) return;
+  localStorage.setItem(SUPER_INST_KEY, instId);
+  const { data } = await sb.from('instituciones').select(_INST_CAMPOS).eq('id', instId).maybeSingle();
+  if (!data) { alert('No se pudo cargar esa institución.'); return; }
+  _fijarInstitucionActiva(data);
+  if (typeof cargarPermisos === 'function') await cargarPermisos();
+  await iniciarApp();
+}
+
 // ── LOGIN ────────────────────────────────────────────
 async function login() {
   const username = document.getElementById('inp-email').value.trim();
@@ -80,12 +122,15 @@ async function login() {
       return;
     }
 
-    // 3. Traer institución por separado (falla silenciosa si hay problema)
+    // 3. Traer institución por separado (falla silenciosa si hay problema).
+    //    El super_admin no tiene institucion_id: elige/recuerda una.
     let instData = null;
-    if (perfil.institucion_id) {
+    if (perfil.rol === 'super_admin') {
+      instData = await _institucionParaSuperAdmin();
+    } else if (perfil.institucion_id) {
       const { data: inst } = await sb
         .from('instituciones')
-        .select('id, nombre, logo_url, nivel_inicial, nivel_primario, nivel_secundario, anio_lectivo')
+        .select(_INST_CAMPOS)
         .eq('id', perfil.institucion_id)
         .single();
       instData = inst;
@@ -93,11 +138,8 @@ async function login() {
 
     // 4. Guardar estado global
     USUARIO_ACTUAL     = { ...data.user, ...perfil };
-    INSTITUCION_ACTUAL = instData;
-    if (['secretario','vicedirector'].includes(USUARIO_ACTUAL.rol)) {
-      USUARIO_ACTUAL.rol_display = USUARIO_ACTUAL.rol;
-      USUARIO_ACTUAL.rol = 'directivo_nivel';
-    }
+    // Para el super_admin esto además apunta institucion_id a la activa.
+    _fijarInstitucionActiva(instData);
 
     // Creado con contraseña temporal → obligar a definir una propia antes de entrar.
     // El gate se basa en user_metadata (no en la columna usuarios) porque el
@@ -109,12 +151,14 @@ async function login() {
       return;
     }
 
-    // Si aún no tiene institución asignada → pantalla de configuración inicial
-    if (!USUARIO_ACTUAL.institucion_id) {
+    // Si aún no tiene institución asignada → pantalla de configuración inicial.
+    // El super_admin queda exento: no es un actor institucional (§5.1).
+    if (!USUARIO_ACTUAL.institucion_id && USUARIO_ACTUAL.rol !== 'super_admin') {
       iniciarSetupInstitucional();
       return;
     }
 
+    if (typeof cargarPermisos === 'function') await cargarPermisos();
     iniciarApp();
 
   } catch (e) {
@@ -151,10 +195,12 @@ async function verificarSesion() {
     .single();
 
   let instData = null;
-  if (perfil?.institucion_id) {
+  if (perfil?.rol === 'super_admin') {
+    instData = await _institucionParaSuperAdmin();
+  } else if (perfil?.institucion_id) {
     const { data: inst } = await sb
       .from('instituciones')
-      .select('id, nombre, logo_url, nivel_inicial, nivel_primario, nivel_secundario, anio_lectivo')
+      .select(_INST_CAMPOS)
       .eq('id', perfil.institucion_id)
       .single();
     instData = inst;
@@ -176,11 +222,8 @@ async function verificarSesion() {
 
   if (perfil && perfil.activo) {
     USUARIO_ACTUAL     = { ...session.user, ...perfil };
-    INSTITUCION_ACTUAL = instData;
-    if (['secretario','vicedirector'].includes(USUARIO_ACTUAL.rol)) {
-      USUARIO_ACTUAL.rol_display = USUARIO_ACTUAL.rol;
-      USUARIO_ACTUAL.rol = 'directivo_nivel';
-    }
+    // Para el super_admin esto además apunta institucion_id a la activa.
+    _fijarInstitucionActiva(instData);
 
     // Creado con contraseña temporal → obligar a definir una propia antes de entrar.
     if (_debeCambiarPassword(session.user, perfil)) {
@@ -188,12 +231,14 @@ async function verificarSesion() {
       return;
     }
 
-    // Si aún no tiene institución asignada → pantalla de configuración inicial
-    if (!USUARIO_ACTUAL.institucion_id) {
+    // Si aún no tiene institución asignada → pantalla de configuración inicial.
+    // El super_admin queda exento: no es un actor institucional (§5.1).
+    if (!USUARIO_ACTUAL.institucion_id && USUARIO_ACTUAL.rol !== 'super_admin') {
       iniciarSetupInstitucional();
       return;
     }
 
+    if (typeof cargarPermisos === 'function') await cargarPermisos();
     iniciarApp();
   } else {
     await sb.auth.signOut();

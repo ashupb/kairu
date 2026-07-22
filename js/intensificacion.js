@@ -43,7 +43,7 @@ async function rIntensif() {
     const { data: cs } = await sb.from('cursos').select('id')
       .eq('institucion_id', instId).or('activo.is.null,activo.eq.true');
     cursoIds = (cs || []).map(c => c.id);
-  } else if (rol === 'directivo_nivel') {
+  } else if (esDirectivoNivel(rol)) {
     const { data: cs } = await sb.from('cursos').select('id')
       .eq('institucion_id', instId).eq('nivel', USUARIO_ACTUAL.nivel).or('activo.is.null,activo.eq.true');
     cursoIds = (cs || []).map(c => c.id);
@@ -91,7 +91,7 @@ async function rIntensif() {
 
   if (!_intensifTabActivo) _intensifTabActivo = '__todos';
 
-  const puedeAgregar = ['director_general','directivo_nivel','preceptor'].includes(rol);
+  const puedeAgregar = ['director_general','directivo_nivel','secretario','vicedirector','preceptor'].includes(rol);
   const showResumen  = rol !== 'docente';
 
   pag.innerHTML = `
@@ -218,7 +218,7 @@ function _intensifSelectTab(tabId) {
 
 // ── LISTA DE ALUMNOS POR PERÍODO ──────────────────────────────────────
 function _htmlListaEstados(estados, rol, periodo) {
-  const puedeEditar = ['director_general','directivo_nivel','docente'].includes(rol);
+  const puedeEditar = ['director_general','directivo_nivel','secretario','vicedirector','docente'].includes(rol);
 
   if (!estados.length) {
     return `<div style="text-align:center;padding:24px;color:var(--txt3);font-size:12px">Sin alumnos en este período.</div>`;
@@ -335,7 +335,7 @@ async function verNotasIntensif(estadoId, alumnoNombre, materiaNombre, cicloOrig
     return;
   }
   const periodos    = periodosRes.data || [];
-  const esDirectivo = ['director_general','directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+  const esDirectivo = ['director_general','directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol);
   const puedeEditar = esDirectivo || USUARIO_ACTUAL.rol === 'docente';
 
   pag.innerHTML = `

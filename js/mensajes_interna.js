@@ -66,7 +66,7 @@ async function _mfiGetCursos() {
     const { data } = await base.eq('institucion_id', inst).order('nivel').order('anio');
     return data || [];
   }
-  if (['directivo_nivel', 'eoe'].includes(rol)) {
+  if (['directivo_nivel','secretario','vicedirector', 'eoe'].includes(rol)) {
     const nivelFil = USUARIO_ACTUAL.nivel;
     const q = base.eq('institucion_id', inst).order('anio');
     const { data } = await (nivelFil ? q.eq('nivel', nivelFil) : q);
@@ -233,7 +233,7 @@ async function _mfiCargarHilo(alumnoId, nombre, wrap) {
     fetchMsgFamUnread();
   }
 
-  const canSend = ['preceptor','docente','eoe','director_general','directivo_nivel','admin'].includes(USUARIO_ACTUAL.rol);
+  const canSend = ['preceptor','docente','eoe','director_general','directivo_nivel','secretario','vicedirector','super_admin'].includes(USUARIO_ACTUAL.rol);
   const threadHtml = _renderMsgFamThread(msgs || []);
 
   wrap.innerHTML = `
@@ -329,7 +329,7 @@ async function fetchMsgFamUnread() {
       .eq('enviado_por_tipo', 'familia')
       .eq('leido_institucion', false);
 
-    if (!['director_general', 'directivo_nivel', 'eoe'].includes(rol)) {
+    if (!['director_general', 'directivo_nivel','secretario','vicedirector', 'eoe'].includes(rol)) {
       q = q.eq('destinatario_id', USUARIO_ACTUAL.id);
     }
 

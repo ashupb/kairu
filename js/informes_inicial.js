@@ -175,7 +175,7 @@ function _renderDetalleInforme(al, inf, obsAl, dimensiones, salaId, semestre, an
   const textoFinal  = inf?.texto_final  || '';
   const borradorIA  = inf?.borrador_ia  || '';
   const estado      = inf?.estado       || 'borrador';
-  const puedeIA     = ['director_general','directivo_nivel','docente'].includes(USUARIO_ACTUAL.rol);
+  const puedeIA     = ['director_general','directivo_nivel','secretario','vicedirector','docente'].includes(USUARIO_ACTUAL.rol);
 
   const tieneObs = dimensiones.some(d => obsAl[d]?.trim());
 

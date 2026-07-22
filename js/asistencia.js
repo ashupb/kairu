@@ -56,7 +56,7 @@ async function rAsist() {
   window._diasNoLectivos     = new Set((noLectRes.data || []).map(r => r.fecha));
   window._diasNoLectivosData = noLectRes.data || [];
 
-  if (rol === 'director_general' || rol === 'directivo_nivel' || rol === 'eoe') await rAsistDirector();
+  if (rol === 'director_general' || esDirectivoNivel(rol) || rol === 'eoe') await rAsistDirector();
   else if (rol === 'docente')   await rAsistDocente();
   else if (rol === 'preceptor') await rAsistPreceptor();
 
@@ -76,7 +76,7 @@ async function rAsistDirector() {
   const c      = document.getElementById('page-asist');
   const instId = USUARIO_ACTUAL.institucion_id;
   const hoy    = hoyISO();
-  const nivel  = USUARIO_ACTUAL.rol === 'directivo_nivel' ? USUARIO_ACTUAL.nivel : null;
+  const nivel  = esDirectivoNivel(USUARIO_ACTUAL.rol) ? USUARIO_ACTUAL.nivel : null;
 
   const [cursosRes, alumnosRes, asistHoyRes] = await Promise.all([
     sb.from('cursos').select('*').eq('institucion_id', instId)
@@ -168,7 +168,7 @@ async function rAsistDirector() {
       <span style="font-size:18px">✓</span>
       <span style="font-size:12px;color:var(--verde);font-weight:600">Todos los preceptores están al día</span>
     </div>`}
-    ${['director_general','directivo_nivel'].includes(USUARIO_ACTUAL.rol) ? `<div id="dnl-seccion">${_renderDNLSeccion()}</div>` : ''}
+    ${['director_general','directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol) ? `<div id="dnl-seccion">${_renderDNLSeccion()}</div>` : ''}
     ${niveles.map(n => {
       const cs = cursos.filter(cu => cu.nivel === n);
       if (!cs.length) return '';

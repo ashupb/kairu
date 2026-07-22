@@ -1014,7 +1014,7 @@ async function verNotasCursoDocente(cursoId, nivel, materiaId, nombreCurso, nomb
       <!-- Botones acción -->
       ${(() => {
         if (cierre?.validado_at) {
-          const esDir = ['director_general','directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+          const esDir = ['director_general','directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol);
           return `
             <div style="background:var(--azul-l);border-left:3px solid var(--azul);border-radius:var(--rad);
               padding:10px 14px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
@@ -1885,7 +1885,7 @@ async function verCalifCurso(cursoId, nivel) {
       Sin alumnos asignados a este período en este curso.<br>
       <span style="font-size:10px">Agregá desde el módulo <b>Intensificación</b>.</span>
     </div>`;
-    const puedeEditar = ['director_general','directivo_nivel','preceptor','docente'].includes(USUARIO_ACTUAL.rol);
+    const puedeEditar = ['director_general','directivo_nivel','secretario','vicedirector','preceptor','docente'].includes(USUARIO_ACTUAL.rol);
     return `
       <div class="card" style="padding:0;overflow:hidden;margin-bottom:12px">
         ${estados.map(e => {
@@ -3393,7 +3393,7 @@ async function verGrillaMateriaPreceptor(cursoId, materiaId, nombreMateria, peri
     promedios[al.id] = notas.length ? notas.reduce((a, b) => a + b, 0) / notas.length : null;
   });
 
-  const esDirectivo = ['director_general','directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+  const esDirectivo = ['director_general','directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol);
 
   const estadoBanner = cierre?.validado_at
     ? `<div style="background:var(--verde-l);border-left:3px solid var(--verde);border-radius:var(--rad);
@@ -3585,7 +3585,7 @@ async function _cerrarCuatrimestreTrayectoria(cuatrimestre, opts = {}) {
   let qCursos = sb.from('cursos').select('id,nombre,division,nivel').eq('institucion_id', instId);
   if (nivelFiltro) {
     qCursos = qCursos.eq('nivel', nivelFiltro);
-  } else if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
+  } else if (esDirectivoNivel(USUARIO_ACTUAL.rol) && USUARIO_ACTUAL.nivel) {
     qCursos = qCursos.eq('nivel', USUARIO_ACTUAL.nivel);
   }
   const { data: cursos } = await qCursos;
@@ -3721,7 +3721,7 @@ async function _mostrarCierreAnual() {
 
   // Cursos secundarios (la promoción automática aplica a secundaria)
   let qCursos = sb.from('cursos').select('id,nombre,division,nivel').eq('institucion_id', instId).eq('nivel', 'secundario');
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel') qCursos = qCursos.eq('nivel', USUARIO_ACTUAL.nivel || 'secundario');
+  if (esDirectivoNivel(USUARIO_ACTUAL.rol)) qCursos = qCursos.eq('nivel', USUARIO_ACTUAL.nivel || 'secundario');
   const { data: cursos } = await qCursos;
   const cursoIds = (cursos || []).map(cu => cu.id);
 

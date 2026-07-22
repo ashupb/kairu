@@ -65,7 +65,7 @@ async function iniciarApp() {
   // Nombre e iniciales del usuario — botón de perfil en la topbar
   const u       = USUARIO_ACTUAL;
   const iniciales = (u.avatar_iniciales || generarIniciales(u.nombre_completo)).toUpperCase();
-  const rolLabel   = labelRol(u.rol_display || u.rol);
+  const rolLabel   = labelRol(u.rol);
   const tbAv = document.getElementById('tb-av');
   const pfAv = document.getElementById('perfil-av');
   if (u.avatar_url) {
@@ -92,6 +92,9 @@ async function iniciarApp() {
   // Color de marca de la institución (acentos — no toca estados semánticos)
   _aplicarTemaInstitucion(INSTITUCION_ACTUAL?.tema_color);
 
+  // Selector de institución — solo para el administrador de plataforma
+  _renderSelectorInstitucion();
+
   // Título de la pestaña del navegador
   document.title = instNombre + ' · Kairú';
 
@@ -105,6 +108,14 @@ async function iniciarApp() {
 
 // ── NAVEGACIÓN ────────────────────────────────────────
 async function goPage(id) {
+  // Guard de permisos (roles_permisos). Solo aplica a módulos de la matriz —
+  // páginas como 'tareas' no se gobiernan por plantilla. Si el rol no puede
+  // ver el módulo (menú oculto pero navegación directa), vuelve al inicio.
+  if (typeof puedeVer === 'function' && typeof PERMISOS_MODULOS !== 'undefined'
+      && PERMISOS_MODULOS.some(m => m.id === id) && !puedeVer(id)) {
+    id = 'dash';
+  }
+
   CUR_PAGE = id;
   EX = null;
 
@@ -291,6 +302,7 @@ function iniciarReloj() {
 // ── UTILIDADES GLOBALES ───────────────────────────────
 function labelRol(rol) {
   return {
+    super_admin:      'Administrador de plataforma',
     director_general: 'Dirección general',
     directivo_nivel:  'Directivo/a',
     secretario:       'Secretario/a',
@@ -298,7 +310,6 @@ function labelRol(rol) {
     eoe:              'Orientador/a EOE',
     docente:          'Docente',
     preceptor:        'Preceptor/a',
-    admin:            'Administrador',
   }[rol] || rol;
 }
 
@@ -463,6 +474,23 @@ document.addEventListener('keydown', e => {
   if (ls && ls.style.display !== 'none') login();
 });
 
+// ── SELECTOR DE INSTITUCIÓN (solo super_admin) ────────
+// El administrador de plataforma no pertenece a una institución: elige sobre
+// cuál trabajar. Al cambiar, cambiarInstitucionActiva() (auth.js) recarga la app.
+async function _renderSelectorInstitucion() {
+  const sel = document.getElementById('tb-inst-selector');
+  if (!sel) return;
+  if (USUARIO_ACTUAL?.rol !== 'super_admin') { sel.style.display = 'none'; return; }
+
+  const { data } = await sb.from('instituciones').select('id, nombre').order('nombre');
+  if (!data?.length) { sel.style.display = 'none'; return; }
+
+  sel.innerHTML = data.map(i =>
+    `<option value="${i.id}" ${i.id === INSTITUCION_ACTUAL?.id ? 'selected' : ''}>${i.nombre}</option>`
+  ).join('');
+  sel.style.display = '';
+}
+
 // ── CAMBIAR MI CONTRASEÑA (usuario logueado, desde el panel de perfil) ──
 function cambiarMiContrasena() {
   const panel = document.getElementById('perfil-panel');
@@ -542,6 +570,12 @@ const BOTTOM_NAV_ITEMS = {
     { id:'leg',      icon:'▤',  label:'Resumen' },
   ],
 };
+
+// secretario y vicedirector: mismo bottom nav que directivo_nivel (§3).
+// super_admin: el de dirección general.
+BOTTOM_NAV_ITEMS.secretario   = BOTTOM_NAV_ITEMS.directivo_nivel;
+BOTTOM_NAV_ITEMS.vicedirector = BOTTOM_NAV_ITEMS.directivo_nivel;
+BOTTOM_NAV_ITEMS.super_admin  = BOTTOM_NAV_ITEMS.director_general;
 
 function renderBottomNav() {
   const contenedor = document.getElementById('bottom-nav-items');

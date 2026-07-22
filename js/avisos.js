@@ -243,7 +243,7 @@ function _avComFiltrarCurso(cursoId) {
 // ── Permisos ──────────────────────────────────────────
 function _avisosPermisos() {
   const rol = USUARIO_ACTUAL?.rol;
-  return { crear: ['director_general', 'directivo_nivel', 'preceptor'].includes(rol) };
+  return { crear: ['director_general', 'directivo_nivel','secretario','vicedirector', 'preceptor'].includes(rol) };
 }
 
 // ── Form: nueva / editar novedad ──────────────────────

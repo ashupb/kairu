@@ -52,8 +52,11 @@ const NIVEL_LABELS_ADM = {
   secundario: 'Secundario',
 };
 
+// "Administrador" quedó reservado para el administrador de plataforma
+// (super_admin); director_general es "Director/a General".
 const ROL_LABELS_ADM = {
-  director_general: 'Administrador',
+  super_admin:      'Administrador de plataforma',
+  director_general: 'Director/a General',
   directivo_nivel:  'Directivo de Nivel',
   secretario:       'Secretario/a',
   vicedirector:     'Vicedirector/a',
@@ -63,6 +66,7 @@ const ROL_LABELS_ADM = {
 };
 
 const ROL_BADGE_ADM = {
+  super_admin:      'tgr',
   director_general: 'tg',
   directivo_nivel:  'tp',
   secretario:       'tp',
@@ -80,28 +84,29 @@ const ROL_BADGE_ADM = {
 const CONFIG_GRUPOS = [
   { id: 'institucion', label: 'Institución', items: [
       { id: 'institucion',   label: 'General',        roles: ['director_general'], renderer: _renderInstitucion },
-      { id: 'ciclo_lectivo', label: 'Ciclo Lectivo',   roles: ['director_general', 'directivo_nivel'], renderer: _renderCicloLectivo },
-      { id: 'cursos',        label: 'Cursos',          roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderCursos },
-      { id: 'materias',      label: 'Materias',        roles: ['director_general', 'directivo_nivel'], tabs: [
+      { id: 'ciclo_lectivo', label: 'Ciclo Lectivo',   roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderCicloLectivo },
+      { id: 'cursos',        label: 'Cursos',          roles: ['director_general', 'directivo_nivel','secretario','vicedirector', 'preceptor'], renderer: _renderCursos },
+      { id: 'materias',      label: 'Materias',        roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], tabs: [
           { id: 'materias',     label: 'Materias',     renderer: _renderMaterias },
           { id: 'asignaciones', label: 'Asignaciones', renderer: _renderAsignaciones },
         ] },
-      { id: 'alumnos',  label: 'Alumnos',  roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderAlumnos },
-      { id: 'docentes', label: 'Docentes', roles: ['director_general', 'directivo_nivel'], tabs: [
+      { id: 'alumnos',  label: 'Alumnos',  roles: ['director_general', 'directivo_nivel','secretario','vicedirector', 'preceptor'], renderer: _renderAlumnos },
+      { id: 'docentes', label: 'Docentes', roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], tabs: [
           { id: 'docentes',   label: 'Docentes',   renderer: _renderDocentes },
           { id: 'suplencias', label: 'Suplencias', renderer: _renderSuplencias },
         ] },
     ] },
   { id: 'parametros', label: 'Parámetros académicos', items: [
-      { id: 'param_asistencia', label: 'Asistencia',        roles: ['director_general', 'directivo_nivel'], renderer: _renderParamAsistencia },
-      { id: 'param_periodos',   label: 'Períodos y escalas', roles: ['director_general', 'directivo_nivel'], renderer: _renderParamPeriodos },
-      { id: 'param_otros',      label: 'Otros Parámetros',  roles: ['director_general', 'directivo_nivel'], renderer: _renderParamOtros },
+      { id: 'param_asistencia', label: 'Asistencia',        roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderParamAsistencia },
+      { id: 'param_periodos',   label: 'Períodos y escalas', roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderParamPeriodos },
+      { id: 'param_otros',      label: 'Otros Parámetros',  roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderParamOtros },
     ] },
   { id: 'usuarios', label: 'Usuarios', items: [
-      { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel'], renderer: _renderUsuarios },
+      { id: 'usuarios', label: 'General', roles: ['director_general', 'directivo_nivel','secretario','vicedirector'], renderer: _renderUsuarios },
+      { id: 'roles_permisos', label: 'Roles y Permisos', roles: ['director_general'], renderer: _renderRolesPermisos },
     ] },
   { id: 'portal', label: 'Portal Familiar', items: [
-      { id: 'familias', label: 'Usuarios', roles: ['director_general', 'directivo_nivel', 'preceptor'], renderer: _renderFamilias },
+      { id: 'familias', label: 'Usuarios', roles: ['director_general', 'directivo_nivel','secretario','vicedirector', 'preceptor'], renderer: _renderFamilias },
     ] },
 ];
 
@@ -131,6 +136,9 @@ function _configGruposVisibles() {
   const r      = USUARIO_ACTUAL?.rol;
   const extras = _normalizarExtras(USUARIO_ACTUAL?.config_extra?.tabs);
 
+  // El administrador de plataforma ve toda la configuración, sin filtrar.
+  if (r === 'super_admin') return CONFIG_GRUPOS.map(g => ({ ...g }));
+
   return CONFIG_GRUPOS
     .map(g => {
       const items = g.items.filter(it => it.roles.includes(r) || extras.has(it.id));
@@ -141,7 +149,7 @@ function _configGruposVisibles() {
 
 function _paramTieneInicial() {
   if (!USUARIO_ACTUAL) return false;
-  return USUARIO_ACTUAL.rol === 'directivo_nivel'
+  return esDirectivoNivel(USUARIO_ACTUAL.rol)
     ? USUARIO_ACTUAL.nivel === 'inicial'
     : !!INSTITUCION_ACTUAL?.nivel_inicial;
 }
@@ -511,6 +519,19 @@ async function _quitarLogoInstitucion() {
 // ══════════════════════════════════════════════════════
 let _usrFiltroRol   = 'todos';
 let _usrFiltroNivel = 'todos';
+
+// ── Quién puede gestionar usuarios (§6 del spec de roles) ──
+// Crear / editar perfil / resetear contraseña / activar-desactivar.
+// directivo_nivel, secretario y vicedirector quedan acotados a su nivel por el
+// filtro de _renderUsuarios y por el lock del selector de nivel del modal.
+function _puedeGestionarUsuarios() {
+  return ['super_admin', 'director_general', 'directivo_nivel', 'secretario', 'vicedirector']
+    .includes(USUARIO_ACTUAL?.rol);
+}
+// Eliminar usuarios y editar Roles y Permisos: solo estos dos.
+function _puedeAdministrarInstitucion() {
+  return ['super_admin', 'director_general'].includes(USUARIO_ACTUAL?.rol);
+}
 let _muAvatarUrl    = null;          // foto elegida en el modal (subida al storage, aún no ligada al usuario hasta guardar)
 let _muModo         = 'invitacion';  // alta nueva: 'invitacion' (email) | 'temporal' (contraseña temporal)
 
@@ -518,12 +539,16 @@ async function _renderUsuarios() {
   const sec = document.getElementById('adm-section-content');
   sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
 
+  // El super_admin trabaja sobre la institución activa, no sobre la propia
+  // (no tiene). Nunca se lista a sí mismo: no es un actor institucional (§5.1).
+  const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
   let q = sb.from('usuarios')
     .select('*')
-    .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
+    .eq('institucion_id', instId)
+    .neq('rol', 'super_admin')
     .order('nombre_completo');
 
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel') q = q.eq('nivel', USUARIO_ACTUAL.nivel);
+  if (esDirectivoNivel(USUARIO_ACTUAL.rol)) q = q.eq('nivel', USUARIO_ACTUAL.nivel);
 
   const { data, error } = await q;
   if (error) { _admError(sec, error.message); return; }
@@ -540,7 +565,7 @@ function _renderUsuariosList() {
 
   const roles   = ['director_general', 'directivo_nivel', 'secretario', 'vicedirector', 'docente', 'preceptor', 'eoe'];
   const niveles = ['inicial', 'primario', 'secundario'];
-  const puedeCrear = USUARIO_ACTUAL.rol === 'director_general';
+  const puedeCrear = _puedeGestionarUsuarios();
 
   sec.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
@@ -614,11 +639,12 @@ async function _abrirModalUsuario(userId) {
     .order('nivel').order('nombre');
   const cursosTodos = cursosAll || [];
 
-  const rolesDisp = USUARIO_ACTUAL.rol === 'director_general'
+  // super_admin nunca es asignable desde acá: se crea sólo por migración/SQL (§5.1).
+  const rolesDisp = _puedeAdministrarInstitucion()
     ? ['director_general', 'directivo_nivel', 'secretario', 'vicedirector', 'docente', 'preceptor', 'eoe']
     : ['docente', 'preceptor', 'eoe'];
 
-  const nivelesDisp = USUARIO_ACTUAL.rol === 'directivo_nivel'
+  const nivelesDisp = esDirectivoNivel(USUARIO_ACTUAL.rol)
     ? [USUARIO_ACTUAL.nivel]
     : ['inicial', 'primario', 'secundario'];
 
@@ -711,7 +737,7 @@ async function _abrirModalUsuario(userId) {
     <div id="mu-nivel-row" class="adm-form-row" ${mostrarNivel ? '' : 'style="display:none"'}>
       <label class="adm-label">Nivel</label>
       <select id="mu-nivel" onchange="_muOnNivelChange('${cursosTodosJSON}')"
-        ${USUARIO_ACTUAL.rol === 'directivo_nivel' ? 'disabled' : ''}>
+        ${esDirectivoNivel(USUARIO_ACTUAL.rol) ? 'disabled' : ''}>
         <option value="">— Seleccionar —</option>
         ${nivelesDisp.map(n => `<option value="${n}" ${n === nivelSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[n]}</option>`).join('')}
       </select>
@@ -767,7 +793,7 @@ async function _abrirModalUsuario(userId) {
     async () => { await _guardarUsuario(userId, esNuevo); }
   );
 
-  const puedeResetear = ['director_general', 'directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+  const puedeResetear = _puedeGestionarUsuarios();
   if (!esNuevo && puedeResetear) {
     const footer = modal.querySelector('.adm-modal-footer');
     const btnReset = document.createElement('button');
@@ -998,6 +1024,174 @@ async function _guardarUsuario(userId, esNuevo) {
 
 
 // ══════════════════════════════════════════════════════
+// SECCIÓN: ROLES Y PERMISOS (plantillas por institución)
+// ══════════════════════════════════════════════════════
+// Matriz roles × módulos con ver/editar/eliminar. El rol define todo: no hay
+// override por usuario. super_admin no aparece (no es editable) y a
+// director_general no se le puede quitar nada (evita que la institución se
+// quede sin administrador) — ver _rpBloqueado().
+let _rpRolActivo = null;
+let _rpMatriz    = {};   // "rol|modulo" → {ver,editar,eliminar}
+
+function _rpBloqueado(rol) {
+  return rol === 'director_general';
+}
+
+async function _renderRolesPermisos() {
+  const sec = document.getElementById('adm-section-content');
+  sec.innerHTML = '<div class="loading-state"><div class="spinner"></div></div>';
+
+  const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
+  const { data, error } = await sb.from('roles_permisos')
+    .select('rol, modulo_id, ver, editar, eliminar')
+    .eq('institucion_id', instId);
+
+  if (error) {
+    _admError(sec, 'No se pudieron cargar las plantillas de permisos. ' +
+      'Si todavía no corriste la migración v38, la tabla roles_permisos no existe. Detalle: ' + error.message);
+    return;
+  }
+
+  // Partir de los defaults y pisar con lo que haya en la BD.
+  _rpMatriz = {};
+  PERMISOS_ROLES.forEach(rol => {
+    PERMISOS_MODULOS.forEach(m => {
+      _rpMatriz[`${rol}|${m.id}`] = { ...permisosDefault(rol, m.id) };
+    });
+  });
+  (data || []).forEach(r => {
+    if (_rpMatriz[`${r.rol}|${r.modulo_id}`]) {
+      _rpMatriz[`${r.rol}|${r.modulo_id}`] = { ver: r.ver, editar: r.editar, eliminar: r.eliminar };
+    }
+  });
+
+  if (!_rpRolActivo) _rpRolActivo = 'directivo_nivel';
+  _rpPintar();
+}
+
+function _rpPintar() {
+  const sec = document.getElementById('adm-section-content');
+  const rol = _rpRolActivo;
+  const bloqueado = _rpBloqueado(rol);
+
+  sec.innerHTML = `
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px;line-height:1.5">
+      Definí qué puede hacer cada rol en esta institución. Los permisos son por rol —
+      no hay excepciones por usuario. El <strong>Administrador de plataforma</strong> no
+      figura acá: siempre tiene acceso total.
+    </div>
+
+    <div class="adm-tabs-bar" style="margin-bottom:14px">
+      ${PERMISOS_ROLES.map(r => `
+        <button type="button" class="adm-tab${r === rol ? ' on' : ''}" onclick="_rpCambiarRol('${r}')">
+          ${ROL_LABELS_ADM[r] || r}
+        </button>`).join('')}
+    </div>
+
+    ${bloqueado ? `
+      <div style="display:flex;align-items:center;gap:9px;padding:11px 13px;background:var(--verde-l);border-radius:var(--rad);border-left:3px solid var(--verde);margin-bottom:14px">
+        <div style="font-size:16px">🔒</div>
+        <div style="font-size:11px;color:var(--txt2)">
+          El <strong>Director/a General</strong> administra la institución: sus permisos no se
+          pueden editar, para que la institución nunca se quede sin administrador.
+        </div>
+      </div>` : ''}
+
+    <div class="card" style="padding:0;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px">
+        <thead>
+          <tr style="border-bottom:1px solid var(--brd)">
+            <th style="text-align:left;padding:10px 13px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt2)">Módulo</th>
+            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt2)">Ver</th>
+            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt2)">Editar</th>
+            <th style="padding:10px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt2)">Eliminar</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${PERMISOS_MODULOS.map(m => {
+            const p = _rpMatriz[`${rol}|${m.id}`] || { ver:false, editar:false, eliminar:false };
+            const cel = campo => `
+              <td style="text-align:center;padding:8px">
+                <input type="checkbox" ${p[campo] ? 'checked' : ''} ${bloqueado ? 'disabled' : ''}
+                  onchange="_rpSet('${m.id}','${campo}',this.checked)">
+              </td>`;
+            return `
+              <tr style="border-bottom:1px solid var(--brd)">
+                <td style="padding:8px 13px">${m.label}</td>
+                ${cel('ver')}${cel('editar')}${cel('eliminar')}
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn-p" onclick="_rpGuardar()" ${bloqueado ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''}>Guardar cambios</button>
+      <button class="btn-s" onclick="_rpRestaurarDefaults()" ${bloqueado ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''}>Restaurar valores por defecto</button>
+    </div>
+
+    <div style="font-size:10px;color:var(--txt2);margin-top:10px;line-height:1.5">
+      Hoy <strong>Ver</strong> es lo que controla el menú y el acceso a cada módulo.
+      <strong>Editar</strong> y <strong>Eliminar</strong> se guardan y quedan listos, pero los módulos
+      todavía usan sus reglas internas por rol.
+    </div>`;
+}
+
+function _rpCambiarRol(rol) {
+  _rpRolActivo = rol;
+  _rpPintar();
+}
+
+function _rpSet(moduloId, campo, valor) {
+  const k = `${_rpRolActivo}|${moduloId}`;
+  if (!_rpMatriz[k]) _rpMatriz[k] = { ver:false, editar:false, eliminar:false };
+  _rpMatriz[k][campo] = valor;
+  // Sin "ver" no tiene sentido editar/eliminar: se apagan juntos.
+  if (campo === 'ver' && !valor) {
+    _rpMatriz[k].editar = false;
+    _rpMatriz[k].eliminar = false;
+    _rpPintar();
+  }
+}
+
+function _rpRestaurarDefaults() {
+  const rol = _rpRolActivo;
+  if (_rpBloqueado(rol)) return;
+  if (!confirm(`¿Restaurar los permisos por defecto de "${ROL_LABELS_ADM[rol] || rol}"?`)) return;
+  PERMISOS_MODULOS.forEach(m => {
+    _rpMatriz[`${rol}|${m.id}`] = { ...permisosDefault(rol, m.id) };
+  });
+  _rpPintar();
+}
+
+async function _rpGuardar() {
+  const rol = _rpRolActivo;
+  if (_rpBloqueado(rol)) return;
+  const instId = USUARIO_ACTUAL.institucion_id || INSTITUCION_ACTUAL?.id;
+
+  const filas = PERMISOS_MODULOS.map(m => {
+    const p = _rpMatriz[`${rol}|${m.id}`] || { ver:false, editar:false, eliminar:false };
+    return {
+      institucion_id: instId,
+      rol,
+      modulo_id: m.id,
+      ver: !!p.ver, editar: !!p.editar, eliminar: !!p.eliminar,
+    };
+  });
+
+  const { error } = await sb.from('roles_permisos')
+    .upsert(filas, { onConflict: 'institucion_id,rol,modulo_id' });
+
+  if (error) { alert('No se pudieron guardar los permisos: ' + error.message); return; }
+
+  // Refrescar el cache y el menú por si el rol editado es el del usuario actual.
+  if (typeof cargarPermisos === 'function') await cargarPermisos();
+  renderNav();
+  _toastOk('Permisos actualizados');
+}
+
+
+// ══════════════════════════════════════════════════════
 // SECCIÓN: DOCENTES
 // ══════════════════════════════════════════════════════
 async function _renderDocentes() {
@@ -1097,7 +1291,7 @@ async function _renderCursos() {
     .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
     .order('nivel').order('nombre').order('division');
 
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel') q = q.eq('nivel', USUARIO_ACTUAL.nivel);
+  if (esDirectivoNivel(USUARIO_ACTUAL.rol)) q = q.eq('nivel', USUARIO_ACTUAL.nivel);
   if (USUARIO_ACTUAL.rol === 'preceptor') {
     const ids = USUARIO_ACTUAL.cursos_ids || [];
     if (ids.length) q = q.in('id', ids); else { sec.innerHTML = '<div class="empty-state">Sin cursos asignados</div>'; return; }
@@ -1130,7 +1324,7 @@ async function _renderCursos() {
     porNivel[n].push(c);
   });
 
-  const canEdit = ['director_general', 'directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+  const canEdit = ['director_general', 'directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol);
 
   const html = Object.entries(porNivel).map(([nivel, lista]) => {
     const color = NIVEL_COLORS_ADM[nivel] || 'var(--gris)';
@@ -1179,7 +1373,7 @@ async function _abrirModalCurso(cursoId) {
   const precs   = precsRes.data || [];
   const orients = orientsRes.data || [];
 
-  const niveles   = USUARIO_ACTUAL.rol === 'directivo_nivel' ? [USUARIO_ACTUAL.nivel] : ['inicial', 'primario', 'secundario'];
+  const niveles   = esDirectivoNivel(USUARIO_ACTUAL.rol) ? [USUARIO_ACTUAL.nivel] : ['inicial', 'primario', 'secundario'];
   const nivelSel  = curso?.nivel || niveles[0];
   const precsDisp = precs;
   const anioActual = new Date().getFullYear();
@@ -1198,7 +1392,7 @@ async function _abrirModalCurso(cursoId) {
     </div>
     <div class="adm-form-row">
       <label class="adm-label">Nivel</label>
-      <select id="mc-nivel" ${USUARIO_ACTUAL.rol === 'directivo_nivel' ? 'disabled' : ''}>
+      <select id="mc-nivel" ${esDirectivoNivel(USUARIO_ACTUAL.rol) ? 'disabled' : ''}>
         ${niveles.map(n => `<option value="${n}" ${n === nivelSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[n]}</option>`).join('')}
       </select>
     </div>
@@ -1292,7 +1486,7 @@ async function _renderAlumnos() {
     .or('activo.is.null,activo.eq.true')
     .order('nivel').order('nombre');
 
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel') qc = qc.eq('nivel', USUARIO_ACTUAL.nivel);
+  if (esDirectivoNivel(USUARIO_ACTUAL.rol)) qc = qc.eq('nivel', USUARIO_ACTUAL.nivel);
   else if (USUARIO_ACTUAL.rol === 'preceptor') {
     const ids = USUARIO_ACTUAL.cursos_ids || [];
     if (ids.length) qc = qc.in('id', ids);
@@ -1304,7 +1498,7 @@ async function _renderAlumnos() {
 
   if (!_admAlumnosCursoSel && cursos.length) _admAlumnosCursoSel = cursos[0].id;
 
-  const canEdit   = ['director_general', 'directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+  const canEdit   = ['director_general', 'directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol);
   const canImport = canEdit;
 
   sec.innerHTML = `
@@ -1338,7 +1532,7 @@ async function _cargarAlumnosDeCurso(cursoId) {
   if (error) { list.innerHTML = `<div class="alr"><div class="alr-t">Error</div><div class="alr-d">${error.message}</div></div>`; return; }
   if (!_admAlumnosList.length) { list.innerHTML = '<div class="empty-state">Sin alumnos en este curso</div>'; return; }
 
-  const canEdit = ['director_general', 'directivo_nivel'].includes(USUARIO_ACTUAL.rol);
+  const canEdit = ['director_general', 'directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol);
 
   list.innerHTML = `
     <div class="card" style="padding:0;overflow:hidden">
@@ -1366,7 +1560,7 @@ async function _abrirModalAlumno(alumnoId) {
     .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
     .or('activo.is.null,activo.eq.true')
     .order('nivel').order('nombre');
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel')  qc = qc.eq('nivel', USUARIO_ACTUAL.nivel);
+  if (esDirectivoNivel(USUARIO_ACTUAL.rol))  qc = qc.eq('nivel', USUARIO_ACTUAL.nivel);
   else if (USUARIO_ACTUAL.rol === 'preceptor') {
     const ids = USUARIO_ACTUAL.cursos_ids || [];
     if (ids.length) qc = qc.in('id', ids);
@@ -1659,7 +1853,7 @@ async function _renderMaterias() {
 
   let q = sb.from('materias').select('*')
     .eq('institucion_id', USUARIO_ACTUAL.institucion_id).order('nivel').order('nombre');
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel') q = q.eq('nivel', USUARIO_ACTUAL.nivel);
+  if (esDirectivoNivel(USUARIO_ACTUAL.rol)) q = q.eq('nivel', USUARIO_ACTUAL.nivel);
 
   const { data, error } = await q;
   if (error) { _admError(sec, error.message); return; }
@@ -1695,7 +1889,7 @@ async function _renderMaterias() {
 
 async function _abrirModalMateria(materiaId) {
   const mat      = materiaId ? _adminMateriasList.find(m => m.id === materiaId) : null;
-  const niveles  = USUARIO_ACTUAL.rol === 'directivo_nivel' ? [USUARIO_ACTUAL.nivel] : ['inicial', 'primario', 'secundario'];
+  const niveles  = esDirectivoNivel(USUARIO_ACTUAL.rol) ? [USUARIO_ACTUAL.nivel] : ['inicial', 'primario', 'secundario'];
   const nivelSel = mat?.nivel || niveles[0];
 
   _crearModal(
@@ -1707,7 +1901,7 @@ async function _abrirModalMateria(materiaId) {
     </div>
     <div class="adm-form-row">
       <label class="adm-label">Nivel</label>
-      <select id="mmat-nivel" ${USUARIO_ACTUAL.rol === 'directivo_nivel' ? 'disabled' : ''} onchange="_mmatToggleTipo()">
+      <select id="mmat-nivel" ${esDirectivoNivel(USUARIO_ACTUAL.rol) ? 'disabled' : ''} onchange="_mmatToggleTipo()">
         ${niveles.map(n => `<option value="${n}" ${n === nivelSel ? 'selected' : ''}>${NIVEL_LABELS_ADM[n]}</option>`).join('')}
       </select>
     </div>
@@ -1846,7 +2040,7 @@ async function _renderAsignaciones() {
   const materias = materiasRes.data || [];
   const docentes = docentesRes.data || [];
 
-  if (USUARIO_ACTUAL.rol === 'directivo_nivel') cursos = cursos.filter(c => c.nivel === USUARIO_ACTUAL.nivel);
+  if (esDirectivoNivel(USUARIO_ACTUAL.rol)) cursos = cursos.filter(c => c.nivel === USUARIO_ACTUAL.nivel);
   if (!_admAsigCursoSel && cursos.length) _admAsigCursoSel = cursos[0].id;
   if (!_admAsigDocenteSel && docentes.length) _admAsigDocenteSel = docentes[0].id;
   if (!_admAsigDocenteCursoSel && cursos.length) _admAsigDocenteCursoSel = cursos[0].id;
@@ -2117,7 +2311,7 @@ async function _ensureInstNiveles() {
 function _paramNivelesDisponibles() {
   const inst = INSTITUCION_ACTUAL || {};
   const nivelesActivos = ['inicial', 'primario', 'secundario'].filter(n => inst['nivel_' + n]);
-  return USUARIO_ACTUAL.rol === 'directivo_nivel'
+  return esDirectivoNivel(USUARIO_ACTUAL.rol)
     ? [USUARIO_ACTUAL.nivel].filter(n => nivelesActivos.includes(n))
     : nivelesActivos;
 }

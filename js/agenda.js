@@ -73,6 +73,9 @@ const _ROL_A_GRUPO = {
   docente:          'docentes',
   preceptor:        'preceptores',
   directivo_nivel:  'equipo_directivo',
+  secretario:       'equipo_directivo',
+  vicedirector:     'equipo_directivo',
+  super_admin:      'equipo_directivo',
   eoe:              'equipo_directivo',
 };
 
@@ -117,11 +120,11 @@ async function rAgenda() {
   USUARIOS_INST = usuariosRes.data || [];
   CURSOS_INST   = cursosRes.data  || [];
 
-  const puedeCrear = ['director_general','directivo_nivel','preceptor'].includes(rol);
+  const puedeCrear = ['director_general','directivo_nivel','secretario','vicedirector','preceptor'].includes(rol);
   const hoy = hoyISO();
 
   // Para directivo_nivel, restringir tabs y AGENDA_NIVEL a los niveles que puede ver
-  const nivelesPermitidosDir = rol === 'directivo_nivel'
+  const nivelesPermitidosDir = esDirectivoNivel(rol)
     ? ['todos', USUARIO_ACTUAL.nivel].filter(Boolean)
     : null;
   if (nivelesPermitidosDir && !nivelesPermitidosDir.includes(AGENDA_NIVEL)) {
@@ -130,7 +133,7 @@ async function rAgenda() {
 
   const tabEntries = rol === 'director_general'
     ? Object.entries(NIVEL_CONFIG)
-    : rol === 'directivo_nivel'
+    : esDirectivoNivel(rol)
       ? Object.entries(NIVEL_CONFIG).filter(([k]) => nivelesPermitidosDir.includes(k))
       : [];
 
@@ -178,7 +181,7 @@ async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaT
     .order('nombre');
 
   const rolActual = USUARIO_ACTUAL.rol;
-  const esDirector = rolActual === 'director_general' || rolActual === 'directivo_nivel';
+  const esDirector = rolActual === 'director_general' || esDirectivoNivel(rolActual);
 
   _agendaEventosSem = (eventos || []).filter(e => {
     if (rolActual === 'director_general') {
@@ -186,7 +189,7 @@ async function _rAgendaSemana(c, instId, puedeCrear, hoy, filtroTabsHTML, vistaT
       if (!e.nivel || e.nivel === 'todos') return true;
       return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
     }
-    if (rolActual === 'directivo_nivel') {
+    if (esDirectivoNivel(rolActual)) {
       if (!_eventoEsParaMi(e)) return false;  // solo eventos de su nivel o todos
       if (AGENDA_NIVEL === 'todos') return true;
       if (!e.nivel || e.nivel === 'todos') return true;
@@ -270,7 +273,7 @@ async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaTogg
     .or(`fecha_fin.gte.${desde},fecha_inicio.gte.${desde}`)
     .order('fecha_inicio');
 
-  if (rol === 'directivo_nivel') {
+  if (esDirectivoNivel(rol)) {
     query = query.in('nivel', [USUARIO_ACTUAL.nivel, 'todos']);
   }
 
@@ -282,7 +285,7 @@ async function _rAgendaMes(c, instId, rol, puedeCrear, filtroTabsHTML, vistaTogg
       if (!e.nivel || e.nivel === 'todos') return true;
       return e.nivel.split(',').map(n => n.trim()).includes(AGENDA_NIVEL);
     }
-    if (rol === 'directivo_nivel') {
+    if (esDirectivoNivel(rol)) {
       if (!_eventoEsParaMi(e)) return false;
       if (AGENDA_NIVEL === 'todos') return true;
       if (!e.nivel || e.nivel === 'todos') return true;
@@ -463,7 +466,7 @@ async function verEvento(id) {
   const responsables = (e.responsables_ids || [])
     .map(uid => USUARIOS_INST.find(u => u.id === uid)?.nombre_completo).filter(Boolean);
 
-  const puedeEditar = ['director_general','directivo_nivel','preceptor'].includes(USUARIO_ACTUAL.rol) || e.creado_por === USUARIO_ACTUAL.id;
+  const puedeEditar = ['director_general','directivo_nivel','secretario','vicedirector','preceptor'].includes(USUARIO_ACTUAL.rol) || e.creado_por === USUARIO_ACTUAL.id;
 
   // RSVP: visible solo para quienes están en el evento
   const miId    = USUARIO_ACTUAL.id;
@@ -1372,11 +1375,11 @@ async function verAgendaCursos() {
 
   // Filtrar cursos según rol
   let cursos = [];
-  if (rol === 'director_general' || rol === 'directivo_nivel') {
+  if (rol === 'director_general' || esDirectivoNivel(rol)) {
     const { data } = await sb.from('cursos').select('*')
       .eq('institucion_id', instId).order('nivel').order('nombre');
     cursos = data || [];
-    if (rol === 'directivo_nivel') cursos = cursos.filter(cu => cu.nivel === USUARIO_ACTUAL.nivel);
+    if (esDirectivoNivel(rol)) cursos = cursos.filter(cu => cu.nivel === USUARIO_ACTUAL.nivel);
   } else if (rol === 'docente') {
     const { data } = await sb.from('docente_cursos')
       .select('cursos(id,nombre,division,nivel)').eq('usuario_id', miId).eq('activo', true);

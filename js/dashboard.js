@@ -377,7 +377,7 @@ function renderProximasActividades(eventosSem, hoy, nivelFiltro) {
 async function rDash() {
   const rol = USUARIO_ACTUAL?.rol;
   if      (rol === 'director_general')  await rDashDirector();
-  else if (rol === 'directivo_nivel')   await rDashDirectivo();
+  else if (esDirectivoNivel(rol))   await rDashDirectivo();
   else if (rol === 'eoe')               await rDashEOE();
   else if (rol === 'docente')           await rDashDocente();
   else if (rol === 'preceptor')         await rDashPreceptor();

@@ -26,14 +26,14 @@ const TIPOS_VALOR_PROB = {
 function probPermisos() {
   const rol = USUARIO_ACTUAL.rol;
   return {
-    verTodas:    ['director_general','directivo_nivel','eoe','preceptor'].includes(rol),
+    verTodas:    ['director_general','directivo_nivel','secretario','vicedirector','eoe','preceptor'].includes(rol),
     soloPropias: rol === 'docente',
     soloCursos:  false,
     crear:       true,
-    agregarSeg:  ['director_general','directivo_nivel','eoe','preceptor'].includes(rol),
-    cerrar:      ['director_general','directivo_nivel'].includes(rol),
-    reabrir:     ['director_general','directivo_nivel'].includes(rol),
-    derivarEOE:  ['director_general','directivo_nivel','preceptor','docente'].includes(rol),
+    agregarSeg:  ['director_general','directivo_nivel','secretario','vicedirector','eoe','preceptor'].includes(rol),
+    cerrar:      ['director_general','directivo_nivel','secretario','vicedirector'].includes(rol),
+    reabrir:     ['director_general','directivo_nivel','secretario','vicedirector'].includes(rol),
+    derivarEOE:  ['director_general','directivo_nivel','secretario','vicedirector','preceptor','docente'].includes(rol),
   };
 }
 
@@ -87,7 +87,7 @@ async function getProblematicasData() {
   // Nivel: directivo_nivel y preceptor siempre quedan restringidos a su nivel
   const rolNivel = USUARIO_ACTUAL.rol;
   if (migOk) {
-    if (rolNivel === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
+    if (esDirectivoNivel(rolNivel) && USUARIO_ACTUAL.nivel) {
       q = q.eq('nivel', USUARIO_ACTUAL.nivel);
     } else if (rolNivel === 'preceptor' && USUARIO_ACTUAL.nivel) {
       q = q.eq('nivel', USUARIO_ACTUAL.nivel);
@@ -149,7 +149,7 @@ async function rProb() {
       });
       lista = lista.filter(p => !p.confidencial || p.responsable_id === USUARIO_ACTUAL.id);
     }
-    if (USUARIO_ACTUAL.rol === 'directivo_nivel' && USUARIO_ACTUAL.nivel) {
+    if (esDirectivoNivel(USUARIO_ACTUAL.rol) && USUARIO_ACTUAL.nivel) {
       lista = lista.filter(p => {
         const mod = p.modalidad || 'individual';
         if (mod === 'grupal' || mod === 'curso') return p.nivel === USUARIO_ACTUAL.nivel;
@@ -231,7 +231,7 @@ function renderFiltrosProb() {
         ${chip('urgencia','media','Media', 'color:var(--ambar);border-color:rgba(214,137,16,.3);background:var(--amb-l)')}
         ${chip('urgencia','baja','Baja',   'color:var(--verde);border-color:rgba(26,74,46,.3);background:var(--verde-l)')}
       </div>
-      ${(_probMigracionOk === true && !['preceptor','directivo_nivel'].includes(USUARIO_ACTUAL.rol)) ? `<div class="chip-row">
+      ${(_probMigracionOk === true && !['preceptor','directivo_nivel','secretario','vicedirector'].includes(USUARIO_ACTUAL.rol)) ? `<div class="chip-row">
         ${chip('nivel','todos','Todos los niveles')}
         ${chip('nivel','inicial','Inicial')}
         ${chip('nivel','primario','Primario')}
@@ -411,7 +411,7 @@ async function cargarDetProb(probId) {
           <span style="font-size:10px;color:var(--txt3);display:block;margin-bottom:1px">Responsable</span>
           <span style="font-size:11px;font-weight:600">${prob?.responsable?.nombre_completo || 'Sin asignar'}</span>
         </div>
-        ${['director_general','directivo_nivel','eoe'].includes(USUARIO_ACTUAL.rol) && !cerrada ?
+        ${['director_general','directivo_nivel','secretario','vicedirector','eoe'].includes(USUARIO_ACTUAL.rol) && !cerrada ?
           `<button class="btn-s" style="font-size:10px;padding:3px 8px;flex-shrink:0" onclick="mostrarReasignarResp('${probId}')">Reasignar</button>` : ''}
       </div>
       <div id="form-reasignar-${probId}"></div>
@@ -752,7 +752,7 @@ async function mostrarReasignarResp(probId) {
     .select('id,nombre_completo,rol')
     .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
     .eq('activo', true)
-    .in('rol', ['eoe','preceptor','director_general','directivo_nivel'])
+    .in('rol', ['eoe','preceptor','director_general','directivo_nivel','secretario','vicedirector'])
     .order('nombre_completo');
   const opts = (usuarios || []).map(u =>
     `<option value="${u.id}">${u.nombre_completo} (${labelRol(u.rol)})</option>`
@@ -816,7 +816,7 @@ async function mostrarFormProb() {
     .select('id,nombre_completo,rol')
     .eq('institucion_id', USUARIO_ACTUAL.institucion_id)
     .eq('activo', true)
-    .in('rol', ['eoe','preceptor','director_general','directivo_nivel'])
+    .in('rol', ['eoe','preceptor','director_general','directivo_nivel','secretario','vicedirector'])
     .order('nombre_completo');
 
   const responsablesOpts = (usuarios || []).map(u =>
@@ -1144,7 +1144,7 @@ async function crearAlertasProb(probId, urgencia, nivel, alumnoId, respId) {
 
   let qDir = sb.from('usuarios').select('id')
     .eq('institucion_id', instId).eq('activo', true)
-    .in('rol', ['director_general','directivo_nivel']);
+    .in('rol', ['director_general','directivo_nivel','secretario','vicedirector']);
   if (nivel) qDir = qDir.or(`rol.eq.director_general,nivel.eq.${nivel}`);
   const { data: dirs } = await qDir;
   dests.push(...(dirs || []).map(u => u.id));
@@ -1243,7 +1243,7 @@ async function checkAlertasProb(instId) {
       const { data: directivos } = await sb.from('usuarios')
         .select('id,rol,nivel')
         .eq('institucion_id', instId)
-        .in('rol', ['director_general','directivo_nivel'])
+        .in('rol', ['director_general','directivo_nivel','secretario','vicedirector'])
         .eq('activo', true);
       const dirGenIds = (directivos || []).filter(u => u.rol === 'director_general').map(u => u.id);
 
@@ -1252,7 +1252,7 @@ async function checkAlertasProb(instId) {
         const base = lastInterv[p.id] ? new Date(lastInterv[p.id]) : new Date(p.created_at);
         const dias = Math.floor((nowMs - base.getTime()) / 86400000);
         const dests = new Set(dirGenIds);
-        if (p.nivel) (directivos || []).filter(u => u.rol === 'directivo_nivel' && u.nivel === p.nivel).forEach(u => dests.add(u.id));
+        if (p.nivel) (directivos || []).filter(u => esDirectivoNivel(u.rol) && u.nivel === p.nivel).forEach(u => dests.add(u.id));
         if (p.responsable_id) dests.add(p.responsable_id);
         for (const uid of dests) {
           if (uid === USUARIO_ACTUAL.id) continue;
@@ -1265,7 +1265,7 @@ async function checkAlertasProb(instId) {
         if (dedup[`B_${p.id}`]) continue;
         const dias = Math.floor((nowMs - new Date(p.created_at).getTime()) / 86400000);
         const dests = new Set(dirGenIds);
-        if (p.nivel) (directivos || []).filter(u => u.rol === 'directivo_nivel' && u.nivel === p.nivel).forEach(u => dests.add(u.id));
+        if (p.nivel) (directivos || []).filter(u => esDirectivoNivel(u.rol) && u.nivel === p.nivel).forEach(u => dests.add(u.id));
         for (const uid of dests) {
           if (uid === USUARIO_ACTUAL.id) continue;
           notifs.push({ usuario_id: uid, tipo: 'alerta_prolongada', titulo: 'Caso abierto hace más de 30 días', descripcion: `Lleva ${dias} día${dias !== 1 ? 's' : ''} abierto sin cierre.`, referencia_id: p.id, referencia_tabla: 'problematicas' });
@@ -1361,7 +1361,7 @@ async function cargarProbAlumno(alumnoId, contenedorId) {
 
   const rol   = USUARIO_ACTUAL.rol;
   const lista = (data || []).filter(p =>
-    !p.confidencial || ['director_general','directivo_nivel','eoe'].includes(rol)
+    !p.confidencial || ['director_general','directivo_nivel','secretario','vicedirector','eoe'].includes(rol)
   );
 
   if (!lista.length) {

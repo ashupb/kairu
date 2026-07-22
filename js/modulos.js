@@ -40,10 +40,10 @@ const ACCIONES_INC = [
 ];
 
 function _objPuedeEditar() {
-  return ['director_general','directivo_nivel','admin','preceptor'].includes(USUARIO_ACTUAL?.rol);
+  return ['director_general','directivo_nivel','secretario','vicedirector','super_admin','preceptor'].includes(USUARIO_ACTUAL?.rol);
 }
 function _objPuedeRegistrarInc() {
-  return ['director_general','directivo_nivel','admin','preceptor','docente'].includes(USUARIO_ACTUAL?.rol);
+  return ['director_general','directivo_nivel','secretario','vicedirector','super_admin','preceptor','docente'].includes(USUARIO_ACTUAL?.rol);
 }
 
 async function rObj() {
@@ -131,7 +131,7 @@ function _renderCardsObj() {
   if (_objFiltros.estado)     lista = lista.filter(o => o.estado === _objFiltros.estado);
   // Filtrar por nivel del usuario (directores ven todo)
   const rolUser = USUARIO_ACTUAL?.rol;
-  if (!['director_general','admin'].includes(rolUser) && USUARIO_ACTUAL?.nivel) {
+  if (!['director_general','super_admin'].includes(rolUser) && USUARIO_ACTUAL?.nivel) {
     lista = lista.filter(o => {
       const nv = _objNivelKeys(o);
       return !nv.length || nv.includes(USUARIO_ACTUAL.nivel);
