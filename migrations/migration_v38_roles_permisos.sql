@@ -20,13 +20,23 @@
 -- ╚═══════════════════════════════════════════════════════════╝
 -- Este usuario pasa a ser super_admin: deja de pertenecer a una institución
 -- (institucion_id = NULL) y accede a todas mediante el selector de la topbar.
--- Debe existir previamente en `usuarios` (es la cuenta con la que ya entrás).
 --
---     EMAIL:  aperezbenary@gmail.com
+--     EMAIL:  aperezbenary+admin@gmail.com
 --
--- Para cambiarlo, editá la variable v_email del bloque DO del punto 2.
--- Si el email no existe en `usuarios`, la migración no falla: avisa por
--- NOTICE y no promueve a nadie.
+-- ⚠ IMPORTANTE — debe ser un email DISTINTO al de tu cuenta institucional.
+-- Los emails de Supabase Auth son únicos: una misma dirección no puede ser
+-- director_general y super_admin a la vez. El truco del "+" resuelve esto:
+-- Gmail entrega aperezbenary+admin@gmail.com a la misma casilla, pero para
+-- Supabase es otra cuenta. Así conservás tu director_general actual.
+--
+-- La cuenta debe existir en `usuarios` ANTES de correr esto. Creala desde la
+-- app: Configuración → Usuarios → Nuevo usuario → modo "Contraseña temporal"
+-- (elegís vos la contraseña; el rol que le pongas da igual, se pisa acá).
+--
+-- Si el email no existe todavía, la migración NO falla: avisa por NOTICE y no
+-- promueve a nadie. Podés correr después migrations/promover_super_admin.sql.
+--
+-- Para usar otro email, editá v_email en el bloque DO del punto 2.
 
 
 -- ═══════════════════════════════════════════════════════════════
@@ -62,9 +72,10 @@ ALTER TABLE public.usuarios ALTER COLUMN institucion_id DROP NOT NULL;
 UPDATE public.usuarios SET rol = 'super_admin' WHERE rol = 'admin';
 
 -- Promover la cuenta de la dueña de la plataforma.
+-- Debe ser un email DISTINTO al de la cuenta institucional (ver cabecera).
 DO $$
 DECLARE
-  v_email text := 'aperezbenary@gmail.com';   -- ← ÚNICO INPUT HUMANO
+  v_email text := 'aperezbenary+admin@gmail.com';   -- ← ÚNICO INPUT HUMANO
   v_id    uuid;
 BEGIN
   SELECT id INTO v_id FROM public.usuarios WHERE lower(email) = lower(v_email) LIMIT 1;
